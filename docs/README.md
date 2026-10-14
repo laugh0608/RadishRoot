@@ -8,6 +8,7 @@
 | [产品规划](product-plan.md) | 产品定位、用户价值、长期演进与家族关系 |
 | [MVP 规划](mvp-plan.md) | 第一阶段 FR 范围、架构、UI、M0–M5、任务与 AT 验收的实施基线 |
 | [开发规范](development/standards.md) | 工程风格、工具链、版本、测试与文档组织 |
+| [开发环境清单](development/environment.md) | 本机工具证据、精确安装候选、影响与分层验证方法；不代替当前任务状态 |
 | [协作规则](governance/agent-collaboration.md) | 授权、工作区、执行、资源清理与交接 |
 | [仓库治理](governance/repository-governance.md) | Git、PR、回流与 CI 原则；不代表远端配置已经生效 |
 | [许可与来源](governance/licensing-and-sources.md) | 原创许可待定边界、第三方和家族参考材料 |

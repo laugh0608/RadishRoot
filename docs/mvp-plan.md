@@ -342,7 +342,7 @@ M1 记录内核 / heap / framebuffer / DMA / UI / 缓存预算及测量范围；
 
 ### T01 建立可编译工作区与环境清单
 
-- [ ] 状态：未开始
+- [ ] 完成状态以[当前状态](status/current.md)为准；环境事实与候选见[开发环境清单](development/environment.md)。
 
 预计 2 人日 · 前置：无 · 验收关联：AT01、AT23
 
@@ -868,7 +868,7 @@ MVP 完成要求全部 FR / AT 覆盖且没有未解决 P0 / P1；P2 必须不�
 
 ### 开始实施的第一步
 
-当前仅有正式文档。后续得到实施指令后，从 T01 开始：只读盘点宿主工具与资源，列缺口和安装影响，然后建立真实最小编译入口；依 T02–T05 取得存储证据，再按 T06–T13 实现第一条真实图形闭环。不得把本段视为本轮自动安装依赖或开始写内核的授权。
+实施顺序为 T01 环境盘点、版本候选与真实最小编译入口，随后依 T02–T05 取得存储证据，再按 T06–T13 实现第一条真实图形闭环。实际进度、下一步与授权边界统一见[当前状态](status/current.md)，本规划不构成安装依赖或写内核的授权。
 
 [R1]: https://www.qemu.org/docs/master/system/introduction.html
 [R2]: https://github.com/Limine-Bootloader/Limine

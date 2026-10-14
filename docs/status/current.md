@@ -4,18 +4,20 @@
 
 ## 当前结论
 
-RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产品文档仍为 2.0：第一 MVP、M0–M5、32 项任务和 24 项验收未变，业务工程任务全部未开始。没有 Cargo 工程、内核、镜像或产品运行入口；不能启动系统，没有业务验收证据。
+RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产品文档仍为 2.0：第一 MVP、M0–M5、32 项任务和 24 项验收未变。T01 已开始环境准备，完成本机只读盘点与安装候选文档，尚未完成可编译工作区；T02–T32 未开始。没有 Cargo 工程、内核、镜像或产品运行入口；不能启动系统，没有业务验收证据。
 
 | 层级 | 实际状态 |
 | --- | --- |
-| 本地治理检查 | 30 个正式文件检查、13 项回归通过；两份根入口逐字一致 |
+| 本地治理检查 | 本批 31 个文件的仓库检查通过；检查器既有 13 项回归通过证据见月度日志，本批未改检查器、不重复运行；两份根入口逐字一致 |
+| T01 环境 | 稳定版 Rust 1.96.0 / 1.97.1 已有，裸机 target / nightly / 独立 QEMU CLI 缺失；UTM 内有固件样本；现有 OrbStack Docker 服务只读查询成功 |
+| 安装候选 | 固定日期 nightly、QEMU 及 Linux GPT/FAT 精确版本见[环境清单](../development/environment.md)；仅核对上游元数据，尚未安装或冻结验证组合 |
 | Git / 远端 | 已连接 [laugh0608/RadishRoot](https://github.com/laugh0608/RadishRoot)；master 为稳定主线，dev 为日常开发分支；治理晋级与回流的具体提交及检查证据保存在对应 PR |
 | 默认分支与合并 | 默认 master；允许 merge / rebase，禁止 squash；关闭自动合并与自动删除 head branch |
 | master Ruleset | [25073496](https://github.com/laugh0608/RadishRoot/rules/25073496) 为 active，仅覆盖 master；要求 PR、解决讨论、严格最新的 Candidate Quality；禁止删除 / 强推；0 审批，管理员仅 PR 内 bypass |
 | 检查来源与权限 | Candidate Quality 绑定实测 GitHub Actions App 15368；工作流默认只读，不能审批 PR |
 | dev 保护 | 有效 Rulesets 为空，传统保护返回未保护；允许按风险本地验证后直接提交 / push |
 | 实际 Actions | 手动首跑成功；PR 故障候选阻断，修复候选通过；普通 dev push 不触发自动 CI |
-| 产品验证 | Rust / 宿主交互 / QEMU / 读盘 / 安装均未执行 |
+| 产品验证 | 已读取工具版本；项目 Rust 编译 / 宿主交互 / QEMU guest / 读盘 / 安装均未执行；T01、AT01、AT23 均未通过 |
 
 ## 验证入口与证据
 
@@ -25,12 +27,12 @@ RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产
 - 已读回默认分支、合并选项、Ruleset 详情、master / dev 有效规则及 Actions 权限。未对真实 master 做删除、直接 push、force push 或 bypass 演练。
 - [月度日志](../devlogs/2026-10.md)记录配置、失败 / 成功证据、Git 动作和限制；[Ruleset 手册](../../.github/rulesets/README.md)维护操作流程。
 
-本轮只证明仓库治理与远端门禁。现有 checkout pin 在 runner 上产生 Node.js 20 被强制转为 Node.js 24 的兼容提示，检查已成功；后续工具维护时专项评估，不在本批顺带升级依赖。安全报告私密入口未在本批启用或验收，仍按 SECURITY 指引处理。
+治理证据只证明仓库门禁；环境盘点只证明已观察到的工具与元数据。现有 checkout pin 在 runner 上产生 Node.js 20 被强制转为 Node.js 24 的兼容提示，检查已成功；后续工具维护时专项评估。安全报告私密入口未启用或验收，仍按 SECURITY 指引处理。
 
 ## 下一项与停止线
 
-后续普通开发继续在 dev。治理更新按用户要求通过 dev → master PR 晋级，检查通过后使用 merge commit，随后先回流并推送 dev；具体完成状态与提交 SHA 记录在该 PR，避免在提交正文嵌入尚未生成的 merge SHA。不直接推送 master，不创建产品 Release 或部署。
+继续在 dev。治理更新已通过 PR 晋级并回流；本批文档已获提交到 dev 并推送的授权，随后只读补齐 registry 映射和依赖影响核对。不直接推送 master，不创建 PR、产品 Release 或部署。
 
-业务实施收到指令后从 T01 开始，只读盘点 Rust、QEMU、固件与镜像工具，列出版本、缺口和安装影响，再建立最小编译入口。T02–T05 先取得写回、重启与宿主独立读盘证据，随后 T06–T13 形成真实图形闭环。实施前记录每周投入；94 人日仅为估算，M0 / M1 后按实测重估。
+下一步拟按[环境清单](../development/environment.md)准备安装：先读回 Debian 日期标签对应的 registry digest，核对 Homebrew 实际新增 / 升级依赖和指定 ARM64 包可获取性，再在获得安装授权后安装候选、记录固件哈希及实际支持的版本化 q35 机器名。不能把顶层版本表当作已锁定全部传递依赖。安装后按工具层验证；建立 Cargo workspace、写业务代码与运行 guest 另按实际授权推进。
 
-远端治理配置已完成；本轮新增授权覆盖治理晋级 PR、检查通过后的 merge commit 合并及 master → dev 回流。原创许可、产品工具链 / 依赖版本、Live 来源与性能预算仍待确定；业务实现、依赖安装、VM 和发布未开始。
+本轮停止线：不安装 / 更新依赖，不拉取镜像层，不启动容器 / VM，不写业务代码或生成工具链锁文件。无本任务后台资源。原创许可、实际编译依赖与功能开关、Limine 协议配对、Live 来源及性能预算尚未冻结；实施排期前记录每周投入，94 人日仍是估算。T01 完成须有干净目录的最小 no_std 编译与依赖隔离证据，M0 退出还须 T02–T05 的真实存储证据。
