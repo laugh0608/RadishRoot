@@ -11,7 +11,7 @@ RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产
 | 本地治理检查 | 本批 31 个文件的仓库检查通过；检查器既有 13 项回归通过证据见月度日志，本批未改检查器、不重复运行；两份根入口逐字一致 |
 | T01 环境 | 稳定版 Rust 1.96.0 / 1.97.1 已有，裸机 target / nightly / 独立 QEMU CLI 缺失；UTM 内有固件样本；现有 OrbStack Docker 服务只读查询成功 |
 | 安装候选 | Debian 日期标签 → ARM64 digest 已核对；QEMU 11.1.2 的 30 项制品候选身份已记录，选定 libssh 0.12.2 / OpenSSL 3.6.4_1；30 项配方来源 / 哈希和静态依赖图已核对；Debian 快照签名数学验证及五包可用性通过；实际包管理器事务 / 运行未验证，见[环境清单](../development/environment.md) |
-| 安装影响 | 固定 QEMU 集合为 22 项新增、4 项升级、4 项同版本制品待核对；Debian 无 recommends 方案预计新增 5 包；固定 tap 与现有 core keg 的来源冲突待解决，数量仍为静态差异，未安装 |
+| 安装影响 | 拟采用专用 `/opt/rrt01`，QEMU 集合 30 项全部专用新增，0 项共享升级 / 重装；30 项元数据满足短前缀重定位条件，尚未实际安装；Debian 无 recommends 方案预计新增 5 包 |
 | Git / 远端 | 已连接 [laugh0608/RadishRoot](https://github.com/laugh0608/RadishRoot)；master 为稳定主线，dev 为日常开发分支；治理晋级与回流的具体提交及检查证据保存在对应 PR |
 | 默认分支与合并 | 默认 master；允许 merge / rebase，禁止 squash；关闭自动合并与自动删除 head branch |
 | master Ruleset | [25073496](https://github.com/laugh0608/RadishRoot/rules/25073496) 为 active，仅覆盖 master；要求 PR、解决讨论、严格最新的 Candidate Quality；禁止删除 / 强推；0 审批，管理员仅 PR 内 bypass |
@@ -32,8 +32,8 @@ RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产
 
 ## 下一项与停止线
 
-继续在 dev。前批 registry / 冻结方案已提交并推送为 dc2b573；本批获授权只读核对 30 项 formula 来源 / 哈希 / 依赖解析及 Debian snapshot 签名 / 包可用性，同步文档、验证后提交并推送 dev。不直接推送 master，不创建 PR、产品 Release 或部署。
+继续在 dev。前批来源 / 快照核验已提交并推送为 86a4526；本批获授权只读核对固定 tap 与 core keg 冲突，形成不卸载共享依赖、不改写收据的安装 / 恢复方案，明确 Debian apt / sqv 步骤，同步文档、验证后提交并推送 dev。不直接推送 master，不创建 PR、产品 Release 或部署。
 
-下一步仍为安装前准备：先解决固定 formula 集合与已有 Homebrew core keg 的来源冲突，形成可审阅的具体执行与恢复方案；保留 30 项精确身份和 OpenSSL 3 链，不通过卸载共享依赖、改写收据或绕过校验消除冲突。Debian 已取得固定快照签名 / 索引和五包路径证据，但 apt / sqv 策略验证与模拟求解未运行；历史快照的 Valid-Until 已过期，按环境专题仅处理固定源有效期，不关闭签名检查。实际事务、同版本项复用及反向依赖影响仍需验证；安装须另获授权。Cargo workspace、业务代码与 guest 运行另按实际授权推进。
+安装与恢复方案已形成，见[环境清单第 2.4 / 2.5 节](../development/environment.md)：独立短前缀隔离共享 core，保留 30 项精确制品及 OpenSSL 3 链；固定 Homebrew / portable Ruby bootstrap 与本地 tap 仍未创建。下一步是另获对应环境写入、下载和执行授权后，实施专用环境并验证真实配方解析、bottle 重定位 / 动态链接、失败恢复；当前证据仅为源码与元数据核对，不能报告可安装或运行通过。Debian 要在固定 digest 的任务容器内完成离线 sqv、隔离 APT 源更新、有效期负向检查和五包模拟求解；历史快照仅局部放开 Valid-Until，保留签名检查。Cargo workspace、业务代码与 guest 运行另按实际授权推进。
 
 本轮停止线：不安装 / 更新依赖，不拉取镜像层，不启动容器 / VM，不写业务代码或生成工具链锁文件。无本任务后台资源。原创许可、实际编译依赖与功能开关、Limine 协议配对、Live 来源及性能预算尚未冻结；实施排期前记录每周投入，94 人日仍是估算。T01 完成须有干净目录的最小 no_std 编译与依赖隔离证据，M0 退出还须 T02–T05 的真实存储证据。

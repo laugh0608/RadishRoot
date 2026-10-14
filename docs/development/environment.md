@@ -96,7 +96,7 @@ QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8
 
 本机未发现 gpg / gpgv；没有为核验安装它们。临时核验程序按 OpenPGP v4 格式解析实际的 RSA 签名，用已有 Python cryptography 验证 RSA PKCS#1 v1.5；校验主钥指纹、签名子钥绑定、子钥交叉认证与子钥到期时间，再验证三个 InRelease 的规范化正文。另用已有 OpenSSL 3.6.4 的 `dgst -sha256 -verify` 对提取的三个签名独立调用复核，均返回 `Verified OK`。正文改动和签名位翻转的负向样本均被拒绝。未执行下载的 formula 或安装脚本。
 
-信任锚来自 Debian 官方 HTTPS 公钥文件，主钥 / 子钥指纹同时对照 [FTP master 公钥页](https://ftp-master.debian.org/keys.html)和 [2025 年公钥公告](https://lists.debian.org/debian-devel-announce/2025/04/msg00001.html)。这是对这些固定签名的密码学复核，**不是 apt / sqv 的完整策略验证**；没有建立离线预置信任锚、运行通用 OpenPGP 验证器或核验所有并列签名。基础清单提供 debian-archive-keyring 2025.1、apt 3.0.3、sqv 1.3.0-3+b2，安装授权后仍须通过这些实际组件核验源与求解；临时解析程序不进入安装信任路径。
+信任锚来自 Debian 官方 HTTPS 公钥文件，主钥 / 子钥指纹同时对照 [FTP master 公钥页](https://ftp-master.debian.org/keys.html)和 [2025 年公钥公告](https://lists.debian.org/debian-devel-announce/2025/04/msg00001.html)。这是对这些固定签名的密码学复核，**不是 apt / sqv 的完整策略验证**；没有建立离线预置信任锚、运行通用 OpenPGP 验证器或核验所有并列签名。基础清单提供 debian-archive-keyring 2025.1、apt 3.0.3、sqv 1.3.0-3+b2，获得相应容器执行授权后仍须通过这些实际组件核验源与求解；临时解析程序不进入安装信任路径。
 
 | 公钥用途 | 主钥指纹 | 已验证签名子钥指纹 | 公钥文件 SHA-256 |
 | --- | --- | --- | --- |
@@ -164,11 +164,11 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 
 这里将根 bottle 的依赖记录作为**精确候选选择**，不是声称每个叶子 bottle 都在完全相同的版本组合下构建。例如部分叶子记录较旧的 pcre2、ca-certificates 或 gettext rebuild；采用上表根集合统一版本后仍须做动态链接和功能验证，不能只比较版本大小就证明 ABI 兼容。
 
-冻结实施候选仍为项目维护的固定 formula 集合；本轮已补齐原文、commit、内容哈希与静态运行依赖图，见第 2.3 节。原文没有本地改动，也没有创建 tap 或安装器。所有依赖必须解析到同一固定集合，bottle 必须匹配上表；禁用移动 API 不能替代固定引用。本机安装器源码暴露的 tap / keg 冲突尚未解决，不能把该集合视为已可直接安装。只为本任务命令设置元数据 / 清理控制，不改全局 shell 或用户 core 历史。
+冻结实施候选仍为项目维护的固定 formula 集合；本轮已补齐原文、commit、内容哈希与静态运行依赖图，见第 2.3 节。原文没有本地改动，也没有创建 tap 或安装器。所有依赖必须解析到同一固定集合，bottle 必须匹配上表；禁用移动 API 不能替代固定引用。本机安装器源码暴露的 tap / keg 冲突通过第 2.4 节的独立前缀方案隔离；该方案尚未实施，不能视为已验证可安装。只为本任务命令设置元数据 / 清理控制，不改全局 shell 或用户 core 历史。
 
 安装前须验证该固定集合实际解析的全部运行依赖、资源、post_install 副作用和已有反向依赖影响；若本地配方命名 / 路径使 bottle 不能按原制品使用，或需要源码构建、额外包、版本变更，则停止并更新方案，不通过 `--ignore-dependencies`、手工解压替换共享库或隐藏链接错误完成安装。`brew pin qemu`、关闭 auto-update、`bundle --no-upgrade` 都不能代替上述闭包和制品锁定。[Homebrew 版本维护说明](https://docs.brew.sh/Versions)
 
-安装后的运行身份还须记录实际可执行文件 / 动态库来源、固件哈希、版本化机器名与功能验证结果；后续发现共享 Homebrew 依赖漂移时先报告环境不匹配，不能继续沿用旧验收结论。升级候选须整体更新受影响版本 / 哈希并重跑相关验证，不永久把历史候选当作维护策略。
+安装后的运行身份还须记录实际可执行文件 / 动态库来源、固件哈希、版本化机器名与功能验证结果；后续发现专用环境依赖漂移时先报告环境不匹配，不能继续沿用旧验收结论。升级候选须整体更新受影响版本 / 哈希并重跑相关验证，不永久把历史候选当作维护策略。
 
 ### 2.3 固定 formula 来源与静态解析核对
 
@@ -245,32 +245,108 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 
 本机 Homebrew 源码提交 `b3625f73d3e3574c5789ee32eb7b06627b788ec4` 的 [formula_installer.rb](https://github.com/Homebrew/brew/blob/b3625f73d3e3574c5789ee32eb7b06627b788ec4/Library/Homebrew/formula_installer.rb)（SHA-256 `833fa39f2ab1e39aab4c772ec49e567a1420e32e54e84ec57e4649052b817fe5`）明确有两处不能忽略：
 
-- 安装依赖时，已有 keg 收据的 tap 与候选 tap 不同会报错要求先卸载；相关分支在该检查前还包含 unlink / 临时改名操作。因此共享 `/opt/homebrew` 内改用同名独立 tap，可能触发与现有 core keg 的冲突，不能当作无副作用试运行，更不能自动卸载用户共享依赖来绕过。
+- 进入依赖安装分支后，已有 keg 收据的 tap 与候选 tap 不同会报错要求先卸载；相关分支在该检查前还包含 unlink / 临时改名操作。已满足依赖可能先被跳过，不能断言每项都会报错；Ruby 异常处理会尝试恢复临时 keg 和原链接，但不构成断电、强杀或磁盘故障下的事务保证。因此共享 `/opt/homebrew` 内改用同名独立 tap，可能触发与现有 core keg 的冲突，不能当作无副作用试运行，更不能自动卸载用户共享依赖来绕过。
 - bottle 运行依赖记录按 full_name 建表，再按声明的 dep.name 查最小版本；把声明改为自定义 tap 全名后，原 core bottle 记录未必仍按同一个键匹配。因此固定引用仍须显式对照每项版本 / revision / 制品身份，不能依赖这个隐式最低版本检查保证冻结。
 
-以上来自只读源码核对，没有触发安装事务。静态 AST 图证明候选之间的引用闭合；它不证明 tap 迁移、已装项复用、bottle 重定位或反向依赖安全。必须先形成兼容既有 keg 来源的具体实施方案并在相应授权范围核验，才可给出安装命令；不能改 Homebrew 本身、绕过依赖校验、伪造 core 身份或改写用户收据来获得表面通过。
+以上来自只读源码核对，没有触发安装事务。静态 AST 图证明候选之间的引用闭合；它不证明 tap 迁移、已装项复用、bottle 重定位或反向依赖安全。具体安装与恢复方案见第 2.4 节；其中命令仅供后续获授权执行，尚未运行。不能改 Homebrew 本身、绕过依赖校验、伪造 core 身份或改写用户收据来获得表面通过。
+
+### 2.4 专用 Homebrew 前缀：安装与恢复方案
+
+选择任务专用 `/opt/rrt01`，同时作为 Homebrew prefix / repository，使用其独立 `Cellar`、`opt`、`etc` 和 `var`；本次只读检查该路径不存在，未创建目录。**30 项候选全部新装到此处，不复用共享 keg，不升级 `/opt/homebrew` 的任何项。** 这是后续实施候选，需要目录写入、bootstrap 和依赖安装授权；不是已建立的工具环境。私有前缀不能通过给共享 brew 设置 HOMEBREW_PREFIX 来实现：固定版本的 `bin/brew` 会按自身位置确定 prefix / repository，必须有独立入口。
+
+#### 重定位依据及限制
+
+上述 Homebrew 提交的 [bottle_specification.rb](https://github.com/Homebrew/brew/blob/b3625f73d3e3574c5789ee32eb7b06627b788ec4/Library/Homebrew/bottle_specification.rb)（SHA-256 `1150ca27f3fc9b3e431cde4bdbb7b79986ec8cffad51ed352689bd793b5296d3`）允许默认开启的 build-prefix 重定位：对于固定 Cellar bottle，新 prefix / Cellar 字节长度不能长于构建位置。`/opt/rrt01` 为 10 字节、其 Cellar 为 17 字节，分别短于 `/opt/homebrew` 的 13 字节和原 Cellar 的 20 字节。官方也说明了短自定义前缀的支持及限制，不能把一般的“非默认路径必然源码构建”当成本版本结论。[Homebrew 自定义前缀说明](https://docs.brew.sh/Support-Tiers#custom-prefixes)
+
+重新读取 30 项目标平台的 registry 元数据，bottle digest 均与第 2.2 节一致；其 Cellar 条件如下。元数据没有显式 built_prefix / padded_prefix 字段，源码按平台默认构建位置判断。
+
+| bottle Cellar 类型 | 数量与范围 | 元数据重定位条件 |
+| --- | --- | --- |
+| `/opt/homebrew/Cellar` | 8：qemu、gettext、glib、libidn2、ncurses、openssl@3、p11-kit、vde | 新路径长度符合固定版本的兼容判断；binary_relocation_files 数分别为 34、7、13、1、155、2、5、3 |
+| `:any` | 21：除上述八项和 ca-certificates 外的候选 | 声明可重定位，仍需实际链接核验 |
+| `:any_skip_relocation` | 1：ca-certificates | 无需归档路径重定位；post-install 仍写专用 etc |
+
+这仅证明 **30 项元数据满足候选路径条件**，没有下载归档、检查其实际字节或运行 pour。[keg_relocate.rb](https://github.com/Homebrew/brew/blob/b3625f73d3e3574c5789ee32eb7b06627b788ec4/Library/Homebrew/keg_relocate.rb)（SHA-256 `0b64fbcea7408247da7c389c8d8dc04b8e642e1e9cf9d015f98947adf48b2a23`）按记录处理二进制字符串、重建包内硬链接并重新签名；安装器同时处理文本 / 动态库路径、链接和新收据。归档 SHA 是下载身份，重定位后的文件须另记哈希，不能要求二者相同。新收据由未修改的 Homebrew 正常生成，记录实际 tap 与重定位，不改写已有 core 收据。
+
+#### 后续执行顺序
+
+1. **记录边界。** 核对目标不存在且不是符号链接；记录父目录、专用目录所有者和任务资源清单。保存共享八项 formula 的全部十份现存收据 SHA、opt / linked-keg 指向与共享 brew commit，安装后逐项比较；不复制其 Cellar 或配置。只为 `/opt/rrt01` 提供所需权限，不递归修改 `/opt` 或 `/opt/homebrew` 所有权。
+2. **建立独立 bootstrap。** 从已核验的 Homebrew Git 对象独立复制仓库（不用硬链接、共享 object alternates 或已有用户配置），在新仓库 checkout 上述完整 commit；不使用跟随 latest 的安装脚本。固定该 commit 声明的 portable Ruby `4.0.6_2`：`arm64_big_sur` 归档 SHA-256 为 `1643bb83d705f0c5e34445af151bb064bdf984081eff18a9646466b8fdd104db`。它属于 Homebrew bootstrap，额外于 30 项 QEMU 集合，须纳入下载 / 安装清单；未下载或安装。
+3. **隔离命令配置。** 仅本任务进程使用 `/opt/rrt01/bin/brew`，PATH 以专用 bin 和 macOS 系统路径为限；缓存、日志、临时目录和 XDG_CONFIG_HOME 均指定到任务私有位置，不改 HOME、用户 shell 或全局默认。命令设置 `HOMEBREW_NO_AUTO_UPDATE=1`、`HOMEBREW_NO_INSTALL_FROM_API=1`、`HOMEBREW_NO_INSTALL_CLEANUP=1`、`HOMEBREW_NO_ANALYTICS=1`、`HOMEBREW_FORBIDDEN_TAPS=homebrew/core`。核对生效的 prefix / Cellar / repository 和环境配置来源；若系统 brew.env 强制覆盖隔离设置则停止。当前 `/etc/homebrew/brew.env` 与共享 prefix 的对应文件未发现；不能假定执行时仍不存在。
+4. **实体化固定 tap。** 在专用仓库内建立本地 `radishroot/t01`，由第 2.3 节原文产生 30 项配方，39 条运行依赖全部限定到该 tap；保留包名、版本、revision、bottle tag / rebuild / SHA / Cellar 和官方 GHCR root_url，保留附属补丁及 post-install。逐项保存原文哈希、修改差异、改后哈希和本地 commit。仅对这个 tap 执行明确的 `brew trust --tap radishroot/t01`，信任记录写任务 XDG 路径；不关闭全局信任检查，不伪造 homebrew/core 来源。本轮尚无这些修改版文件。
+5. **实际求解后再下载。** 在独立环境解析配方，确认恰为 30 节点 / 39 条运行依赖、无额外下载资源或源码构建；逐项核对版本 / revision / rebuild / 平台 / SHA 和重定位条件。原 bottle 的 core full_name 与自定义依赖名未必对应，显式身份比较不能省略。下载到专用缓存后重新计算归档 SHA，保留官方 registry 来源；自定义本地 tap 不自动获得 core 的 attestation 验证结果，若使用官方 attestation 验证须对原归档独立完成并保存结果，不把“跳过验证”写成通过，也不为此自动安装 gh 等额外工具。
+6. **逐包安装并验收。** 按下列拓扑序，每次只安装一个全名，候选命令形式为 `/opt/rrt01/bin/brew install --force-bottle radishroot/t01/<包名>`。该选项可能越过普通兼容分支，故只能在前一步明确验证 bottle 可用及路径兼容后使用；不能拿它强行安装不兼容制品。每次先核对其依赖均已在专用 Cellar 以精确身份就绪，再核对新收据、链接和 post-install 结果。依赖安装子流程不会继承该 force-bottle 选项，因此不依赖一条安装 qemu 的命令替代逐项控制。发现源构建、额外包、共享路径访问写入、链接失败或 post-install 失败立即停止，不用忽略依赖 / 校验选项继续。
+
+拓扑序为：`json-c → libunistring → gettext → capstone → libyaml → dtc → pcre2 → glib → ca-certificates → gmp → libidn2 → libtasn1 → nettle → p11-kit → gnutls → jpeg-turbo → libpng → libslirp → openssl@3 → libssh → libusb → lzo → ncurses → pixman → snappy → vde → lz4 → xz → zstd → qemu`。箭头仅表示执行顺序，真实依赖关系仍以第 2.3 节为准。
+
+安装验收须递归读取 Mach-O 的 dylib / LC_RPATH、脚本解释器和配置路径；运行所需位置只允许专用 prefix 或明确的 macOS 系统输入，不允许偷偷链接 `/opt/homebrew`。核对 QEMU 能力、OpenSSL 3 链、固件与许可证；专用 ca-certificates 读取系统信任库的行为须在安装范围中明确，输出仅写专用 etc。最后比较共享基线；若发现非预期变化，停止并定位归属，不自动恢复可能属于用户并行工作的修改。上述任一条件失败，都不能报告“环境就绪”。
+
+#### 失败与恢复
+
+首次安装失败时保留逐包结果及失败日志，标记专用环境不可用；只停止本任务记录且仍属于该前缀的进程。可将整套专用目录隔离留证，隔离后的路径仅供保存，不能直接运行含旧绝对路径的程序。用户授权清理后只删除已核对归属的任务目录、缓存和日志；共享 Homebrew 无需卸载或恢复。禁止用 core uninstall、改旧收据或切换共享 opt 修补专用环境。
+
+后续升级前停止任务进程，为**完整专用前缀及任务配置**制作保留权限 / 符号链接的独立副本，不与待升级文件使用硬链接；记录清单与哈希。失败后将故障目录留证，恢复上一已验证副本到完全相同的 `/opt/rrt01`，再验身份与功能。不承诺任意新路径可运行，也不把改名或单个库降级当作恢复完成。该恢复流程尚未演练。
+
+### 2.5 Debian apt / sqv 的后续验证步骤
+
+以下步骤独立于宿主 QEMU 安装，需要另获拉取固定镜像与运行任务容器的授权；**本轮未执行**。目标是把第 2.1 节的密码学 / 元数据证据补成基础镜像实际组件的策略与模拟求解证据，不安装五个工具包。
+
+1. 仅拉取第 2.1 节 ARM64 manifest digest，记录实际平台、image ID 与容器 ID。使用任务专用临时容器和 `/work` 写入区，不使用 privileged、宿主设备、Docker socket 或其他项目卷；宿主只提供只读公开核验材料。核对镜像内 apt 3.0.3、sqv 1.3.0-3+b2、debian-archive-keyring 2025.1 和完整 dpkg 清单；保存 `/var/lib/dpkg/status` 哈希。版本或基础清单不符即停止。
+2. **离线 sqv。** 在 network=none 的容器内先读 `sqv --help`，使用镜像自带的 `/usr/share/keyrings/debian-archive-trixie-automatic.gpg` 验 trixie / updates，使用 `debian-archive-trixie-security-automatic.gpg` 验 security。命令形式为 `sqv --cleartext --signatures=1 --keyring=<对应 keyring> --output=<新的 Release 输出> <InRelease>`。记录 UTC 时间、keyring 哈希、工具版本、退出码及签名者；使用默认当前策略，不回拨时间、不放宽证书策略。三个都成功后，按输出 Release 重新校验压缩与解压索引。另用独立副本测试正文篡改和错误 keyring，必须失败；不能覆盖原证据。[sqv 1.3 手册](https://manpages.debian.org/trixie/sqv/sqv.1.en.html)、[keyring 包文件清单](https://packages.debian.org/trixie/all/debian-archive-keyring/filelist)
+3. **隔离 APT。** 新的网络阶段容器继续使用相同 digest；APT_CONFIG 指向 `/work/apt.conf`。先设置 `Dir::Etc::parts` / `main` 为 `-`，禁用镜像内额外配置 / hooks，再指定 sourcelist 为 `/work/snapshot.sources`、sourceparts 为 `-`，lists 为全新 `/work/lists`，archives 为 `/work/archives`，status 仍读 `/var/lib/dpkg/status`，pkgcache / srcpkgcache 为空。目录为 `_apt` 提供必要权限，不用关闭下载沙盒补救。用 apt-config dump 核对最终设置，不继承代理凭据或策略覆盖；记录输出时不包含秘密。
+
+源文件仅包含以下两个 deb822 stanza；HTTP 沿用已审阅 snapshot 模板，避免为基础镜像缺 CA 而新增包，真实性继续由 Signed-By 和索引 / 包哈希保证。`Check-Valid-Until: no` 只处理这组历史快照的已知过期；保留 Check-Date 和签名检查，不设置 Trusted 或允许不安全仓库。
+
+```text
+Types: deb
+URIs: http://snapshot.debian.org/archive/debian/20261005T000000Z/
+Suites: trixie trixie-updates
+Components: main
+Architectures: arm64
+Signed-By: /usr/share/keyrings/debian-archive-trixie-automatic.gpg
+Check-Valid-Until: no
+
+Types: deb
+URIs: http://snapshot.debian.org/archive/debian-security/20261005T000000Z/
+Suites: trixie-security
+Components: main
+Architectures: arm64
+Signed-By: /usr/share/keyrings/debian-archive-trixie-security-automatic.gpg
+Check-Valid-Until: no
+```
+
+4. **实际 APT 更新与策略。** 执行 `apt-get -o APT::Update::Error-Mode=any -o Debug::Acquire::gpgv=true update`，要求退出 0，记录实际 sqv 验证链；不能出现未认证源、NO_PUBKEY 或下载失败后沿用旧索引。按第 2.1 节比对收到的三个 InRelease；若 APT 另存 lz4 等格式，用镜像自带 apt-helper cat-file 解码，再核对已认证的 Packages 哈希。另开全新 lists 目录，移除源内 Check-Valid-Until 例外，确认 updates / security 因过期而失败；不将该负向结果用于后续求解。[apt-get 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)、[APT 配置顺序](https://manpages.debian.org/trixie/apt/apt.conf.5.en.html)
+5. **只模拟求解。** 先用 apt-cache policy 核对五包的版本与快照来源，再在成功更新的配置下执行下列命令。必须得到 0 upgraded、5 newly installed、0 removed，Inst 恰好是表内五个精确版本，不能有基础包升级或额外 recommends。输出即使退出 0，集合不符也判失败。
+
+```sh
+apt-get --simulate --no-install-recommends --no-remove install \
+  gdisk=1.0.10-2+b1 dosfstools=4.2-1.2 mtools=4.0.48-1 \
+  libncursesw6=6.5+20250216-2 libpopt0=1.19+dfsg-2
+```
+
+6. **收尾。** 再次核对 dpkg status 哈希和包清单未变、archives 内无下载的 deb，保存命令、退出码和必要公开输出；退出并移除本任务容器及专用临时数据，保留证据时记录位置。只删除归属明确的镜像 / 缓存，不做全局 prune。失败时修正明确原因后重跑对应步骤，不关闭签名、改用移动源或实际安装来“试出”答案。只有这套实际流程通过才能补记 apt / sqv 验证；工具包安装与制镜像仍是后续动作。
 
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
 | --- | --- | --- |
 | 安装指定 nightly 和组件 | 写入 `~/.rustup/toolchains/` 与下载缓存；可能占用数 GiB，实际以下载清单为准 | 保留现有 1.96.0 / 1.97.1 与默认设置；仅在确认未被其他项目使用时移除本任务新增工具链 |
-| 安装固定 QEMU 集合 | 写入 `/opt/homebrew/Cellar`、opt / 链接目录、Homebrew 缓存及拟建本地固定 formula 集合；会触及共享依赖 | 安装前记录配方 / 收据 / opt 指向及旧版本；只处理本次资源，不做全局 autoremove / cleanup，不自动移除旧 keg |
+| 安装固定 QEMU 集合 | 仅写任务专用 `/opt/rrt01`、专用缓存 / 配置；额外包含固定 Homebrew / portable Ruby bootstrap，30 项全部新装 | 按第 2.4 节隔离失败环境或恢复完整专用前缀到原路径；不卸载共享 core keg，不改共享收据 / opt |
 | 构建 Linux 工具镜像 | OrbStack 镜像存储、构建缓存、包索引及专用输出目录产生写入 | 记录项目镜像 ID / digest 和容器 ID；退出本任务容器，仅清理归属明确的资源，不执行全局 prune |
 | 后续制盘 / VM 验证 | 每份 raw 逻辑容量 1 GiB，副本数与实际占用另记；每次运行有独立 VARS 和日志；guest 基线 1 vCPU / 512 MiB，宿主另有仿真开销 | 仅使用仓库忽略目录内的任务普通文件，不挂宿主物理盘；结束关闭任务进程，保留失败副本时记录路径 |
 
-选定的 30 项集合与本机 Cellar 比较后为 **22 项未安装、4 项版本升级、4 项同版本但制品身份待核对**。这取代移动 formula 图的 23 / 3 / 4 估计；它仍是静态差异，不是 Homebrew 安装事务或反向依赖重装清单；独立 tap 的来源冲突可能使此事务直接被拒绝，不能把 22 / 4 / 4 当成已可执行的动作数量。
+选定的 30 项集合与本机 Cellar 比较后为 **22 项未安装、4 项版本升级、4 项同版本但制品身份待核对**。这是相对共享环境的历史静态差异，取代移动 formula 图的 23 / 3 / 4 估计。第 2.4 节改用专用前缀后，实际计划为 **30 项专用新增、0 项共享升级 / 重装**，22 / 4 / 4 不再是拟执行动作。
 
-| 共享依赖升级 | 本机 → 选定版本 | 本机收据中的使用者（非完整影响测试） |
+| 共享环境版本差异（不执行升级） | 本机 → 选定版本 | 本机收据中的使用者（非完整影响测试） |
 | --- | --- | --- |
 | pcre2 | 10.47_1 → 10.49 | Git 2.54.0、ripgrep 15.2.0 |
 | snappy | 1.2.2 → 1.3.1 | leveldb 1.23_2、librime 1.17.0 |
 | ca-certificates | 2026-08-13 → 2026-09-25 | OpenSSL 3、FFmpeg、Ruby、CocoaPods 的依赖记录 |
 | openssl@3 | 3.6.4 → 3.6.4_1 | FFmpeg、Ruby、CocoaPods 的依赖记录；保留已有 3.6.2 / 3.6.4 的恢复证据 |
 
-同版本四项为 gettext 1.0、libunistring 1.4.2、libyaml 0.2.5、xz 5.8.4。本机收据显示来自 macOS 26 / 26.6 构建，且没有直接提供与上表相同的 bottle rebuild / SHA 证明；不能直接记作“复用成功”。严格采用上表制品身份时，须先证明本机项匹配，否则列为需要重新安装的同版本项，并纳入授权和反向依赖核对；不能因版本相同跳过。
+同版本四项为 gettext 1.0、libunistring 1.4.2、libyaml 0.2.5、xz 5.8.4。本机收据显示来自 macOS 26 / 26.6 构建，且没有直接提供与上表相同的 bottle rebuild / SHA 证明；不能直接记作“复用成功”。专用方案将这四项也按固定制品新装，不复用或重装这些共享项；此处差异仅说明为什么不能仅按版本号证明身份。
 
-30 项全部制品的 registry 大小元数据合计下载 **166,586,895 字节**、安装大小 **930,446,628 字节**。这是整套候选的容量参考，含可能重装的四项，不是净新增占用，也不含缓存、旧 keg、本地配方、安装中间产物及额外反向依赖动作。其中 QEMU 本体为 113,262,802 / 728,988,917 字节（下载 / 安装）。均未下载或实测占盘。若必须改为源码构建，重新说明工具、版本、资源和时长，不沿用此估计。
+30 项全部制品的 registry 大小元数据合计下载 **166,586,895 字节**、安装大小 **930,446,628 字节**。这是专用前缀内完整 30 项的容量参考，不含 Homebrew / portable Ruby bootstrap、下载缓存、本地配方、临时目录和恢复副本；不是实际净占盘测量。其中 QEMU 本体为 113,262,802 / 728,988,917 字节（下载 / 安装）。均未下载或实测占盘。若必须改为源码构建，重新说明工具、版本、资源和时长，不沿用此估计。
 
 时间仅作预算：Rust 与 QEMU 下载安装合计约 10–30 分钟，首次 Linux 工具镜像构建约 5–15 分钟，受网络与缓存影响，尚未测量。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
 
@@ -284,10 +360,10 @@ Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL �
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
-| 安装前身份核对 | Rust 日期 manifest 与组件可用；固定 formula 实际解析到第 2.2 节的 30 项版本 / revision / rebuild / bottle 哈希，解决 tap / keg 来源冲突；Debian 平台 digest、快照签名经实际 apt / sqv 策略验证，包身份及求解匹配 | 缺包、混入 OpenSSL 4、哈希不符、版本漂移或额外安装 / 重装项则停在该项；不自动换源或选 latest，先列出差异 |
+| 安装前身份核对 | Rust 日期 manifest 与组件可用；固定 formula 实际解析到第 2.2 节的 30 项版本 / revision / rebuild / bottle 哈希，核对专用前缀隔离与重定位条件；Debian 平台 digest、快照签名经实际 apt / sqv 策略验证，包身份及求解匹配 | 缺包、混入 OpenSSL 4、哈希不符、版本漂移或额外安装 / 重装项则停在该项；不自动换源或选 latest，先列出差异 |
 | Rust 工具可运行 | 显式 `cargo +nightly-2026-10-13 -V` / `rustc +nightly-2026-10-13 -Vv`，核对已装 target / 组件及 rust-lld | 避免 `RUSTUP_TOOLCHAIN=1.96.0` 干扰；不改用户全局默认；版本输出仅证明工具可执行 |
 | QEMU 功能枚举 | `qemu-system-x86_64 --version`、`-machine help`、`-accel help`、`-display help` 与 `qemu-img --version`；记录实际支持的精确 pc-q35-* 名称、TCG 和显示后端 | 当前没有独立 CLI，因此不编造最终机器版本；若缺 TCG 或所需后端，不降低为另一架构 / 加速器冒充通过 |
-| 宿主链接与共享影响 | 安装授权后核对 QEMU / libssh 的 `otool -L`、递归库来源与链接检查，确认目标 OpenSSL 3；对涉及的 Git / ripgrep / leveldb / librime / FFmpeg / Ruby 等执行风险匹配的代表性验证 | 元数据 ABI 标记不能替代运行证据；不能全局屏蔽反向依赖检查来宣称安全；失败时保留旧 keg / 原 opt 指向及日志，报告影响后按明确范围恢复，不批量卸载 |
+| 宿主链接与共享影响 | 安装授权后核对 QEMU / libssh 的 `otool -L`、递归库 / LC_RPATH / 脚本来源，确认专用 OpenSSL 3；共享收据和链接基线须未变，按风险补共享工具代表性检查 | 元数据 ABI 标记不能替代运行证据；不能全局屏蔽反向依赖检查来宣称安全；失败时隔离专用环境并按第 2.4 节恢复；若共享基线异常，先确认归属，不盲目回写或批量卸载 |
 | 固件核对 | 读安装包 descriptor、许可证、两个文件尺寸与 SHA-256；代码只读，VARS 每次从模板复制 | 描述文件与实体路径不一致、架构不符则失败；不能用“有 .fd”证明可启动 |
 | Linux 工具可运行 | 在项目专用 ARM64 容器读取 dpkg 精确包版本、sgdisk / mkfs.fat / mtools 版本；记录基础与最终镜像 digest、完整包清单 | 不进入其他项目容器；没有目标包不得报告环境就绪；不使用 privileged 或透传宿主设备 |
 | 工具制镜像验证 | 只对新建普通文件生成规划中的 1 GiB / 512 字节扇区 GPT、128 MiB FAT32 ESP 和 DATA；检查主备 GPT、边界及 FAT；合成文件复制后用独立读取路径对照内容哈希 | 不把制盘工具成功当作内核持久化通过；读盘前确保无活动 guest，不自动修复损坏样本 |
