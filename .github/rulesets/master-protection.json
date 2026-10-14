@@ -45,7 +45,8 @@
         "strict_required_status_checks_policy": true,
         "required_status_checks": [
           {
-            "context": "Candidate Quality"
+            "context": "Candidate Quality",
+            "integration_id": 15368
           }
         ]
       }
