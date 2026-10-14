@@ -1,1 +1,1 @@
-Temporary governance verification: intentionally missing final newline
+Temporary governance verification: final newline restored.
