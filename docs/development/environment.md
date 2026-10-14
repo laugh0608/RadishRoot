@@ -17,8 +17,8 @@
 | 独立 QEMU CLI | PATH 未发现 `qemu-system-x86_64`、`qemu-img`；Homebrew Cellar 无 qemu | 项目自动化运行入口缺失 |
 | UTM | `/Applications/UTM.app` 4.7.5；内置 QEMU 与 qemu-img 动态库含 10.0.2 版本字符串 | `file` 确认是 Mach-O shared library，并非可直接运行的 CLI；版本来自静态字符串，未执行 guest |
 | UTM 固件 | `Contents/Resources/qemu/edk2-x86_64-code.fd` 与 `edk2-i386-vars.fd` | 配对 JSON 声明 x86_64、pc-q35-*；没有启动证据，不能把 ARM 固件代入 |
-| Linux 服务 | OrbStack 2.2.4；Docker context 为 orbstack，CLI / server 均为 29.8.2，服务为 linux / aarch64 | 只读 API 已成功；没有启动、拉取或进入容器，制镜像包状态未知 |
-| 镜像 / 引导工具 | PATH 未发现 sgdisk、gdisk、mkfs.fat、fsck.fat、mformat、mcopy、mdir、xorriso、limine | Linux 工具环境与 Limine 资产尚未建立；不是全机不存在的断言 |
+| Linux 服务 | OrbStack 2.2.4；Docker context 为 orbstack，CLI / server 均为 29.8.2，服务为 linux / aarch64 | 初次盘点只读 API 成功；后续已拉取固定 Debian digest 并在两个任务容器完成 apt / sqv 验证，容器已清理，未安装工具包 |
+| 镜像 / 引导工具 | PATH 未发现 sgdisk、gdisk、mkfs.fat、fsck.fat、mformat、mcopy、mdir、xorriso、limine | 宿主搜索不是全机不存在的断言；固定 Debian 容器实测五个候选包均未安装，模拟求解通过；Linux 工具环境与 Limine 资产仍未建立 |
 | 系统辅助工具 | hdiutil、diskutil、newfs_msdos、fsck_msdos、file、shasum 存在 | 不用这些存在性证据替代规划中的固定 Linux GPT/FAT 工具环境 |
 
 Rust 可执行文件位于 `~/.rustup/toolchains/<toolchain>/bin/`；本轮直接调用已安装二进制及 rustup 的 installed 查询，未执行工具链安装或更新。官方说明 `x86_64-unknown-none` 有预编译组件，支持 no_std，使用 alloc 需提供 allocator；目标本身不强制 nightly。项目仍沿用固定日期 nightly 方向，具体依赖功能通过实际编译确认。[Rust target 说明](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html)
@@ -40,7 +40,7 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 | Rust 安装集 | minimal profile + rust-src、rustfmt、clippy；target 为 `x86_64-unknown-none` | 不增加其他 target；使用工具链自带 rust-lld，暂不增加 llvm-tools、GDB 或交叉 GCC |
 | QEMU | Homebrew `qemu 11.1.2`，formula revision 0、bottle rebuild 0，`arm64_golden_gate` | 官方 formula API 提供匹配 macOS 27 ARM64 的 bottle；来源身份及哈希见下表 |
 | x86_64 UEFI | 上述 QEMU 11.1.2 包内的 `edk2-x86_64-code.fd` + `edk2-i386-vars.fd` | QEMU 对应 tag 的 README 标明固件源为 `edk2-stable202302`；最终以安装包文件、descriptor 与实测哈希核对，不借用 UTM 文件 |
-| Linux 基础环境 | `debian:trixie-20261005-slim`，`linux/arm64/v8` | registry index → ARM64 manifest 映射与响应哈希已核对，见第 2.1 节；未拉取镜像层 |
+| Linux 基础环境 | `debian:trixie-20261005-slim`，`linux/arm64/v8` | registry index → ARM64 manifest 映射与响应哈希已核对，见第 2.1 节；已按该 digest 拉取并执行第 2.5 节验证 |
 | GPT | Debian trixie ARM64 `gdisk=1.0.10-2+b1` | 提供 sgdisk；不能误用该包 amd64 的 `1.0.10-2` 修订 |
 | FAT 格式 / 检查 | Debian trixie ARM64 `dosfstools=4.2-1.2` | 提供 mkfs.fat、fsck.fat |
 | FAT 文件访问 | Debian trixie ARM64 `mtools=4.0.48-1` | 提供 mcopy、mdir 等，可操作普通镜像文件 |
@@ -59,13 +59,13 @@ Linux：[Official Images 标签声明](https://github.com/docker-library/officia
 | QEMU arm64_golden_gate bottle | `a399faaf2f8fb45d3b1f35704041a9104f7f717e9fda1b12d4deac9e919d0d33` |
 | Debian ARM64 构建产物 manifest | `sha256:a2ca65377c251208de42e1a2722cb949211236c161b634f6f3663754e2d06850` |
 
-这些归档未下载，哈希来自官方文本元数据。Debian 日期标签映射已补齐，未来拉取应使用下述 ARM64 digest；不能把元数据核对视为基础镜像已经下载、启动或可信执行。
+Rust / QEMU 归档未下载，表内哈希来自官方文本元数据。Debian 日期标签映射已补齐，并已按下述 ARM64 digest 拉取与运行任务验证容器；具体运行证据见第 2.5 节，不把原先的元数据核对本身当成执行证明。
 
 QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8879edf2f4c2440a4990557762764fc7f46767a26929d355215c7` 一致；固定来源见第 2.3 节。普通 `brew install qemu` 会随 formula 变化，不能视为永久精确安装命令。
 
 ### 2.1 Debian registry 映射与工具包影响
 
-通过 Docker Hub 的匿名 registry 读取日期标签 index，再按平台 descriptor 读取 ARM64 manifest；两份响应均重新计算 SHA-256，与 registry 标识 / descriptor 一致。读取的是 JSON 元数据，没有请求镜像层内容。
+通过 Docker Hub 的匿名 registry 读取日期标签 index，再按平台 descriptor 读取 ARM64 manifest；两份响应均重新计算 SHA-256，与 registry 标识 / descriptor 一致。映射核对时只读取 JSON 元数据；后续经明确授权拉取镜像层并运行验证，见第 2.5 节。
 
 | 证据 | 精确值 |
 | --- | --- |
@@ -74,11 +74,11 @@ QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8
 | 选定平台 | `linux/arm64/v8` |
 | 选定 manifest / 后续拉取身份 | `docker.io/library/debian@sha256:a2ca65377c251208de42e1a2722cb949211236c161b634f6f3663754e2d06850` |
 | 上游构建来源 revision | `cf1f4a45447842b45e9952e0f018ae734a7341c7` |
-| layer 元数据 | 30,200,282 字节；`sha256:bbeda6b4abb749f743f4547ef5a28070a14de8caef211daa5afb78d5b5fa21ba`；未下载 |
+| layer 元数据 | 30,200,282 字节；`sha256:bbeda6b4abb749f743f4547ef5a28070a14de8caef211daa5afb78d5b5fa21ba`；Docker 按固定 manifest 拉取完成 |
 
 来源为 [registry 日期标签](https://registry-1.docker.io/v2/library/debian/manifests/trixie-20261005-slim)与 [ARM64 构建包清单](https://github.com/debuerreotype/docker-debian-artifacts/blob/cf1f4a45447842b45e9952e0f018ae734a7341c7/trixie/slim/rootfs.manifest)。registry 查询需要匿名 pull scope token，token 不写入文档或日志。
 
-对照基础包清单与已验证的 `20261005T000000Z` trixie main ARM64 Packages 索引，按 `--no-install-recommends` 推导以下五包新增；基础 libc6、libgcc-s1、libstdc++6、libtinfo6、libuuid1 等已满足这些包的必需版本。未运行 apt 求解器或容器，因此这是元数据推导，不是安装事务保证。
+对照基础包清单与已验证的 `20261005T000000Z` trixie main ARM64 Packages 索引，按 `--no-install-recommends` 推导以下五包新增；基础 libc6、libgcc-s1、libstdc++6、libtinfo6、libuuid1 等已满足这些包的必需版本。此元数据推导已由固定镜像内的实际 apt 模拟求解确认，见第 2.5 节；没有安装包，不构成真实安装事务保证。
 
 | 新增包 | 精确版本 | 包下载字节 | Installed-Size（KiB） | 包 SHA-256 |
 | --- | --- | --- | --- | --- |
@@ -96,7 +96,7 @@ QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8
 
 本机未发现 gpg / gpgv；没有为核验安装它们。临时核验程序按 OpenPGP v4 格式解析实际的 RSA 签名，用已有 Python cryptography 验证 RSA PKCS#1 v1.5；校验主钥指纹、签名子钥绑定、子钥交叉认证与子钥到期时间，再验证三个 InRelease 的规范化正文。另用已有 OpenSSL 3.6.4 的 `dgst -sha256 -verify` 对提取的三个签名独立调用复核，均返回 `Verified OK`。正文改动和签名位翻转的负向样本均被拒绝。未执行下载的 formula 或安装脚本。
 
-信任锚来自 Debian 官方 HTTPS 公钥文件，主钥 / 子钥指纹同时对照 [FTP master 公钥页](https://ftp-master.debian.org/keys.html)和 [2025 年公钥公告](https://lists.debian.org/debian-devel-announce/2025/04/msg00001.html)。这是对这些固定签名的密码学复核，**不是 apt / sqv 的完整策略验证**；没有建立离线预置信任锚、运行通用 OpenPGP 验证器或核验所有并列签名。基础清单提供 debian-archive-keyring 2025.1、apt 3.0.3、sqv 1.3.0-3+b2，获得相应容器执行授权后仍须通过这些实际组件核验源与求解；临时解析程序不进入安装信任路径。
+信任锚来自 Debian 官方 HTTPS 公钥文件，主钥 / 子钥指纹同时对照 [FTP master 公钥页](https://ftp-master.debian.org/keys.html)和 [2025 年公钥公告](https://lists.debian.org/debian-devel-announce/2025/04/msg00001.html)。这项早期证据是固定签名的密码学复核，**本身不等于 apt / sqv 的策略验证**，也没有建立离线预置信任锚或核验所有并列签名。后续已在固定镜像内使用 debian-archive-keyring 2025.1、apt 3.0.3、sqv 1.3.0-3+b2 完成实际验证，见第 2.5 节；早期临时解析程序没有进入 APT 信任路径。
 
 | 公钥用途 | 主钥指纹 | 已验证签名子钥指纹 | 公钥文件 SHA-256 |
 | --- | --- | --- | --- |
@@ -115,7 +115,7 @@ QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8
 
 trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updates / security 的 Date 分别为 2026-10-04 20:10:33 / 22:05:35 UTC，Valid-Until 分别为 2026-10-11 的同一时刻，核对当日已过期。签名正确不代表有效期检查通过。后续历史重现须仅对这组固定 snapshot 源设置 `Check-Valid-Until: no`，保留明确的 Signed-By、签名与包哈希校验；不全局禁用检查，不使用 trusted=yes / AllowInsecureRepositories，也不静默切回移动源。[snapshot 使用说明](https://snapshot.debian.org/#usage)、[APT 源配置](https://manpages.debian.org/trixie/apt/sources.list.5.en.html)
 
-五个新增包没有声明 Pre-Depends、Conflicts 或 Breaks；必需 Depends 逐项检查后，已有 libc6 2.41-12+deb13u4、libgcc-s1 / libstdc++6 / gcc-14-base 14.2.0-19、libtinfo6 6.5+20250216-2、libuuid1 2.41.5-0+deb13u1 满足版本限制，包括 libncursesw6 对 libtinfo6 的精确等号要求。新增包所需的这些基础依赖递归仍由既有基础集合满足。updates 没有这五包，security 也未提供它们的其他候选；因此元数据结论仍为新增五包、无需因这五包升级基础库，不等于已经运行 apt 模拟事务。
+五个新增包没有声明 Pre-Depends、Conflicts 或 Breaks；必需 Depends 逐项检查后，已有 libc6 2.41-12+deb13u4、libgcc-s1 / libstdc++6 / gcc-14-base 14.2.0-19、libtinfo6 6.5+20250216-2、libuuid1 2.41.5-0+deb13u1 满足版本限制，包括 libncursesw6 对 libtinfo6 的精确等号要求。新增包所需的这些基础依赖递归仍由既有基础集合满足。updates 没有这五包，security 也未提供它们的其他候选；元数据结论为新增五包、无需因这五包升级基础库；第 2.5 节的实际 apt 模拟事务已得到同样结果。
 
 固定基础包清单 SHA-256 为 `d36f1afce31468d16ff66da178751c73bfd5347271f8411015f8b937cd3b1132`。其中没有 ca-certificates，不能把宿主 HTTPS 查询成功推成容器 HTTPS 已可用；实际构建须遵循已审阅源模板的传输方式与签名校验，若改用需要新增 CA 包的方式，应重新记录依赖影响。新增包须纳入安装清单与授权范围。
 
@@ -287,13 +287,13 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 
 后续升级前停止任务进程，为**完整专用前缀及任务配置**制作保留权限 / 符号链接的独立副本，不与待升级文件使用硬链接；记录清单与哈希。失败后将故障目录留证，恢复上一已验证副本到完全相同的 `/opt/rrt01`，再验身份与功能。不承诺任意新路径可运行，也不把改名或单个库降级当作恢复完成。该恢复流程尚未演练。
 
-### 2.5 Debian apt / sqv 的后续验证步骤
+### 2.5 Debian apt / sqv 验证方法与实测
 
-以下步骤独立于宿主 QEMU 安装，需要另获拉取固定镜像与运行任务容器的授权；**本轮未执行**。目标是把第 2.1 节的密码学 / 元数据证据补成基础镜像实际组件的策略与模拟求解证据，不安装五个工具包。
+以下方法独立于宿主 QEMU 安装。已于 2026-10-14 在用户明确授权的固定 digest 临时容器内完成，实测结果见本节末尾；只验证签名、历史快照有效期与模拟求解，不安装五个工具包。重现时仍需覆盖镜像拉取和容器执行的授权。
 
 1. 仅拉取第 2.1 节 ARM64 manifest digest，记录实际平台、image ID 与容器 ID。使用任务专用临时容器和 `/work` 写入区，不使用 privileged、宿主设备、Docker socket 或其他项目卷；宿主只提供只读公开核验材料。核对镜像内 apt 3.0.3、sqv 1.3.0-3+b2、debian-archive-keyring 2025.1 和完整 dpkg 清单；保存 `/var/lib/dpkg/status` 哈希。版本或基础清单不符即停止。
 2. **离线 sqv。** 在 network=none 的容器内先读 `sqv --help`，使用镜像自带的 `/usr/share/keyrings/debian-archive-trixie-automatic.gpg` 验 trixie / updates，使用 `debian-archive-trixie-security-automatic.gpg` 验 security。命令形式为 `sqv --cleartext --signatures=1 --keyring=<对应 keyring> --output=<新的 Release 输出> <InRelease>`。记录 UTC 时间、keyring 哈希、工具版本、退出码及签名者；使用默认当前策略，不回拨时间、不放宽证书策略。三个都成功后，按输出 Release 重新校验压缩与解压索引。另用独立副本测试正文篡改和错误 keyring，必须失败；不能覆盖原证据。[sqv 1.3 手册](https://manpages.debian.org/trixie/sqv/sqv.1.en.html)、[keyring 包文件清单](https://packages.debian.org/trixie/all/debian-archive-keyring/filelist)
-3. **隔离 APT。** 新的网络阶段容器继续使用相同 digest；APT_CONFIG 指向 `/work/apt.conf`。先设置 `Dir::Etc::parts` / `main` 为 `-`，禁用镜像内额外配置 / hooks，再指定 sourcelist 为 `/work/snapshot.sources`、sourceparts 为 `-`，lists 为全新 `/work/lists`，archives 为 `/work/archives`，status 仍读 `/var/lib/dpkg/status`，pkgcache / srcpkgcache 为空。目录为 `_apt` 提供必要权限，不用关闭下载沙盒补救。用 apt-config dump 核对最终设置，不继承代理凭据或策略覆盖；记录输出时不包含秘密。
+3. **隔离 APT。** 新的网络阶段容器继续使用相同 digest；APT_CONFIG 指向 `/work/apt.conf`。将 `Dir::Etc::parts` 指向已创建的任务空配置目录、`main` 指向空配置文件，以隔离镜像额外配置 / hooks；sourcelist 指向 `/work/snapshot.sources`、sourceparts 指向任务空源目录，lists 为全新 `/work/lists`，archives 为 `/work/archives`，status 仍读 `/var/lib/dpkg/status`，pkgcache / srcpkgcache 为空。目录为 `_apt` 提供必要权限，不用关闭下载沙盒补救。用 apt-config dump 核对最终设置，不继承代理凭据或策略覆盖；记录输出时不包含秘密。不要把 parts 设为 `-`：APT 3.0.3 会尝试读取 `/etc/apt/-/` 并产生目录缺失警告。不同重跑使用新的任务子目录，不复用旧 lists。
 
 源文件仅包含以下两个 deb822 stanza；HTTP 沿用已审阅 snapshot 模板，避免为基础镜像缺 CA 而新增包，真实性继续由 Signed-By 和索引 / 包哈希保证。`Check-Valid-Until: no` 只处理这组历史快照的已知过期；保留 Check-Date 和签名检查，不设置 Trusted 或允许不安全仓库。
 
@@ -315,7 +315,7 @@ Signed-By: /usr/share/keyrings/debian-archive-trixie-security-automatic.gpg
 Check-Valid-Until: no
 ```
 
-4. **实际 APT 更新与策略。** 执行 `apt-get -o APT::Update::Error-Mode=any -o Debug::Acquire::gpgv=true update`，要求退出 0，记录实际 sqv 验证链；不能出现未认证源、NO_PUBKEY 或下载失败后沿用旧索引。按第 2.1 节比对收到的三个 InRelease；若 APT 另存 lz4 等格式，用镜像自带 apt-helper cat-file 解码，再核对已认证的 Packages 哈希。另开全新 lists 目录，移除源内 Check-Valid-Until 例外，确认 updates / security 因过期而失败；不将该负向结果用于后续求解。[apt-get 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)、[APT 配置顺序](https://manpages.debian.org/trixie/apt/apt.conf.5.en.html)
+4. **实际 APT 更新与策略。** 执行 `apt-get -o APT::Update::Error-Mode=any -o Debug::Acquire::sqv=true -o Debug::pkgAcquire::Auth=true update`，要求退出 0，记录实际 sqv 验证链；需要方法协议细节时额外启用 `Debug::pkgAcquire::Worker=true`。本版本的 gpgv 调试开关不产生所需的 sqv 调用日志；不能出现未认证源、NO_PUBKEY 或下载失败后沿用旧索引。按第 2.1 节比对收到的三个 InRelease；若 APT 另存 lz4 等格式，用镜像自带 apt-helper cat-file 解码，再核对已认证的 Packages 哈希。另开全新 lists 目录，移除源内 Check-Valid-Until 例外，确认 updates / security 因过期而失败；不将该负向结果用于后续求解。[apt-get 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)、[APT 配置顺序](https://manpages.debian.org/trixie/apt/apt.conf.5.en.html)
 5. **只模拟求解。** 先用 apt-cache policy 核对五包的版本与快照来源，再在成功更新的配置下执行下列命令。必须得到 0 upgraded、5 newly installed、0 removed，Inst 恰好是表内五个精确版本，不能有基础包升级或额外 recommends。输出即使退出 0，集合不符也判失败。
 
 ```sh
@@ -324,7 +324,32 @@ apt-get --simulate --no-install-recommends --no-remove install \
   libncursesw6=6.5+20250216-2 libpopt0=1.19+dfsg-2
 ```
 
-6. **收尾。** 再次核对 dpkg status 哈希和包清单未变、archives 内无下载的 deb，保存命令、退出码和必要公开输出；退出并移除本任务容器及专用临时数据，保留证据时记录位置。只删除归属明确的镜像 / 缓存，不做全局 prune。失败时修正明确原因后重跑对应步骤，不关闭签名、改用移动源或实际安装来“试出”答案。只有这套实际流程通过才能补记 apt / sqv 验证；工具包安装与制镜像仍是后续动作。
+6. **收尾。** 再次核对 dpkg status 哈希和包清单未变、archives 内无下载的 deb，保存命令、退出码和必要公开输出；退出并移除本任务容器及专用临时数据，保留证据时记录位置。只删除归属明确的镜像 / 缓存，不做全局 prune。失败时修正明确原因后重跑对应步骤，不关闭签名、改用移动源或实际安装来“试出”答案。只有这套实际流程通过才能记录 apt / sqv 验证；工具包安装与制镜像另按授权执行。
+
+#### 2026-10-14 实测结果
+
+验证使用固定 manifest `sha256:a2ca65377c251208de42e1a2722cb949211236c161b634f6f3663754e2d06850`；Docker inspect 返回 image ID 同值、`linux/arm64`，逻辑 Size 为 138,708,925 字节。初始本地不存在此镜像，本轮拉取成功。容器内 78 项完整包清单逐字匹配第 2.1 节的固定基础清单；用 `dpkg-query` 的 `${binary:Package}` 保留多架构后缀，不能用缺少后缀的 `${Package}` 误报版本差异。
+
+| 检查 | 实际结果 | 证据边界 |
+| --- | --- | --- |
+| 组件身份 | apt 3.0.3；sqv 包 1.3.0-3+b2，程序 1.3.0 / sequoia-openpgp 2.0.0 / Nettle 3.10；keyring 2025.1 | 使用基础镜像自带组件，没有另装验证器 |
+| 离线签名 | network=none；main / updates / security 的 sqv 均退出 0 | main / updates 输出 Debian 13 自动签名主钥指纹，security 输出对应安全主钥；均与第 2.1 节一致 |
+| 签名负向 | 三份正文篡改、三次错误 keyring，共六项均退出 1 | 保留原始证据，负向副本未用于 APT 更新 |
+| 索引链 | sqv 输出的 Release 验证三个压缩 / 解压 Packages 的大小与 SHA；APT 收到的三个 InRelease 与解码 Packages 再逐字匹配既有证据 | 未下载 .deb；不声明包体哈希实测通过 |
+| APT 源策略 | 全新隔离 lists 的 update 退出 0，无 W:/E:、NO_PUBKEY 或下载沙盒降级；调用日志显示 `/usr/bin/sqv`，三次退出 0、三次 Signature verification succeeded | Signed-By 仅相应 Debian 13 keyring；保持不安全源禁止与日期检查 |
+| 有效期负向 | 新 lists、仅 updates / security，去掉源内有效期例外后 update 退出 100；两源分别报 Release expired | 证明历史快照例外有必要；没有关闭签名或全局日期检查 |
+| 五包求解 | `0 upgraded, 5 newly installed, 0 to remove and 0 not upgraded`；Inst 恰为第 2.1 节五包及精确版本 | apt-cache policy 均为未安装、候选来自固定 trixie/main；groff-base / libgpm2 未进入事务 |
+| 无安装与清理 | 前后完整包清单相同，dpkg status SHA 相同，archives 无 .deb；两个任务容器最终退出 0 后删除，标签查询无残留 | 镜像缓存保留，无容器或后台验证进程；没有制镜像、QEMU 安装或业务实现 |
+
+独立 sqv 在 2026-10-14 13:33:50 UTC 开始，使用默认策略；APT 成功事务在 13:36:08 UTC 开始。APT 补采调用日志显示其自行传入 `--policy-as-of 2027-10-14`，本任务没有覆盖该策略日期，也没有回拨时钟。受限 keyring 的独立 sqv 诊断包含缺少其他并列签名公钥的提示；指定的 Debian 13 签名已满足 `--signatures=1`，不能把未验证的其他并列签名记作通过。
+
+| 容器内文件 | SHA-256 |
+| --- | --- |
+| `/usr/share/keyrings/debian-archive-trixie-automatic.gpg` | `8dbd0029697f8c9b009eeb9a153c6536b62ca031fa0a5b4cec74e8d718fccef6` |
+| `/usr/share/keyrings/debian-archive-trixie-security-automatic.gpg` | `be1a7981908ab9010352131fcbf101a9556f6a61db76a19a1c146d31ef2d72d8` |
+| `/var/lib/dpkg/status`（签名 / 求解前后相同） | `56d3fd5a297bdf152d897f3b39dd7d573d9941e0e69df3279e4ad5aada17cdb4` |
+
+这关闭的是固定 Debian 基础环境的签名策略、过期拒绝和五包模拟求解缺口。五包仍未安装，工具可运行、工具镜像构建与 GPT/FAT 操作均无通过证据；T01 裸机编译也未进行。
 
 ## 3. 安装影响与清理边界
 
@@ -356,7 +381,7 @@ Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL �
 
 ## 4. 分层验证方案
 
-以下均为后续执行方案，不能勾作本轮通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。仅 Debian 签名 / 快照策略与模拟求解已取得第 2.5 节实测证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
@@ -374,7 +399,7 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD 与本地安装收据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、完整 formula 求解 / 动态链接及所有产品行为仍未验证。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查和模拟求解。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、完整 formula 求解 / 动态链接及所有产品行为仍未验证。
 
 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，访问代理失败；其失败不能算安装清单查询成功，后续改为只读 Cellar。Docker API 首次被沙盒拒绝，经同一只读目标的权限批准后返回服务版本与架构。sysctl 硬件查询被权限限制，未据此填入 CPU 型号或内存容量。以上都没有启动服务或安装依赖。
 
