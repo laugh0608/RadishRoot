@@ -9,7 +9,7 @@ RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产
 | 层级 | 实际状态 |
 | --- | --- |
 | 本地治理检查 | 30 个正式文件检查、13 项回归通过；两份根入口逐字一致 |
-| Git / 远端 | 已连接 [laugh0608/RadishRoot](https://github.com/laugh0608/RadishRoot)；master 保留首次基线 8e6b019，本轮治理更新在 dev 维护；日常继续 dev |
+| Git / 远端 | 已连接 [laugh0608/RadishRoot](https://github.com/laugh0608/RadishRoot)；master 为稳定主线，dev 为日常开发分支；治理晋级与回流的具体提交及检查证据保存在对应 PR |
 | 默认分支与合并 | 默认 master；允许 merge / rebase，禁止 squash；关闭自动合并与自动删除 head branch |
 | master Ruleset | [25073496](https://github.com/laugh0608/RadishRoot/rules/25073496) 为 active，仅覆盖 master；要求 PR、解决讨论、严格最新的 Candidate Quality；禁止删除 / 强推；0 审批，管理员仅 PR 内 bypass |
 | 检查来源与权限 | Candidate Quality 绑定实测 GitHub Actions App 15368；工作流默认只读，不能审批 PR |
@@ -29,8 +29,8 @@ RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产
 
 ## 下一项与停止线
 
-后续普通开发继续在 dev，阶段晋级通过 PR 到 master，合并后先回流 dev。本轮状态更新不直接提交 master，不创建产品 Release 或部署。
+后续普通开发继续在 dev。治理更新按用户要求通过 dev → master PR 晋级，检查通过后使用 merge commit，随后先回流并推送 dev；具体完成状态与提交 SHA 记录在该 PR，避免在提交正文嵌入尚未生成的 merge SHA。不直接推送 master，不创建产品 Release 或部署。
 
 业务实施收到指令后从 T01 开始，只读盘点 Rust、QEMU、固件与镜像工具，列出版本、缺口和安装影响，再建立最小编译入口。T02–T05 先取得写回、重启与宿主独立读盘证据，随后 T06–T13 形成真实图形闭环。实施前记录每周投入；94 人日仅为估算，M0 / M1 后按实测重估。
 
-本轮授权覆盖默认分支、PR 合并选项、Ruleset、必要验证和状态同步；此前“暂不连接远端”已由用户后续指令替换。原创许可、产品工具链 / 依赖版本、Live 来源与性能预算仍待确定；业务实现、依赖安装、VM 和发布未开始。
+远端治理配置已完成；本轮新增授权覆盖治理晋级 PR、检查通过后的 merge commit 合并及 master → dev 回流。原创许可、产品工具链 / 依赖版本、Live 来源与性能预算仍待确定；业务实现、依赖安装、VM 和发布未开始。
