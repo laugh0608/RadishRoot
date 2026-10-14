@@ -1,0 +1,29 @@
+# 本地环境与编辑器
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+
+# 构建、缓存、临时材料与运行证据
+/target/
+/dist/
+/work/
+/artifacts/
+/evidence/
+/runtime/
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# 磁盘、固件变量与安装介质仅由发布/验收流程管理
+*.img
+*.raw
+*.qcow2
+*.iso
+*.fd
+
+# 文档 assets 中的正式插图与以后引入的 Cargo.lock 应纳入版本管理
