@@ -389,6 +389,8 @@ docker run --rm --network none --cap-drop ALL \
 
 标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。工具版本 / 帮助和动态链接通过仅证明可执行入口可用，尚未验证 GPT/FAT 文件写入、独立读回、故障样本或产品 AT；未创建任何测试盘，也未安装 QEMU / nightly。
 
+构建脚本仅供上述 Dockerfile 在固定容器内执行，不在 macOS 宿主直接运行。APT 更新、五包体核验、安装和完整清单对照是构建内检查；表中的七条 CLI 命令、ldd 和运行前后状态比较是本次构建后的独立验收，不由 Dockerfile 或现有 PR Checks 自动执行。修改配方后，应核对新镜像的固定输入与包清单，并在新 ID 上重新执行对应工具验收，不能沿用旧 ID 的成功记录。`sh -n tools/debian-image/build-image.sh` 只检查 shell 语法；`python3 scripts/check-repo.py` 只检查仓库治理，两者都不能替代真实构建。
+
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |

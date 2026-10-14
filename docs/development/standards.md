@@ -37,6 +37,8 @@
 
 工程建立前，仓库治理已有独立真实入口 `python3 scripts/check-repo.py`，只依赖 Python 3.10+ 标准库；回归用 `python3 -B -m unittest discover -s scripts/tests -v`。它不运行 Rust 或 VM。未来迁入 xtask 时保留单一实现，不在 Python 与 Rust 中复制两套政策。检查范围及限制见[仓库治理](../governance/repository-governance.md)。
 
+开发工具环境使用 [tools/debian-image/Dockerfile](../../tools/debian-image/Dockerfile) 构建，由容器内的 build-image.sh 核对固定来源并安装工具；脚本不是宿主安装入口，也不是产品制盘 / 运行入口。构建参数、包清单与验收方法统一见[开发环境清单第 2.6 节](environment.md)。后续 xtask 若使用此工具环境，应调用同一配方，不复制包版本与安装逻辑。仓库治理检查只检查这些文件的文本规范，不自动构建镜像或验收工具行为。
+
 | 改动 | 必要相关验证 |
 | --- | --- |
 | 文档 / 治理 | 本地链接、UTF-8 / LF / 末尾换行、根入口同步、范围 / T / AT 与依赖引用 |

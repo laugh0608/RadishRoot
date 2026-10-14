@@ -24,7 +24,7 @@ RadishRoot 的原创许可证尚未选择。建立文档、治理工具与后续
 
 2026-10-14 治理补全只读参考 Radish、RadishMind、RadishCatalyst、RadishFlow、RadishAxiom；相关路径、HEAD 与采用 / 排除理由见 [ADR 0002](../adr/0002-repository-foundation.md)。按原则重新组织本项目文件，没有整包迁入兄弟代码、测试、素材或 LICENSE；HEAD 仅标记参考时点，工作树内容不是依赖锁。
 
-CI 声明使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1630ceea73d27597364c9af683`，上游为 MIT：[release](https://github.com/actions/checkout/releases/tag/v4.2.2)、[LICENSE](https://github.com/actions/checkout/blob/v4.2.2/LICENSE)。本地未下载或执行该 Action；后续运行由 GitHub runner 获取，仅用于 CI，不进入系统镜像。宿主已有 Python 标准库用于治理检查，无新增 pip 依赖；它不是 guest 运行依赖。任何后续打包分发须按实际清单重新核对。
+CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1630ceea73d27597364c9af683`，上游为 MIT：[release](https://github.com/actions/checkout/releases/tag/v4.2.2)、[LICENSE](https://github.com/actions/checkout/blob/v4.2.2/LICENSE)。2026-10-14 已由 GitHub hosted runner 获取并执行，真实 Actions 证据见[月度日志](../devlogs/2026-10.md)；本地未执行该 Action。它仅用于 CI，不进入系统镜像。宿主已有 Python 标准库用于治理检查，无新增 pip 依赖；它不是 guest 运行依赖。任何后续打包分发须按实际清单重新核对。
 
 ## 本地开发工具清单
 
