@@ -17,8 +17,8 @@
 | 独立 QEMU CLI | PATH 未发现 `qemu-system-x86_64`、`qemu-img`；Homebrew Cellar 无 qemu | 项目自动化运行入口缺失 |
 | UTM | `/Applications/UTM.app` 4.7.5；内置 QEMU 与 qemu-img 动态库含 10.0.2 版本字符串 | `file` 确认是 Mach-O shared library，并非可直接运行的 CLI；版本来自静态字符串，未执行 guest |
 | UTM 固件 | `Contents/Resources/qemu/edk2-x86_64-code.fd` 与 `edk2-i386-vars.fd` | 配对 JSON 声明 x86_64、pc-q35-*；没有启动证据，不能把 ARM 固件代入 |
-| Linux 服务 | OrbStack 2.2.4；Docker context 为 orbstack，CLI / server 均为 29.8.2，服务为 linux / aarch64 | 初次盘点只读 API 成功；后续已拉取固定 Debian digest 并在两个任务容器完成 apt / sqv 验证，容器已清理，未安装工具包 |
-| 镜像 / 引导工具 | PATH 未发现 sgdisk、gdisk、mkfs.fat、fsck.fat、mformat、mcopy、mdir、xorriso、limine | 宿主搜索不是全机不存在的断言；固定 Debian 容器实测五个候选包均未安装，模拟求解通过；Linux 工具环境与 Limine 资产仍未建立 |
+| Linux 服务 | OrbStack 2.2.4；Docker context 为 orbstack，CLI / server 均为 29.8.2，服务为 linux / aarch64 | 初次盘点只读 API 成功；已完成固定 Debian 的 apt / sqv 验证，并构建本地工具镜像；五包仅装在派生镜像，任务容器均已清理 |
+| 镜像 / 引导工具 | PATH 未发现 sgdisk、gdisk、mkfs.fat、fsck.fat、mformat、mcopy、mdir、xorriso、limine | 宿主搜索不是全机不存在的断言；基础镜像未含五包；派生工具镜像已安装五个精确版本并通过 7 个 CLI 命令，见第 2.6 节；Limine 资产未建立 |
 | 系统辅助工具 | hdiutil、diskutil、newfs_msdos、fsck_msdos、file、shasum 存在 | 不用这些存在性证据替代规划中的固定 Linux GPT/FAT 工具环境 |
 
 Rust 可执行文件位于 `~/.rustup/toolchains/<toolchain>/bin/`；本轮直接调用已安装二进制及 rustup 的 installed 查询，未执行工具链安装或更新。官方说明 `x86_64-unknown-none` 有预编译组件，支持 no_std，使用 alloc 需提供 allocator；目标本身不强制 nightly。项目仍沿用固定日期 nightly 方向，具体依赖功能通过实际编译确认。[Rust target 说明](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html)
@@ -30,9 +30,9 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 | edk2-x86_64-code.fd | 3653632 | `d23e35c96cbf47468e5c7c2ce82cfa0c825d4e916bb6bacbf3d8d81556350fe3` |
 | edk2-i386-vars.fd | 328704 | `a5c722949ba13c60b08c1ad3507ef751424941781f66d529f5f1feded8320ccb` |
 
-## 2. 精确安装候选
+## 2. 精确候选与已验证工具环境
 
-以下是拟验证的版本组合，不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。元数据均于 2026-10-14 核对。
+以下记录候选与实际验证范围：Debian 工具镜像已完成第 2.6 节的安装 / 可运行性核验，Rust / QEMU 仍为候选；它们都不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。元数据均于 2026-10-14 核对。
 
 | 层次 | 精确候选 | 来源与核对结果 |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8
 
 来源为 [registry 日期标签](https://registry-1.docker.io/v2/library/debian/manifests/trixie-20261005-slim)与 [ARM64 构建包清单](https://github.com/debuerreotype/docker-debian-artifacts/blob/cf1f4a45447842b45e9952e0f018ae734a7341c7/trixie/slim/rootfs.manifest)。registry 查询需要匿名 pull scope token，token 不写入文档或日志。
 
-对照基础包清单与已验证的 `20261005T000000Z` trixie main ARM64 Packages 索引，按 `--no-install-recommends` 推导以下五包新增；基础 libc6、libgcc-s1、libstdc++6、libtinfo6、libuuid1 等已满足这些包的必需版本。此元数据推导已由固定镜像内的实际 apt 模拟求解确认，见第 2.5 节；没有安装包，不构成真实安装事务保证。
+对照基础包清单与已验证的 `20261005T000000Z` trixie main ARM64 Packages 索引，按 `--no-install-recommends` 推导以下五包新增；基础 libc6、libgcc-s1、libstdc++6、libtinfo6、libuuid1 等已满足这些包的必需版本。此元数据推导先由第 2.5 节的实际 apt 模拟求解确认，再由第 2.6 节的独立工具镜像构建完成实际安装；原基础镜像没有被修改。构建的版本 / 架构 / 大小 / 包体哈希输入以 [packages.tsv](../../tools/debian-image/packages.tsv) 为准，下表为对应说明。
 
 | 新增包 | 精确版本 | 包下载字节 | Installed-Size（KiB） | 包 SHA-256 |
 | --- | --- | --- | --- | --- |
@@ -88,7 +88,7 @@ QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8
 | libncursesw6 | 6.5+20250216-2 | 124048 | 568 | `72121aeb08be2d915da321ddfae74f62a0764286f336279b2c2609ba07496d6d` |
 | libpopt0 | 1.19+dfsg-2 | 42808 | 257 | `b58ba178effc24280c4c6be3cf2c93a34607e18ad76b2f74b2de818136699076` |
 
-五包合计 706,292 字节下载、2,792 KiB 安装大小；不含基础镜像、包索引、缓存和容器存储开销。groff-base、libgpm2 属 recommends，floppyd 属 suggests，不纳入该安装集。五包在快照 main 索引中的版本、架构、大小和 SHA-256 均与上表一致；其快照 `.deb` 路径逐项 HEAD 返回 200，Content-Length 与表内一致。没有下载 `.deb`，因此仅证明签名索引声明与路径可用，包体哈希须下载后再核对。
+五包合计 706,292 字节下载、2,792 KiB 安装大小；不含基础镜像、包索引、缓存和容器存储开销。groff-base、libgpm2 属 recommends，floppyd 属 suggests，不纳入该安装集。五包在快照 main 索引中的版本、架构、大小和 SHA-256 均与上表一致；其快照 `.deb` 路径逐项 HEAD 返回 200，Content-Length 与表内一致。早期 HEAD 仅证明路径可用；第 2.6 节已实际下载全部五个 `.deb`，逐项核对字节数、SHA-256 和包身份后才安装。
 
 #### 快照签名与索引证据
 
@@ -349,7 +349,45 @@ apt-get --simulate --no-install-recommends --no-remove install \
 | `/usr/share/keyrings/debian-archive-trixie-security-automatic.gpg` | `be1a7981908ab9010352131fcbf101a9556f6a61db76a19a1c146d31ef2d72d8` |
 | `/var/lib/dpkg/status`（签名 / 求解前后相同） | `56d3fd5a297bdf152d897f3b39dd7d573d9941e0e69df3279e4ad5aada17cdb4` |
 
-这关闭的是固定 Debian 基础环境的签名策略、过期拒绝和五包模拟求解缺口。五包仍未安装，工具可运行、工具镜像构建与 GPT/FAT 操作均无通过证据；T01 裸机编译也未进行。
+这组运行关闭了固定 Debian 基础环境的签名策略、过期拒绝和五包模拟求解缺口，当时没有安装工具包。后续独立派生镜像的实际安装 / CLI 验证见第 2.6 节；GPT/FAT 文件操作和 T01 裸机编译仍未进行。
+
+### 2.6 本地 Debian 工具镜像：构建与验收
+
+2026-10-14 已按授权构建并保留任务专用工具镜像。构建单一入口为 [Dockerfile](../../tools/debian-image/Dockerfile)，由它调用 [build-image.sh](../../tools/debian-image/build-image.sh)；没有 Cargo / guest 业务入口。固定输入包括基础 digest、[snapshot.sources](../../tools/debian-image/snapshot.sources)、[五包清单](../../tools/debian-image/packages.tsv)和[基础 78 包清单](../../tools/debian-image/base-packages.tsv)。五包清单每行依次为包名、版本、架构、字节数、SHA-256；基础清单逐字来自第 2.1 节固定上游 rootfs.manifest，SHA 仍为 `d36f1afce31468d16ff66da178751c73bfd5347271f8411015f8b937cd3b1132`。
+
+构建先核对 ARM64 / 基础清单，再用隔离 APT 配置认证固定 snapshot，下载且只接受五个精确包体。五个大小 / SHA-256 及 deb 内的 Package / Version / Architecture 均通过后，才以 `--no-download --no-install-recommends --no-remove` 安装；失败立即退出，不补装额外包或改用移动源。构建后核对原 78 包版本未变、总计恰为 83 包、dpkg audit 无异常；镜像保留构建来源与证据，删除本构建的索引和包体缓存。最终默认软件源也指向固定 snapshot，签名与日期检查保持启用，仅源内保留历史有效期例外。
+
+| 交付 / 核对项 | 本次实测 |
+| --- | --- |
+| 本地镜像标签 | `radishroot/debian-tools:trixie-20261005-arm64` |
+| 本地 manifest list / image ID | `sha256:cd67b70bf3a9c2f064349e7283a73412e726b053d309dc36f1960600e745395b` |
+| 平台与大小 | `linux/arm64`；Docker inspect Size 为 142,257,179 字节，不是新增宿主实际占盘测量 |
+| 五包安装 | gdisk 1.0.10-2+b1、dosfstools 4.2-1.2、mtools 4.0.48-1、libncursesw6 6.5+20250216-2、libpopt0 1.19+dfsg-2；新增 5、升级 0、移除 0 |
+| 包体 | 五个下载共 706,292 字节，全部 SHA / 大小 / 包身份匹配第 2.1 节；没有安装 recommends / suggests |
+| 完整包清单 | 83 项，原 78 项名称和版本逐字保持；运行容器再次查询相同。清单 SHA-256：`500dc039d96076bc642b2c15cb61d6b174c8f2336b2cfb895d94aae0dba8ac8f` |
+| 构建输入清单 | packages.tsv SHA-256：`9f12b981a31ad4a8483b3b773c276b46808f306b648ea3e60075c6383de5f7c8`；镜像中 recipe.sha256 的五份来源文件与仓库逐字相同 |
+| 工具运行 | sgdisk --version 为 1.0.10；mkfs.fat --help 显示 4.2；fsck.fat --help 正常输出用法；mformat / mcopy / mdir / mtype 的 -V 均为 4.0.48；七条命令均退出 0 |
+| 链接 / 包状态 | 七个可执行文件的 ldd 无 not found；dpkg audit 为空；运行前后 dpkg status SHA 均为 `ad0073442b403d2841e06c534d76f169a893ffc84023e1f6e561cf8a19a0ff33` |
+| 清理与外部状态 | 专用验证容器退出 0 后按完整 ID 删除，任务标签查询无残留；工具镜像、基础镜像与 Docker 构建缓存保留，没有 registry push |
+
+镜像内 `/usr/local/share/radishroot-debian-tools/` 保存完整 `packages.tsv`、`package-bodies.sha256`、`recipe.sha256`、dpkg 状态哈希、APT 配置 / 更新 / 安装日志与 `build/` 下的五份构建来源。包的 copyright 和公共许可证文件保留，来源登记见[许可与来源](../governance/licensing-and-sources.md)。这些工具仅用于本地开发，不进入 RadishRoot guest 镜像；本轮没有发布或作分发许可结论。
+
+已执行的构建入口（仓库根目录，需相应 Docker 执行 / 下载授权）：
+
+```sh
+docker build --platform linux/arm64 --progress=plain \
+  --tag radishroot/debian-tools:trixie-20261005-arm64 tools/debian-image
+```
+
+本次运行验证使用上述不可变本地 image ID；以下命令可读取完整清单，容器退出即删除，不挂载宿主目录：
+
+```sh
+docker run --rm --network none --cap-drop ALL \
+  sha256:cd67b70bf3a9c2f064349e7283a73412e726b053d309dc36f1960600e745395b \
+  cat /usr/local/share/radishroot-debian-tools/packages.tsv
+```
+
+标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。工具版本 / 帮助和动态链接通过仅证明可执行入口可用，尚未验证 GPT/FAT 文件写入、独立读回、故障样本或产品 AT；未创建任何测试盘，也未安装 QEMU / nightly。
 
 ## 3. 安装影响与清理边界
 
@@ -373,15 +411,15 @@ apt-get --simulate --no-install-recommends --no-remove install \
 
 30 项全部制品的 registry 大小元数据合计下载 **166,586,895 字节**、安装大小 **930,446,628 字节**。这是专用前缀内完整 30 项的容量参考，不含 Homebrew / portable Ruby bootstrap、下载缓存、本地配方、临时目录和恢复副本；不是实际净占盘测量。其中 QEMU 本体为 113,262,802 / 728,988,917 字节（下载 / 安装）。均未下载或实测占盘。若必须改为源码构建，重新说明工具、版本、资源和时长，不沿用此估计。
 
-时间仅作预算：Rust 与 QEMU 下载安装合计约 10–30 分钟，首次 Linux 工具镜像构建约 5–15 分钟，受网络与缓存影响，尚未测量。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
+Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。本次 Debian 构建由 BuildKit 报告基础元数据阶段 37.2 秒、安装 RUN 阶段 29.2 秒；这些分阶段时间受网络与缓存影响，不是完整构建计时或固定预算。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
 
 Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL 宿主 runner 依赖属于后续实现所需的单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
 
-第三方项尚未引入仓库。Rust 工具链、QEMU、EDK II、Debian 基础系统与每个包分别按[许可与来源策略](../governance/licensing-and-sources.md)登记；QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 另核对 `edk2-licenses.txt`。本表不是分发许可结论，也不承诺打包这些宿主工具。
+本轮仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust 工具链、QEMU 与 EDK II 仍待实际引入时核对；QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 另核对 `edk2-licenses.txt`。本表不是分发许可结论，也不承诺打包这些宿主工具。
 
 ## 4. 分层验证方案
 
-以下是分层验收要求。仅 Debian 签名 / 快照策略与模拟求解已取得第 2.5 节实测证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
@@ -399,7 +437,7 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查和模拟求解。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、完整 formula 求解 / 动态链接及所有产品行为仍未验证。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、完整 formula 求解 / 动态链接及所有产品行为仍未验证。
 
 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，访问代理失败；其失败不能算安装清单查询成功，后续改为只读 Cellar。Docker API 首次被沙盒拒绝，经同一只读目标的权限批准后返回服务版本与架构。sysctl 硬件查询被权限限制，未据此填入 CPU 型号或内存容量。以上都没有启动服务或安装依赖。
 
