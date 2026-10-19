@@ -1,6 +1,6 @@
 # 开发环境清单与安装候选
 
-盘点日期：2026-10-14；工具文件操作验证：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功。
+盘点日期：2026-10-14；工具文件操作验证及正常 Homebrew 方案复核：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功。
 
 ## 1. 本机实测
 
@@ -32,7 +32,7 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 
 ## 2. 精确候选与已验证工具环境
 
-以下记录候选与实际验证范围：Debian 工具镜像已完成第 2.6 节的安装 / 可运行性核验，Rust / QEMU 仍为候选；它们都不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。元数据均于 2026-10-14 核对。
+以下记录候选与实际验证范围：Debian 工具镜像已完成第 2.6 节的安装 / 可运行性核验，Rust / QEMU 仍为候选；它们都不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。Rust / Debian 元数据于 2026-10-14 核对；正常 Homebrew QEMU 候选于 2026-10-19 重新核对并执行 dry-run。
 
 | 层次 | 精确候选 | 来源与核对结果 |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ Linux：[Official Images 标签声明](https://github.com/docker-library/officia
 
 Rust / QEMU 归档未下载，表内哈希来自官方文本元数据。Debian 日期标签映射已补齐，并已按下述 ARM64 digest 拉取与运行任务验证容器；具体运行证据见第 2.5 节，不把原先的元数据核对本身当成执行证明。
 
-QEMU formula 原文现已取得并计算内容哈希，与 API 的 `b8fa843b66a8879edf2f4c2440a4990557762764fc7f46767a26929d355215c7` 一致；固定来源见第 2.3 节。普通 `brew install qemu` 会随 formula 变化，不能视为永久精确安装命令。
+QEMU formula 原文现已取得并计算内容哈希，与 API 的 `df8fe626603a12e042c0b33141343a3c36f059990addff1be4db4479fabe3561` 一致；固定来源见第 2.3 节。普通 `brew install qemu` 会随 formula 变化，不能视为永久精确安装命令。
 
 ### 2.1 Debian registry 映射与工具包影响
 
@@ -119,173 +119,93 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 
 固定基础包清单 SHA-256 为 `d36f1afce31468d16ff66da178751c73bfd5347271f8411015f8b937cd3b1132`。其中没有 ca-certificates，不能把宿主 HTTPS 查询成功推成容器 HTTPS 已可用；实际构建须遵循已审阅源模板的传输方式与签名校验，若改用需要新增 CA 包的方式，应重新记录依赖影响。新增包须纳入安装清单与授权范围。
 
-### 2.2 QEMU 传递依赖与 OpenSSL 冻结方案
+### 2.2 正常 Homebrew QEMU 候选与实际预演
 
-选定方案：以 QEMU 11.1.2 的 `arm64_golden_gate` bottle 构建记录为候选基线，将其 29 项运行依赖与 QEMU 本体一起按精确版本、formula revision、bottle rebuild、平台和制品 SHA-256 固定。OpenSSL 链固定为 **libssh 0.12.2（revision 0）+ openssl@3 3.6.4_1**；不引入 openssl@4，不用当前 libssh 0.12.2_1 替换。它们是宿主仿真器依赖，不是 guest 内核依赖。
+2026-10-19 按用户要求改用现有 `/opt/homebrew/bin/brew` 与官方 `homebrew/core`，安装到共享 `/opt/homebrew`。不再实施专用 `/opt/rrt01`、固定 tap 或第二套 Homebrew / portable Ruby；此前方案仅保留在月度日志与 Git 历史。当前 QEMU 候选仍为 **11.1.2（revision 0、bottle rebuild 0）**，运行依赖跟随本次官方 formula 解析，包含 **libssh 0.12.2_1 → openssl@4 4.0.3**。这不是原 OpenSSL 3 固定集合，也不是永久冻结的安装锁。
 
-原先按当日移动 formula API 推导的“23 项新增、3 项升级、4 项同版本”用于说明直接安装最新 formula 的影响。该图含 glib 2.90.1、libpng 1.6.59、libssh 0.12.2_1 / openssl@4 4.0.3，与选定 bottle 的构建记录不同，不能作为本方案的冻结表。
+先核对本机 Homebrew 提交 `b3625f73d3e3574c5789ee32eb7b06627b788ec4`、所需目录和已有 portable Ruby 4.0.6_2，再实际执行 `/opt/homebrew/bin/brew install --formula --dry-run --no-ask qemu`，退出 0。命令级设置 `HOMEBREW_NO_AUTO_UPDATE=1`、`HOMEBREW_NO_ANALYTICS=1`、`HOMEBREW_NO_INSTALL_CLEANUP=1`，缓存 / 日志 / 临时目录放在本任务忽略目录；保留官方 API 解析及既有依赖检查，不改 HOME 或全局配置。预演下载了 API / bottle manifest 文本元数据，没有下载软件归档或执行安装。
 
-证据来自 [QEMU 11.1.2 registry index](https://ghcr.io/v2/homebrew/core/qemu/manifests/11.1.2)的 `sh.brew.tab` 与 SBOM supplement，再逐项读取依赖 index 并对照 bottle digest。QEMU index 响应 SHA-256 为 `99ead5c77be214e46df7df8be08c89bbb786442adf9ea635e75c27a2d028a0c2`，其 ARM64 manifest descriptor 为 `sha256:a6ff912513ddad07b1a72aae63170207844ecfda906ba32c4ec6967b1893df4e`。已核对 29 项依赖的制品 SHA 与根记录相符，递归包名未超出下表；这不等于实际动态链接已经通过。
+实际计划为 **QEMU 本体 + 22 项新增依赖、4 项依赖升级、3 项既有依赖复用**，共 30 项。30 份官方 API 与本机 `brew info --json=v2` 的版本、依赖及目标 bottle 身份一致，运行图为 30 节点 / 39 条引用。下表“复用”仅表示预演没有安排安装 / 升级，不表示既有 keg 与当前 bottle 字节相同或已通过运行兼容验证。
 
-除 ca-certificates 为 `all` 外，表内平台均为 `arm64_golden_gate`。对应 registry 仓库为 `ghcr.io/v2/homebrew/core/<包名>`，`openssl@3` 映射为 `openssl/3`；index tag 为精确版本，rebuild 非零时追加 `-<rebuild>`。bottle 内容使用 `/blobs/sha256:<表内哈希>` 标识，版本标签只用于查找，不能覆盖内容校验。
-
-| 包 | 精确版本（含 formula revision） | bottle rebuild | bottle SHA-256 |
+| 包 | 当前 → 候选版本（含 formula revision） | 预演动作 | bottle rebuild / SHA-256 |
 | --- | --- | --- | --- |
-| qemu | 11.1.2 | 0 | `a399faaf2f8fb45d3b1f35704041a9104f7f717e9fda1b12d4deac9e919d0d33` |
-| ca-certificates | 2026-09-25 | 0 | `81804ad8a70a7a8d2a0a964d106765ff88716b310decaeffb4b4895a3252186a` |
-| capstone | 5.0.9 | 0 | `6b31fe379681e2c0778e30b3516cdfc2cfdff6424f666463643f1507039daf0b` |
-| dtc | 1.8.1 | 0 | `92ee4960b1643f3ba722d3d0cd9eb31af546215c7eaf858e76e2c69dd2c7afe8` |
-| gettext | 1.0 | 2 | `4db034aa2ae4b1f18d86906707ece14c895198090ad028d2fb1ae4fbeb3ca6fd` |
-| glib | 2.90.0 | 0 | `07422c68ee1c3d01ba6ac6296668e82cad2ee21c9466e60e79a70da2c5947207` |
-| gmp | 6.3.0 | 1 | `5116a8201d8e044aef7d486da7e57f1e4dd2d8554ea6b540b44e45c0804f8f6f` |
-| gnutls | 3.8.13_2 | 1 | `366c9b9c0a6b246af58952c4bb5ac921ec5be87bdc23c0b9d8b2ca97b1a3d996` |
-| jpeg-turbo | 3.2.0 | 1 | `7bc0f7c007a73c68da8c11055e836de66c2814c1b0ca0302da9a6317199fd37a` |
-| json-c | 0.19 | 1 | `6b45746f31780a84ae3ed11d056bd101d1b0a6d0f16bf91aad2d35a18f6107dc` |
-| libidn2 | 2.3.8 | 0 | `bacc89595e4e8d2a4e14eb71730ae96a1ca68830068a741c59fc363a355ef1bc` |
-| libpng | 1.6.58 | 1 | `02e4e023512c6bf086f139717bcb90fb53ece5fbab3ab4354b0d5fed25afa5db` |
-| libslirp | 4.9.5 | 0 | `9c0233380116a46e7d292a7f0b1b3084214f399ae839806bcff0018f581da405` |
-| libssh | 0.12.2 | 0 | `cc4bab002dd48933367fe51da95ce7a4140e8e06aa01dad06c48d057414de073` |
-| libtasn1 | 4.21.0 | 0 | `68d1748171848565af7a083ca92b834ab1fe4ac7832140b1cd22fd1fcb072fd7` |
-| libunistring | 1.4.2 | 1 | `57307eb89a02e09aa4de70e09391994dfc9520d9f101ec7e64f9af21dcea2420` |
-| libusb | 1.0.30 | 0 | `b462926c2314b5bb7d1a6721f9a3cf7336a4166ba67024b4bbd0226de457132a` |
-| libyaml | 0.2.5 | 0 | `afaaa073d70a7e69f0ff53dcdf1ee08d1ac594eb2e458afa665403adf4209078` |
-| lz4 | 1.10.0 | 3 | `53ea7532077fe43abfe3d6e0d9991ebc8370e9edcc508f997c92902d60c8b151` |
-| lzo | 2.10 | 0 | `928ed0070e25fe8082e24daa3f967657be0c1c5c72c14a3ac4cd498874eeec11` |
-| ncurses | 6.6 | 0 | `36a1f053f1be8ce8dce8a92b68395fb1483b077d313077e9c8f4b20b6f712602` |
-| nettle | 4.0 | 0 | `42ff85a054b4a265542175dd31f4a515e0a3e7d8113cfddacc5472555a036bc8` |
-| openssl@3 | 3.6.4_1 | 0 | `037d39aeb53c636e392fa670fa74c2a94b51b69521a4fb4fce4d0ea7500f5f94` |
-| p11-kit | 0.26.5 | 1 | `a7c4679040141c7c8cb0861e164126871f7e0eb485df6da5ebecc3665e185ce2` |
-| pcre2 | 10.49 | 0 | `5cac44323243138490ca74a2499fd347fa836df6b5fffa789944be12110e91ff` |
-| pixman | 0.46.4 | 1 | `918ff532bf70bc121376f4b51420f44fc1abd0b9c519d7f8040f6ad9d304bc02` |
-| snappy | 1.3.1 | 0 | `7f20ac629eaf9a34a0e4d0e1fe60a933d42ececf3d956988fa8b24916e467c85` |
-| vde | 2.3.3 | 0 | `972ce0f14fb0fe92932f45b887019b228ac4529f06d0a95eeb88ece1359d76ba` |
-| xz | 5.8.4 | 0 | `b2b5d6523153be05c20bcc51cd358ea3dd1f4bf893748fdedb779ab508ea63ce` |
-| zstd | 1.5.7_1 | 0 | `7fb4af03304cc4897326168cdcd53290311c5543150f5502a61c3e84b6d62765` |
+| ca-certificates | 2026-08-13 → 2026-09-25 | 升级 | 0 / `81804ad8a70a7a8d2a0a964d106765ff88716b310decaeffb4b4895a3252186a` |
+| capstone | 未安装 → 5.0.9 | 新增 | 0 / `6b31fe379681e2c0778e30b3516cdfc2cfdff6424f666463643f1507039daf0b` |
+| dtc | 未安装 → 1.8.1 | 新增 | 0 / `92ee4960b1643f3ba722d3d0cd9eb31af546215c7eaf858e76e2c69dd2c7afe8` |
+| gettext | 1.0 → 1.0 | 复用 | 2 / `4db034aa2ae4b1f18d86906707ece14c895198090ad028d2fb1ae4fbeb3ca6fd` |
+| glib | 未安装 → 2.90.1 | 新增 | 1 / `5ccb7a549258ed35cddc280882a11a854bd0ef1b2329a1ce77e43e39d2d98e3a` |
+| gmp | 未安装 → 6.3.0 | 新增 | 1 / `5116a8201d8e044aef7d486da7e57f1e4dd2d8554ea6b540b44e45c0804f8f6f` |
+| gnutls | 未安装 → 3.8.13_2 | 新增 | 1 / `366c9b9c0a6b246af58952c4bb5ac921ec5be87bdc23c0b9d8b2ca97b1a3d996` |
+| jpeg-turbo | 未安装 → 3.2.0 | 新增 | 1 / `7bc0f7c007a73c68da8c11055e836de66c2814c1b0ca0302da9a6317199fd37a` |
+| json-c | 未安装 → 0.19 | 新增 | 1 / `6b45746f31780a84ae3ed11d056bd101d1b0a6d0f16bf91aad2d35a18f6107dc` |
+| libidn2 | 未安装 → 2.3.8 | 新增 | 0 / `bacc89595e4e8d2a4e14eb71730ae96a1ca68830068a741c59fc363a355ef1bc` |
+| libpng | 未安装 → 1.6.59 | 新增 | 0 / `7e04225ac0bc048d2b12c603f678e5fa36459909812f2f1306dbd97af337cdec` |
+| libslirp | 未安装 → 4.9.5 | 新增 | 0 / `9c0233380116a46e7d292a7f0b1b3084214f399ae839806bcff0018f581da405` |
+| libssh | 未安装 → 0.12.2_1 | 新增 | 0 / `48110039ef444f383b5fab938dffbca01203784eafcf2a05135477cffef15751` |
+| libtasn1 | 未安装 → 4.21.0 | 新增 | 0 / `68d1748171848565af7a083ca92b834ab1fe4ac7832140b1cd22fd1fcb072fd7` |
+| libunistring | 1.4.2 → 1.5 | 升级 | 0 / `fec6be46cabaefd1dc5d5ecd029c50aeaef6c93d9c7de4425968047811575e81` |
+| libusb | 未安装 → 1.0.30 | 新增 | 0 / `b462926c2314b5bb7d1a6721f9a3cf7336a4166ba67024b4bbd0226de457132a` |
+| libyaml | 0.2.5 → 0.2.5 | 复用 | 0 / `afaaa073d70a7e69f0ff53dcdf1ee08d1ac594eb2e458afa665403adf4209078` |
+| lz4 | 未安装 → 1.10.0 | 新增 | 3 / `53ea7532077fe43abfe3d6e0d9991ebc8370e9edcc508f997c92902d60c8b151` |
+| lzo | 未安装 → 2.10 | 新增 | 0 / `928ed0070e25fe8082e24daa3f967657be0c1c5c72c14a3ac4cd498874eeec11` |
+| ncurses | 未安装 → 6.6 | 新增 | 0 / `36a1f053f1be8ce8dce8a92b68395fb1483b077d313077e9c8f4b20b6f712602` |
+| nettle | 未安装 → 4.0 | 新增 | 0 / `42ff85a054b4a265542175dd31f4a515e0a3e7d8113cfddacc5472555a036bc8` |
+| openssl@4 | 未安装 → 4.0.3 | 新增 | 0 / `cfe1f3ee8ddafdb7f19fe4d4dd600e2b84257df4fa09a169ccb7322d38483f90` |
+| p11-kit | 未安装 → 0.26.5 | 新增 | 1 / `a7c4679040141c7c8cb0861e164126871f7e0eb485df6da5ebecc3665e185ce2` |
+| pcre2 | 10.47_1 → 10.49 | 升级 | 0 / `5cac44323243138490ca74a2499fd347fa836df6b5fffa789944be12110e91ff` |
+| pixman | 未安装 → 0.46.4 | 新增 | 1 / `918ff532bf70bc121376f4b51420f44fc1abd0b9c519d7f8040f6ad9d304bc02` |
+| qemu | 未安装 → 11.1.2 | 新增 | 0 / `a399faaf2f8fb45d3b1f35704041a9104f7f717e9fda1b12d4deac9e919d0d33` |
+| snappy | 1.2.2 → 1.3.1 | 升级 | 0 / `7f20ac629eaf9a34a0e4d0e1fe60a933d42ececf3d956988fa8b24916e467c85` |
+| vde | 未安装 → 2.3.3 | 新增 | 0 / `972ce0f14fb0fe92932f45b887019b228ac4529f06d0a95eeb88ece1359d76ba` |
+| xz | 5.8.4 → 5.8.4 | 复用 | 0 / `b2b5d6523153be05c20bcc51cd358ea3dd1f4bf893748fdedb779ab508ea63ce` |
+| zstd | 未安装 → 1.5.7_1 | 新增 | 0 / `7fb4af03304cc4897326168cdcd53290311c5543150f5502a61c3e84b6d62765` |
 
-这里将根 bottle 的依赖记录作为**精确候选选择**，不是声称每个叶子 bottle 都在完全相同的版本组合下构建。例如部分叶子记录较旧的 pcre2、ca-certificates 或 gettext rebuild；采用上表根集合统一版本后仍须做动态链接和功能验证，不能只比较版本大小就证明 ABI 兼容。
+除 ca-certificates 使用 `all` 外，目标平台均为 `arm64_golden_gate`。复用三项的 bottle 哈希仅识别当前候选，运行身份以已有收据与安装后实际链接为准。ca-certificates 还保留旧 keg 2026-05-14，当前 opt 指向 2026-08-13；预演不包含卸载旧 keg。当前集合没有安排升级 / 移除 openssl@3，也没有 pin 阻止上述四项升级。
 
-冻结实施候选仍为项目维护的固定 formula 集合；本轮已补齐原文、commit、内容哈希与静态运行依赖图，见第 2.3 节。原文没有本地改动，也没有创建 tap 或安装器。所有依赖必须解析到同一固定集合，bottle 必须匹配上表；禁用移动 API 不能替代固定引用。本机安装器源码暴露的 tap / keg 冲突通过第 2.4 节的独立前缀方案隔离；该方案尚未实施，不能视为已验证可安装。只为本任务命令设置元数据 / 清理控制，不改全局 shell 或用户 core 历史。
+普通 Homebrew 会随上游和本机状态变化；执行前须重新预演并比较本表。`HOMEBREW_NO_AUTO_UPDATE` 只控制命令自动更新行为，不构成依赖锁。预演不验证真实 pour、链接、post-install 或所有反向依赖；实际安装发现损坏链接时仍可能触发相关依赖升级 / 重装，不能屏蔽检查来强行维持 23 / 4 / 3。出现额外动作、版本 / 哈希变化或源码构建需求时，先列明差异并更新影响范围。[Homebrew install / dry-run 说明](https://docs.brew.sh/Manpage#install-options-formulacask-)
 
-安装前须验证该固定集合实际解析的全部运行依赖、资源、post_install 副作用和已有反向依赖影响；若本地配方命名 / 路径使 bottle 不能按原制品使用，或需要源码构建、额外包、版本变更，则停止并更新方案，不通过 `--ignore-dependencies`、手工解压替换共享库或隐藏链接错误完成安装。`brew pin qemu`、关闭 auto-update、`bundle --no-upgrade` 都不能代替上述闭包和制品锁定。[Homebrew 版本维护说明](https://docs.brew.sh/Versions)
+### 2.3 共享依赖与其他项目影响
 
-安装后的运行身份还须记录实际可执行文件 / 动态库来源、固件哈希、版本化机器名与功能验证结果；后续发现专用环境依赖漂移时先报告环境不匹配，不能继续沿用旧验收结论。升级候选须整体更新受影响版本 / 哈希并重跑相关验证，不永久把历史候选当作维护策略。
+本轮保存的官方 API 指向 homebrew-core 提交 `d929e58761d4e047dbb728b514fae89f9eef1cf1`。另读取以下七份固定提交原文，重新计算内容 SHA-256 与 API 对照；没有执行配方或 post-install。其余候选的来源路径 / commit / SHA 保存在本地 API 证据中。
 
-### 2.3 固定 formula 来源与静态解析核对
-
-下表均为已读取、重新计算 SHA-256 的 Homebrew 官方原文，包含其版本 / revision、bottle rebuild 与第 2.2 节的目标 bottle SHA。26 项来自提交 A；四项使用各自历史提交。它们是与选定制品身份匹配的配方快照，不保证每份文本恰为 bottle 构建时嵌入的 `.brew` 文件；归档尚未下载，不能声称已比较嵌入内容。当前 API 已将 openssl@3 改为 3.5.9（LTS），进一步说明不能依赖移动配方选择 3.6.4_1。
-
-| 来源代号 | 官方 homebrew-core 完整 commit | 使用范围 |
-| --- | --- | --- |
-| A | `40d747b51828c1d4a020c78bd8eba726e2398822` | 除以下四项外的 26 项 |
-| B | `fc37e24fc3f15b020b7c5de326f10fd6c2ee0200` | glib 2.90.0 |
-| C | `814131203f42237a7d78d6aa73fde215710eb755` | libpng 1.6.58，rebuild 1 |
-| D | `791e964854c43bc881392cc51c07c819f836ee15` | libssh 0.12.2，revision 0 |
-| E | `29441026de76b0e256e6444a893967a45f25a6b6` | openssl@3 3.6.4_1 |
-
-| 包 / 固定原文路径 | 来源 | 原文 SHA-256 |
-| --- | --- | --- |
-| [qemu](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/q/qemu.rb) | A | `b8fa843b66a8879edf2f4c2440a4990557762764fc7f46767a26929d355215c7` |
-| [ca-certificates](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/c/ca-certificates.rb) | A | `e7807634f02d41cfad036cdebb546daacd45e118fcb463acc6c6e4f6e07dcf3f` |
-| [capstone](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/c/capstone.rb) | A | `74d7afa733f1f748ad4b71e691b519b865f35e07da778f9b1bc111a5f926dfce` |
-| [dtc](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/d/dtc.rb) | A | `0996948d0919552f834245870a8fba81871c583becd2c3c16a15544927fc9060` |
-| [gettext](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/g/gettext.rb) | A | `9c90f7cf5a45c828e2a66d9339b25b781302cf49316e939d029e6079e1b9d916` |
-| [glib](https://github.com/Homebrew/homebrew-core/blob/fc37e24fc3f15b020b7c5de326f10fd6c2ee0200/Formula/g/glib.rb) | B | `7e41107faf209528d2e993afec53ad1006bbe8945772bde43c2295e8a2ef7659` |
-| [gmp](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/g/gmp.rb) | A | `a7a712aab26d2b88865ebd9c06f4eeb131c53815f3b6e467578b32ab66ac3b18` |
-| [gnutls](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/g/gnutls.rb) | A | `720a0b82acbc9f97fe2950c6b919ea5e9383b491c8ef7b7f06a7f3e16c9b8c07` |
-| [jpeg-turbo](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/j/jpeg-turbo.rb) | A | `7e2e90fde4b71193c517e87763b199f3ebf185afcce4b99d82eee7467e761b8d` |
-| [json-c](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/j/json-c.rb) | A | `7b6c55b79158a98a41e376a39e05bbee827f425b67654af75db461f79402af37` |
-| [libidn2](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/lib/libidn2.rb) | A | `032d48cd71a4c81e9c6a7847b1dc2d3b0a1d1f21a8fa6fead4a7ff1b60df2160` |
-| [libpng](https://github.com/Homebrew/homebrew-core/blob/814131203f42237a7d78d6aa73fde215710eb755/Formula/lib/libpng.rb) | C | `36aa425fe741b14fb226159ebfadfc3b75ed0603d7b27675b6cd1ffdeba80d07` |
-| [libslirp](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/lib/libslirp.rb) | A | `bb43caff8fd85c3ff9dcf0dd0cda7b56498e45ee1becbe6431230391b9f68ebb` |
-| [libssh](https://github.com/Homebrew/homebrew-core/blob/791e964854c43bc881392cc51c07c819f836ee15/Formula/lib/libssh.rb) | D | `35acc436de5d09ce9ead74ce6d3bd0e5df2abeb818015082588567a2637cc863` |
-| [libtasn1](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/lib/libtasn1.rb) | A | `8c0814380e9449c0b9b5cfcbf12e7e44e25e581c8f3909f2467c63bb482bcd2d` |
-| [libunistring](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/lib/libunistring.rb) | A | `8acac13619748b5c040c866f78955ea15fe51f555d60d494f52beae6ee24ce34` |
-| [libusb](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/lib/libusb.rb) | A | `513c20f992711ced872639a391fbb0b3194e397ffddc4968b9f9b1e4f03b48ee` |
-| [libyaml](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/lib/libyaml.rb) | A | `dfad02f7f8f65dff0f00fee6ca2d99b59309ad8c7bc6f2148ae60788f2bf8a79` |
-| [lz4](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/l/lz4.rb) | A | `b45023020f34ac622d84d10e44f1d972f742d5c741098f6ee828b6ab79bd19e4` |
-| [lzo](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/l/lzo.rb) | A | `8acc83503bd65a1e198d16638fe911201c7922cf70b24b5db3015fcd948c54cd` |
-| [ncurses](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/n/ncurses.rb) | A | `2e35152ac8c0b209f90373090ad3d3a64d7818fc965d6f58142ab1d9fa95f824` |
-| [nettle](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/n/nettle.rb) | A | `8135edd1ccf828e5a9550a965bd5f11a862ad028335f451838998f3e5215e4f2` |
-| [openssl@3](https://github.com/Homebrew/homebrew-core/blob/29441026de76b0e256e6444a893967a45f25a6b6/Formula/o/openssl@3.rb) | E | `e5c03ebbc8f6dc2a48690c9a293b2dcf71857a63a9a33d0a5c405539634bc30d` |
-| [p11-kit](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/p/p11-kit.rb) | A | `f417ea91e494ec02cc2c79284c80dd4f1b214ba6678a0669af531243aacdaded` |
-| [pcre2](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/p/pcre2.rb) | A | `2dcb74b4bc19dc81ace51feac7bb626b679c7b730eca1d3492d73fe822134fb8` |
-| [pixman](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/p/pixman.rb) | A | `a9957ff4b6518062d2e2697b5ff8b470b06e5a73f8f9076c9d3e7d1c8dbc1d85` |
-| [snappy](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/s/snappy.rb) | A | `65ad62d494f32ebad469606114480e5aeb6e88cac51d6bd5067e7cfed4c86959` |
-| [vde](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/v/vde.rb) | A | `1d48d707aaff08a2874c7180ff04df89f971210e6b60a7b5894257e6c5948e7f` |
-| [xz](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/x/xz.rb) | A | `e5b8bbf09dccb4a1f2ee333ed65b13ee773350a26735ef594ca859d2cf85248e` |
-| [zstd](https://github.com/Homebrew/homebrew-core/blob/40d747b51828c1d4a020c78bd8eba726e2398822/Formula/z/zstd.rb) | A | `e40f1de5b4e53faf64cad3d24dd74e28948d674caf96b3229310ce78e66b030e` |
-
-使用本机已有 Ruby 的 Ripper 解析 30 份文本的 AST，未执行配方 Ruby 代码；按 stable、macOS ARM64、使用 bottle 的条件展开，排除 HEAD / Linux / Intel 分支以及 build / test 依赖，保留 no_linkage 依赖。26 项还与同 commit / 内容哈希的官方 API dependencies 对照；四项历史配方另外核对条件块。结果从 qemu 出发恰好覆盖 **30 个节点、39 条直接运行依赖引用**，没有额外 formula 或 openssl@4：
-
-| 非叶子 formula | 本条件下的直接 Homebrew 运行依赖 |
+| 官方配方原文 | SHA-256 |
 | --- | --- |
-| qemu | capstone, dtc, glib, gnutls, jpeg-turbo, libpng, libslirp, libssh, libusb, lzo, ncurses, pixman, snappy, vde, zstd |
-| capstone | gettext |
-| dtc | libyaml |
-| gettext | json-c, libunistring |
-| glib | gettext, pcre2 |
-| gnutls | ca-certificates, gettext, gmp, libidn2, libtasn1, libunistring, nettle, p11-kit |
-| libidn2 | gettext, libunistring |
-| libslirp | glib |
-| libssh | openssl@3 |
-| nettle | gmp |
-| openssl@3 | ca-certificates |
-| p11-kit | ca-certificates, libtasn1 |
-| zstd | lz4, xz |
+| [qemu](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/q/qemu.rb) | `df8fe626603a12e042c0b33141343a3c36f059990addff1be4db4479fabe3561` |
+| [libssh](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/lib/libssh.rb) | `77d11f59dc8fbf677e0be68be9a7711f1433e5d238ea02a3e4bbc759392ee8ba` |
+| [openssl@4](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/o/openssl@4.rb) | `9e6998cc58157aa31b16144b11b67d686caccd3032d7882a76eccb53ce0730f7` |
+| [libunistring](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/lib/libunistring.rb) | `e19b8847465634aa2ab365c7fa641216450ad26cc02bddfce08c8d17342d21dc` |
+| [pcre2](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/p/pcre2.rb) | `2dcb74b4bc19dc81ace51feac7bb626b679c7b730eca1d3492d73fe822134fb8` |
+| [ca-certificates](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/c/ca-certificates.rb) | `e7807634f02d41cfad036cdebb546daacd45e118fcb463acc6c6e4f6e07dcf3f` |
+| [snappy](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/s/snappy.rb) | `65ad62d494f32ebad469606114480e5aeb6e88cac51d6bd5067e7cfed4c86959` |
 
-其余 17 项在此条件下没有 Homebrew 运行依赖。`uses_from_macos` 单独保留为宿主输入：qemu / pcre2 使用 bzip2；gettext 使用 curl、libxml2、系统 ncurses；glib 使用 libffi、python；p11-kit 使用 libffi。它们不新增到 30 项 Homebrew 表，也不等于本轮验证了每个系统库或脚本的运行情况。源码构建需要的工具和 HEAD / Linux 专用资源不在本次 bottle 安装集合内；无法使用目标 bottle 时不能自动扩展到源码构建。
+**OpenSSL 4 的影响不止新增一个并存目录。** 当前 formula 不是 keg-only，明确允许覆盖共享 `bin/openssl`、OpenSSL 头文件、`libssl*` / `libcrypto*`、pkg-config 与 CMake 的 OpenSSL 发现入口。本机 `bin/openssl`、`include/openssl`、`lib/libssl.dylib`、`lib/libcrypto.dylib` 和 `lib/pkgconfig/openssl.pc` 当前均指向 openssl@3 3.6.4；按正常链接流程安装后，默认 CLI 与未限定版本的编译发现会转向 OpenSSL 4。`/opt/homebrew/opt/openssl@3` 及其版本化 dylib 可以保留，但不能据此声称共享默认不变或所有项目无影响。
 
-配方附属文本也已核对：glib 在来源 B 引用的 [Patches/glib/hardcoded-paths.diff](https://github.com/Homebrew/homebrew-core/blob/fc37e24fc3f15b020b7c5de326f10fd6c2ee0200/Patches/glib/hardcoded-paths.diff)为 1523 字节，SHA-256 `d846efd0bf62918350da94f850db33b0f8727fece9bfaf8164566e3094e80c97`；gnutls 的 [固定 commit 补丁](https://gitlab.com/gnutls/gnutls/-/commit/29c2027c963cf559817d0da37c1fc2efd0c1bd6a.diff)为 819 字节，SHA-256 `c0bfc0164ff131c9d2e1c4d0367430f8b767b64c9c21e0f408bd634d21fb0302`，与配方声明相同。snappy 的 DATA 补丁已包含在原文哈希内。glib 的 gobject-introspection 1.86.0 资源声明 SHA-256 为 `920d1a3fcedeadc32acff95c2e203b319039dd4b4a08dd1a2dfd283d19c0b9ae`；未下载归档。OpenSSL 的三个 CPAN 资源和 libpng 的 pngtest.png 都在 Linux 条件块内。本轮没有引入第三方源码到仓库。
-
-静态读取发现四项 post_install_steps：glib 创建 Homebrew prefix 下的 `lib/gio/modules`；gnutls / openssl@3 更新各自 etc 中指向 ca-certificates 的 cert.pem 链接；ca-certificates 执行包内 post-install，读取系统证书链并写入 Homebrew etc 下的证书 bundle。这是宿主相关输出，不能仅用 bottle 哈希宣称证书集合可重复。本轮未执行这些动作，未读取系统钥匙串内容。
-
-#### 固定集合与实际 Homebrew 事务的边界
-
-本地调整记录目前为 **无**。若将来建立独立固定 tap，须逐项记录依赖全名改写、官方 bottle root_url 保留、附属补丁路径与改后文本哈希；不能把官方原文哈希当成本地修改版哈希，也不能仅复制 30 份未限定依赖名的配方就宣称停止了移动解析。
-
-本机 Homebrew 源码提交 `b3625f73d3e3574c5789ee32eb7b06627b788ec4` 的 [formula_installer.rb](https://github.com/Homebrew/brew/blob/b3625f73d3e3574c5789ee32eb7b06627b788ec4/Library/Homebrew/formula_installer.rb)（SHA-256 `833fa39f2ab1e39aab4c772ec49e567a1420e32e54e84ec57e4649052b817fe5`）明确有两处不能忽略：
-
-- 进入依赖安装分支后，已有 keg 收据的 tap 与候选 tap 不同会报错要求先卸载；相关分支在该检查前还包含 unlink / 临时改名操作。已满足依赖可能先被跳过，不能断言每项都会报错；Ruby 异常处理会尝试恢复临时 keg 和原链接，但不构成断电、强杀或磁盘故障下的事务保证。因此共享 `/opt/homebrew` 内改用同名独立 tap，可能触发与现有 core keg 的冲突，不能当作无副作用试运行，更不能自动卸载用户共享依赖来绕过。
-- bottle 运行依赖记录按 full_name 建表，再按声明的 dep.name 查最小版本；把声明改为自定义 tap 全名后，原 core bottle 记录未必仍按同一个键匹配。因此固定引用仍须显式对照每项版本 / revision / 制品身份，不能依赖这个隐式最低版本检查保证冻结。
-
-以上来自只读源码核对，没有触发安装事务。静态 AST 图证明候选之间的引用闭合；它不证明 tap 迁移、已装项复用、bottle 重定位或反向依赖安全。具体安装与恢复方案见第 2.4 节；其中命令仅供后续获授权执行，尚未运行。不能改 Homebrew 本身、绕过依赖校验、伪造 core 身份或改写用户收据来获得表面通过。
-
-### 2.4 专用 Homebrew 前缀：安装与恢复方案
-
-选择任务专用 `/opt/rrt01`，同时作为 Homebrew prefix / repository，使用其独立 `Cellar`、`opt`、`etc` 和 `var`；本次只读检查该路径不存在，未创建目录。**30 项候选全部新装到此处，不复用共享 keg，不升级 `/opt/homebrew` 的任何项。** 这是后续实施候选，需要目录写入、bootstrap 和依赖安装授权；不是已建立的工具环境。私有前缀不能通过给共享 brew 设置 HOMEBREW_PREFIX 来实现：固定版本的 `bin/brew` 会按自身位置确定 prefix / repository，必须有独立入口。
-
-#### 重定位依据及限制
-
-上述 Homebrew 提交的 [bottle_specification.rb](https://github.com/Homebrew/brew/blob/b3625f73d3e3574c5789ee32eb7b06627b788ec4/Library/Homebrew/bottle_specification.rb)（SHA-256 `1150ca27f3fc9b3e431cde4bdbb7b79986ec8cffad51ed352689bd793b5296d3`）允许默认开启的 build-prefix 重定位：对于固定 Cellar bottle，新 prefix / Cellar 字节长度不能长于构建位置。`/opt/rrt01` 为 10 字节、其 Cellar 为 17 字节，分别短于 `/opt/homebrew` 的 13 字节和原 Cellar 的 20 字节。官方也说明了短自定义前缀的支持及限制，不能把一般的“非默认路径必然源码构建”当成本版本结论。[Homebrew 自定义前缀说明](https://docs.brew.sh/Support-Tiers#custom-prefixes)
-
-重新读取 30 项目标平台的 registry 元数据，bottle digest 均与第 2.2 节一致；其 Cellar 条件如下。元数据没有显式 built_prefix / padded_prefix 字段，源码按平台默认构建位置判断。
-
-| bottle Cellar 类型 | 数量与范围 | 元数据重定位条件 |
+| 变化 | 已观察到的使用路径 | 实际影响与后续验证 |
 | --- | --- | --- |
-| `/opt/homebrew/Cellar` | 8：qemu、gettext、glib、libidn2、ncurses、openssl@3、p11-kit、vde | 新路径长度符合固定版本的兼容判断；binary_relocation_files 数分别为 34、7、13、1、155、2、5、3 |
-| `:any` | 21：除上述八项和 ca-certificates 外的候选 | 声明可重定位，仍需实际链接核验 |
-| `:any_skip_relocation` | 1：ca-certificates | 无需归档路径重定位；post-install 仍写专用 etc |
+| libunistring 1.4.2 → 1.5 | gettext 1.0 的收据与辅助 dylib 指向它；Git 收据间接包含 gettext | gettext 相关功能需验证；不能仅由收据推断每个 Git 命令必经该库 |
+| pcre2 10.47_1 → 10.49 | Git 2.54.0、ripgrep 15.2.0 的实际 Mach-O 直接链接共享 opt/pcre2 | 两工具会加载升级库；需用合成仓库 / 文本检查相关正则功能 |
+| snappy 1.2.2 → 1.3.1 | leveldb 1.23_2 直接链接；librime 1.17.0 经 leveldb 使用 | RadishLex 使用共享 librime 的本机开发 / 重新打包路径受影响；需合成数据的原生库功能验证 |
+| ca-certificates 2026-08-13 → 2026-09-25 | OpenSSL 3、Ruby、CocoaPods、FFmpeg 的收据依赖链；OpenSSL 3 的 cert.pem 指向共享 CA 文件 | post-install 重建 `/opt/homebrew/etc/ca-certificates/cert.pem`，可能改变现有 TLS 信任结果；保留 OpenSSL 3 不隔离此影响 |
+| 新增 openssl@4 4.0.3 | 共享 CLI / 编译入口；RadishLex 脚本调用未限定路径的 `openssl cms` | 默认命令行为、算法 / provider 和构建发现需单独核对；未实测不能承诺兼容 |
+| 新增 glib / gnutls / openssl@4 | API 声明 post_install_steps | glib 创建 `lib/gio/modules`，gnutls / OpenSSL 4 建立各自 etc 下的 CA 链接；均会写共享 prefix，尚未执行 |
 
-这仅证明 **30 项元数据满足候选路径条件**，没有下载归档、检查其实际字节或运行 pour。[keg_relocate.rb](https://github.com/Homebrew/brew/blob/b3625f73d3e3574c5789ee32eb7b06627b788ec4/Library/Homebrew/keg_relocate.rb)（SHA-256 `0b64fbcea7408247da7c389c8d8dc04b8e642e1e9cf9d015f98947adf48b2a23`）按记录处理二进制字符串、重建包内硬链接并重新签名；安装器同时处理文本 / 动态库路径、链接和新收据。归档 SHA 是下载身份，重定位后的文件须另记哈希，不能要求二者相同。新收据由未修改的 Homebrew 正常生成，记录实际 tap 与重定位，不改写已有 core 收据。
+ca-certificates 的 macOS post-install 会读取 `/Library/Keychains/System.keychain` 与 `/System/Library/Keychains/SystemRootCertificates.keychain` 中的证书，结合 Mozilla CA 生成上述 bundle；源码不读取登录钥匙串或私钥。本轮只审阅源码，没有执行 `security` 或读取证书内容；未来正常安装的这项宿主副作用须包含在安装影响范围内，不能以 bottle 哈希保证最终信任集合相同。
 
-#### 后续执行顺序
+其他项目核对限于相关源码和已安装二进制的 `otool -L`，未修改或运行兄弟项目：RadishLex 的 `crates/ime-engine-rime/build.rs` 使用 `RIME_INCLUDE_DIR` / `RIME_LIB_DIR` 或 pkg-config 的 rime；`scripts/check-macos-upgrade-product-coordination.sh` 会取 `brew --prefix librime`；`scripts/build-manager-macos-dpk-qualified-product.sh` 使用未限定路径的 `openssl cms -verify`。其 `scripts/macos-imk/bundle_dylibs.py` 会复制动态库并改写包内引用，因此不能推断已打包应用会自动加载升级后的共享库；具体制品仍需独立核对。
 
-1. **记录边界。** 核对目标不存在且不是符号链接；记录父目录、专用目录所有者和任务资源清单。保存共享八项 formula 的全部十份现存收据 SHA、opt / linked-keg 指向与共享 brew commit，安装后逐项比较；不复制其 Cellar 或配置。只为 `/opt/rrt01` 提供所需权限，不递归修改 `/opt` 或 `/opt/homebrew` 所有权。
-2. **建立独立 bootstrap。** 从已核验的 Homebrew Git 对象独立复制仓库（不用硬链接、共享 object alternates 或已有用户配置），在新仓库 checkout 上述完整 commit；不使用跟随 latest 的安装脚本。固定该 commit 声明的 portable Ruby `4.0.6_2`：`arm64_big_sur` 归档 SHA-256 为 `1643bb83d705f0c5e34445af151bb064bdf984081eff18a9646466b8fdd104db`。它属于 Homebrew bootstrap，额外于 30 项 QEMU 集合，须纳入下载 / 安装清单；未下载或安装。
-3. **隔离命令配置。** 仅本任务进程使用 `/opt/rrt01/bin/brew`，PATH 以专用 bin 和 macOS 系统路径为限；缓存、日志、临时目录和 XDG_CONFIG_HOME 均指定到任务私有位置，不改 HOME、用户 shell 或全局默认。命令设置 `HOMEBREW_NO_AUTO_UPDATE=1`、`HOMEBREW_NO_INSTALL_FROM_API=1`、`HOMEBREW_NO_INSTALL_CLEANUP=1`、`HOMEBREW_NO_ANALYTICS=1`、`HOMEBREW_FORBIDDEN_TAPS=homebrew/core`。核对生效的 prefix / Cellar / repository 和环境配置来源；若系统 brew.env 强制覆盖隔离设置则停止。当前 `/etc/homebrew/brew.env` 与共享 prefix 的对应文件未发现；不能假定执行时仍不存在。
-4. **实体化固定 tap。** 在专用仓库内建立本地 `radishroot/t01`，由第 2.3 节原文产生 30 项配方，39 条运行依赖全部限定到该 tap；保留包名、版本、revision、bottle tag / rebuild / SHA / Cellar 和官方 GHCR root_url，保留附属补丁及 post-install。逐项保存原文哈希、修改差异、改后哈希和本地 commit。仅对这个 tap 执行明确的 `brew trust --tap radishroot/t01`，信任记录写任务 XDG 路径；不关闭全局信任检查，不伪造 homebrew/core 来源。本轮尚无这些修改版文件。
-5. **实际求解后再下载。** 在独立环境解析配方，确认恰为 30 节点 / 39 条运行依赖、无额外下载资源或源码构建；逐项核对版本 / revision / rebuild / 平台 / SHA 和重定位条件。原 bottle 的 core full_name 与自定义依赖名未必对应，显式身份比较不能省略。下载到专用缓存后重新计算归档 SHA，保留官方 registry 来源；自定义本地 tap 不自动获得 core 的 attestation 验证结果，若使用官方 attestation 验证须对原归档独立完成并保存结果，不把“跳过验证”写成通过，也不为此自动安装 gh 等额外工具。
-6. **逐包安装并验收。** 按下列拓扑序，每次只安装一个全名，候选命令形式为 `/opt/rrt01/bin/brew install --force-bottle radishroot/t01/<包名>`。该选项可能越过普通兼容分支，故只能在前一步明确验证 bottle 可用及路径兼容后使用；不能拿它强行安装不兼容制品。每次先核对其依赖均已在专用 Cellar 以精确身份就绪，再核对新收据、链接和 post-install 结果。依赖安装子流程不会继承该 force-bottle 选项，因此不依赖一条安装 qemu 的命令替代逐项控制。发现源构建、额外包、共享路径访问写入、链接失败或 post-install 失败立即停止，不用忽略依赖 / 校验选项继续。
+FFmpeg 的已安装二进制明确指向 `opt/openssl@3` 的版本化 dylib，不会仅因默认 `openssl` 切换就自动改用 ABI 4；但共享 CA 更新仍需考虑。其他项目通过 Git、ripgrep 或共享 TLS 间接受影响的范围取决于实际调用路径。本次不是所有项目的完整兼容性审计，也没有取得升级后的功能证据。
 
-拓扑序为：`json-c → libunistring → gettext → capstone → libyaml → dtc → pcre2 → glib → ca-certificates → gmp → libidn2 → libtasn1 → nettle → p11-kit → gnutls → jpeg-turbo → libpng → libslirp → openssl@3 → libssh → libusb → lzo → ncurses → pixman → snappy → vde → lz4 → xz → zstd → qemu`。箭头仅表示执行顺序，真实依赖关系仍以第 2.3 节为准。
+### 2.4 正常 Homebrew 安装与失败处理方案
 
-安装验收须递归读取 Mach-O 的 dylib / LC_RPATH、脚本解释器和配置路径；运行所需位置只允许专用 prefix 或明确的 macOS 系统输入，不允许偷偷链接 `/opt/homebrew`。核对 QEMU 能力、OpenSSL 3 链、固件与许可证；专用 ca-certificates 读取系统信任库的行为须在安装范围中明确，输出仅写专用 etc。最后比较共享基线；若发现非预期变化，停止并定位归属，不自动恢复可能属于用户并行工作的修改。上述任一条件失败，都不能报告“环境就绪”。
+以下是后续实施方法；当前授权只覆盖核对与文档更新，未安装。
 
-#### 失败与恢复
+1. **复核实际范围。** 在现有 `/opt/homebrew` 重做版本 / 来源核对和 dry-run，确认本表的候选及新增 / 升级动作。若默认 OpenSSL 入口必须保持 3，则当前正常安装方案不满足该约束，应先调整方案；不临时加入强制链接、自定义 tap 或依赖跳过。
+2. **保存安装前状态。** 记录全部已装收据、相关 opt / linked-keg / bin / lib / 头文件及构建发现链接、受影响工具版本；在安装授权范围内保留受影响旧 keg、配置和 CA bundle 的可恢复副本，私密材料不进入仓库或日志。仅设置本次命令不清理旧版本；不运行全局 upgrade / cleanup / autoremove，不把保留旧 keg 当作完整回滚。
+3. **按正常依赖安装。** 使用现有 `/opt/homebrew/bin/brew install --formula qemu`，命令级保留第 2.2 节的自动更新 / 清理控制及官方依赖检查。只接受已审阅的 bottle；若需要源码构建、额外包、移除既有包或修改全局设置，停止并报告范围变化。正常安装会写共享 Cellar、opt、bin、lib、include、share 和 etc，并可能调整反向依赖；不可按专用环境的“共享零变化”验收。
+4. **核对实际结果。** 逐项比较收据 / 链接差异、真实版本及库来源，记录 OpenSSL 3 / 4、默认 CLI 与编译发现、CA bundle 的结果；验证 Git / ripgrep 及相关原生库的代表性合成用例。兄弟项目运行或修改按对应项目授权处理。本项目完成第 4 节的 QEMU CLI、TCG、机器型号和固件检查后，才取得工具可运行证据；guest 启动仍属后续验证。
+5. **失败保留现场。** 保存失败阶段、日志、已完成动作与共享状态差异，停止继续安装 / 清理。卸载 qemu 不会撤销四项升级、默认 OpenSSL 链接或 CA 更新；Homebrew 安装不是完整事务。恢复须逐项核对当前使用者与前置备份，形成针对实际失败的恢复操作，不直接回写旧收据、删除共享库或批量重链。没有演练过的恢复路径不声明可靠。
 
-首次安装失败时保留逐包结果及失败日志，标记专用环境不可用；只停止本任务记录且仍属于该前缀的进程。可将整套专用目录隔离留证，隔离后的路径仅供保存，不能直接运行含旧绝对路径的程序。用户授权清理后只删除已核对归属的任务目录、缓存和日志；共享 Homebrew 无需卸载或恢复。禁止用 core uninstall、改旧收据或切换共享 opt 修补专用环境。
-
-后续升级前停止任务进程，为**完整专用前缀及任务配置**制作保留权限 / 符号链接的独立副本，不与待升级文件使用硬链接；记录清单与哈希。失败后将故障目录留证，恢复上一已验证副本到完全相同的 `/opt/rrt01`，再验身份与功能。不承诺任意新路径可运行，也不把改名或单个库降级当作恢复完成。该恢复流程尚未演练。
+本方案复用用户日常 Homebrew，后续升级由其正常维护流程管理。RadishRoot 在每次验收中记录实际 QEMU、依赖、固件与机器配置身份；共享升级后重跑受影响验证，不能长期沿用旧运行证据，也不自动引入项目私有冻结环境。
 
 ### 2.5 Debian apt / sqv 验证方法与实测
 
@@ -430,28 +350,17 @@ docker run --rm --network none --cap-drop ALL \
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
 | --- | --- | --- |
 | 安装指定 nightly 和组件 | 写入 `~/.rustup/toolchains/` 与下载缓存；可能占用数 GiB，实际以下载清单为准 | 保留现有 1.96.0 / 1.97.1 与默认设置；仅在确认未被其他项目使用时移除本任务新增工具链 |
-| 安装固定 QEMU 集合 | 仅写任务专用 `/opt/rrt01`、专用缓存 / 配置；额外包含固定 Homebrew / portable Ruby bootstrap，30 项全部新装 | 按第 2.4 节隔离失败环境或恢复完整专用前缀到原路径；不卸载共享 core keg，不改共享收据 / opt |
+| 正常 Homebrew 安装 QEMU | 写共享 `/opt/homebrew`；23 项新增、4 项升级、3 项复用；默认 OpenSSL 与共享 CA 发生变化，详见第 2.3 节 | 保留受影响旧 keg / 配置及状态记录，不自动清理；卸载 QEMU 不等于回滚依赖，按第 2.4 节逐项评估恢复 |
 | 构建 Linux 工具镜像 | OrbStack 镜像存储、构建缓存、包索引及专用输出目录产生写入 | 记录项目镜像 ID / digest 和容器 ID；退出本任务容器，仅清理归属明确的资源，不执行全局 prune |
 | 后续制盘 / VM 验证 | 每份 raw 逻辑容量 1 GiB，副本数与实际占用另记；每次运行有独立 VARS 和日志；guest 基线 1 vCPU / 512 MiB，宿主另有仿真开销 | 仅使用仓库忽略目录内的任务普通文件，不挂宿主物理盘；结束关闭任务进程，保留失败副本时记录路径 |
 
-选定的 30 项集合与本机 Cellar 比较后为 **22 项未安装、4 项版本升级、4 项同版本但制品身份待核对**。这是相对共享环境的历史静态差异，取代移动 formula 图的 23 / 3 / 4 估计。第 2.4 节改用专用前缀后，实际计划为 **30 项专用新增、0 项共享升级 / 重装**，22 / 4 / 4 不再是拟执行动作。
+本次预演对应的 27 项新增 / 升级制品，registry 大小元数据合计下载 **155,783,479 字节**、安装大小 **879,078,127 字节**，约 156 MB / 879 MB；不包含三项既有依赖，不需要第二套 Homebrew / portable Ruby。QEMU 本体为 113,262,802 / 728,988,917 字节（下载 / 安装）。已核对各平台 manifest 的制品 digest，未下载软件归档；这是制品容量估计，不是净磁盘增量，另需保留旧 keg、下载缓存、临时目录和恢复材料空间。
 
-| 共享环境版本差异（不执行升级） | 本机 → 选定版本 | 本机收据中的使用者（非完整影响测试） |
-| --- | --- | --- |
-| pcre2 | 10.47_1 → 10.49 | Git 2.54.0、ripgrep 15.2.0 |
-| snappy | 1.2.2 → 1.3.1 | leveldb 1.23_2、librime 1.17.0 |
-| ca-certificates | 2026-08-13 → 2026-09-25 | OpenSSL 3、FFmpeg、Ruby、CocoaPods 的依赖记录 |
-| openssl@3 | 3.6.4 → 3.6.4_1 | FFmpeg、Ruby、CocoaPods 的依赖记录；保留已有 3.6.2 / 3.6.4 的恢复证据 |
-
-同版本四项为 gettext 1.0、libunistring 1.4.2、libyaml 0.2.5、xz 5.8.4。本机收据显示来自 macOS 26 / 26.6 构建，且没有直接提供与上表相同的 bottle rebuild / SHA 证明；不能直接记作“复用成功”。专用方案将这四项也按固定制品新装，不复用或重装这些共享项；此处差异仅说明为什么不能仅按版本号证明身份。
-
-30 项全部制品的 registry 大小元数据合计下载 **166,586,895 字节**、安装大小 **930,446,628 字节**。这是专用前缀内完整 30 项的容量参考，不含 Homebrew / portable Ruby bootstrap、下载缓存、本地配方、临时目录和恢复副本；不是实际净占盘测量。其中 QEMU 本体为 113,262,802 / 728,988,917 字节（下载 / 安装）。均未下载或实测占盘。若必须改为源码构建，重新说明工具、版本、资源和时长，不沿用此估计。
-
-Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。本次 Debian 构建由 BuildKit 报告基础元数据阶段 37.2 秒、安装 RUN 阶段 29.2 秒；这些分阶段时间受网络与缓存影响，不是完整构建计时或固定预算。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
+Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。此前 Debian 构建由 BuildKit 报告基础元数据阶段 37.2 秒、安装 RUN 阶段 29.2 秒；这些分阶段时间受网络与缓存影响，不是完整构建计时或固定预算。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
 
 Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL 宿主 runner 依赖属于后续实现所需的单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
 
-本轮仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust 工具链、QEMU 与 EDK II 仍待实际引入时核对；QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 另核对 `edk2-licenses.txt`。本表不是分发许可结论，也不承诺打包这些宿主工具。
+此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust 工具链、QEMU 与 EDK II 仍待实际引入时核对；QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 另核对 `edk2-licenses.txt`。本表不是分发许可结论，也不承诺打包这些宿主工具。
 
 ## 4. 分层验证方案
 
@@ -459,10 +368,10 @@ Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL �
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
-| 安装前身份核对 | Rust 日期 manifest 与组件可用；固定 formula 实际解析到第 2.2 节的 30 项版本 / revision / rebuild / bottle 哈希，核对专用前缀隔离与重定位条件；Debian 平台 digest、快照签名经实际 apt / sqv 策略验证，包身份及求解匹配 | 缺包、混入 OpenSSL 4、哈希不符、版本漂移或额外安装 / 重装项则停在该项；不自动换源或选 latest，先列出差异 |
+| 安装前身份核对 | Rust 日期 manifest 与组件可用；正常 Homebrew 重新预演匹配第 2.2 节版本 / revision / rebuild / bottle 哈希和 23 / 4 / 3 动作，明确共享默认 OpenSSL / CA 影响；Debian 平台 digest、快照签名经实际 apt / sqv 策略验证，包身份及求解匹配 | 缺包、哈希不符、版本漂移或额外安装 / 重装项则停在该项；不自动换源或选 latest，先列出差异 |
 | Rust 工具可运行 | 显式 `cargo +nightly-2026-10-13 -V` / `rustc +nightly-2026-10-13 -Vv`，核对已装 target / 组件及 rust-lld | 避免 `RUSTUP_TOOLCHAIN=1.96.0` 干扰；不改用户全局默认；版本输出仅证明工具可执行 |
 | QEMU 功能枚举 | `qemu-system-x86_64 --version`、`-machine help`、`-accel help`、`-display help` 与 `qemu-img --version`；记录实际支持的精确 pc-q35-* 名称、TCG 和显示后端 | 当前没有独立 CLI，因此不编造最终机器版本；若缺 TCG 或所需后端，不降低为另一架构 / 加速器冒充通过 |
-| 宿主链接与共享影响 | 安装授权后核对 QEMU / libssh 的 `otool -L`、递归库 / LC_RPATH / 脚本来源，确认专用 OpenSSL 3；共享收据和链接基线须未变，按风险补共享工具代表性检查 | 元数据 ABI 标记不能替代运行证据；不能全局屏蔽反向依赖检查来宣称安全；失败时隔离专用环境并按第 2.4 节恢复；若共享基线异常，先确认归属，不盲目回写或批量卸载 |
+| 宿主链接与共享影响 | 安装授权后核对 QEMU / libssh 的 `otool -L`、递归库 / LC_RPATH / 脚本来源，核对 libssh 使用 OpenSSL 4、既有 OpenSSL 3 路径仍有效；共享收据 / 链接变化与计划一致，按风险补共享工具及 CA 影响检查 | 元数据 ABI 标记不能替代运行证据；不能全局屏蔽反向依赖检查来宣称安全；失败时保留共享差异并按第 2.4 节处理；先确认归属，不盲目回写或批量卸载 |
 | 固件核对 | 读安装包 descriptor、许可证、两个文件尺寸与 SHA-256；代码只读，VARS 每次从模板复制 | 描述文件与实体路径不一致、架构不符则失败；不能用“有 .fd”证明可启动 |
 | Linux 工具可运行 | 在项目专用 ARM64 容器读取 dpkg 精确包版本、sgdisk / mkfs.fat / mtools 版本；记录基础与最终镜像 digest、完整包清单 | 不进入其他项目容器；没有目标包不得报告环境就绪；不使用 privileged 或透传宿主设备 |
 | 工具制镜像验证 | 只对新建普通文件生成规划中的 1 GiB / 512 字节扇区 GPT、128 MiB FAT32 ESP 和 DATA；检查主备 GPT、边界及 FAT；合成文件复制后用独立读取路径对照内容哈希 | 不把制盘工具成功当作内核持久化通过；读盘前确保无活动 guest，不自动修复损坏样本 |
@@ -473,8 +382,10 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、完整 formula 求解 / 动态链接及所有产品行为仍未验证。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、QEMU 实际安装 / 动态链接及所有产品行为仍未验证。
 
-Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，访问代理失败；其失败不能算安装清单查询成功，后续改为只读 Cellar。Docker API 首次被沙盒拒绝，经同一只读目标的权限批准后返回服务版本与架构。sysctl 硬件查询被权限限制，未据此填入 CPU 型号或内存容量。以上都没有启动服务或安装依赖。
+早期 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，代理失败后改用只读 Cellar；这不是安装清单查询成功的证据。2026-10-19 采用任务专用缓存、官方 API 和实际 dry-run 成功取得当前计划。首次联网受沙盒代理限制，为同一元数据目标取得权限后成功；未安装工具或修改全局代理。Docker API 和 sysctl 的早期权限限制仍按原记录解释，不据此补填硬件性能。
 
-本机 Homebrew 源码显示 `install --dry-run` 仍会经过 `perform_preinstall_checks` → `attempt_directory_creation`，可能创建缺失目录；本轮未运行它，采用元数据和收据比较。首次依赖 registry 查询误把 rebuild 拼为 `.N` 导致 404；按本机 `GitHubPackages.version_rebuild` 规则改为 index tag 的 `-N` 后，所选依赖元数据均取得，不能把先前 404 解释为包不存在。
+`install --dry-run` 仍经过 `perform_preinstall_checks`，可能创建缺失目录或准备 portable Ruby，不能一概视作零写入命令。本轮先读本机源码，确认所需共享目录与 portable Ruby 已存在后执行；任务缓存、日志和临时文件产生写入。前后 Homebrew commit、全部 40 份安装收据 SHA-256、424 条已采集共享链接与目录存在性完全一致，qemu Cellar 和 `/opt/rrt01` 均未出现。此检查覆盖上述对象，不能扩大为全磁盘字节不变证明。
+
+本地公开证据保存在忽略目录 `evidence/t01-homebrew-20261019-19ad0a5/`：官方 API、七份配方原文、27 份 registry manifest、dry-run / info 输出、已装库链接、前后基线与摘要，连同缓存实际占盘约 40 MiB。临时脚本仅用于此次盘点，不是项目安装入口；没有下载 bottle / 源码归档、读取钥匙串、安装 / 更新 / 卸载 / 链接操作或后台资源。旧 AST / 专用前缀分析保留为历史；当前方案以第 2.2–2.4 节和这次实际预演为准。
