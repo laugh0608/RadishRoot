@@ -51,3 +51,9 @@ CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1
 | QEMU 随包 EDK II x86_64 code / VARS | 以安装包 descriptor、文件尺寸与环境清单的 SHA-256 识别；上游 [pc-bios README](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/README)为来源说明，不能代替已装字节身份 | `share/qemu/edk2-licenses.txt` 中 EDK II / OvmfPkg 声明 BSD-2-Clause-Patent，另含 MIT、历史许可、SoftFloat、OpenSSL / SSLeay 等声明；保留完整文本，不将汇总内容全部推定为这两份固件的实际链接组成 |
 
 其余 29 项 Homebrew 运行依赖的实际版本与包收据已记录在环境证据中，本轮没有逐项完成分发许可审查。许可证摘要仅记录本机工具来源；未来若分发 QEMU、固件或其他依赖，须按实际制品重新处理许可、源码与归属义务。宿主 OpenSSL 4 与固件内嵌密码库属于不同材料，不能用宿主版本推断固件的库版本或许可。
+
+### 本机 Rust nightly 工具链
+
+2026-10-19 用户安装 `nightly-2026-10-13-aarch64-apple-darwin`，本轮只核对工具与文件，未编译、修改或分发 Rust 材料。来源为此前核对的 [Rust 官方日期清单](https://static.rust-lang.org/dist/2026-10-13/channel-rust-nightly.toml)；已装七项组件的版本、归档 URL 和摘要与该清单一致，实际 rustc commit 为 `e9bbadf6824e65b3583c2dda3a0926ec76df9143`，链接器为 LLD 23.1.3。详细身份与核验边界见[开发环境第 2.9 节](../development/environment.md)。
+
+随包 `share/doc/rust/README.md` 声明 Rust 主体使用 MIT / Apache-2.0，部分材料适用其他许可；完整归属由 `COPYRIGHT.html`、`COPYRIGHT-library.html` 与 `licenses/` 文本记录，已在忽略证据目录中保留。该摘要不将所有组件、LLVM 或未来静态链接进内核的库归为同一许可。本轮仅登记本机工具来源，尚无项目编译 / 分发产物；实际依赖引入或发行时按最终组成补齐许可及归属，不把此记录当作完整分发审查。

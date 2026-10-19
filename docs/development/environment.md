@@ -1,6 +1,6 @@
 # 开发环境清单与安装候选
 
-盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 已由用户安装，本轮实际核验范围见第 2.8 节。
+盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 与指定 Rust nightly 均已由用户安装，实际核验范围见第 2.8–2.9 节。
 
 ## 1. 本机实测
 
@@ -11,8 +11,9 @@
 | 宿主 | Darwin arm64；macOS 27.0.1，build 26A434 | x86_64 guest 按规划使用 TCG；未测 CPU / 内存性能 |
 | Rust 1 | `1.96.0-aarch64-apple-darwin`；rustc `ac68faa20`，Cargo 1.96.0，LLVM 22.1.2 | 有 rustfmt、Clippy、rust-src；已装宿主、iOS、iOS simulator、Android ARM64 target，缺 `x86_64-unknown-none` |
 | Rust 2 | `1.97.1-aarch64-apple-darwin`；rustc `8bab26f4f`，Cargo 1.97.1，LLVM 22.1.6 | 有 rustfmt、Clippy；只有宿主 target，缺 rust-src 和裸机 target |
-| 工具链选择 | `rustup show active-toolchain` 返回 1.96.0，由 `RUSTUP_TOOLCHAIN` 环境变量覆盖 | 两套均为稳定版，未装 nightly；后续项目命令须显式选择候选，不能只依赖 rust-toolchain.toml |
-| ELF 链接器 | 两套工具链的 `lib/rustlib/aarch64-apple-darwin/bin/rust-lld` 分别报告 LLD 22.1.2 / 22.1.6 | 已有 ELF 链接器；尚未链接本项目内核，无须预先增加完整 LLVM 安装 |
+| Rust nightly | `nightly-2026-10-13-aarch64-apple-darwin`；rustc / Cargo 1.101.0-nightly，LLVM 23.1.3 | 七项所需组件和裸机 target 已安装，安装后核验见第 2.9 节；尚未编译项目 |
+| 工具链选择 | 默认和 `RUSTUP_TOOLCHAIN` 仍选择 1.96.0；显式 `+nightly-2026-10-13` 查询正确进入 nightly | 三套工具链并存；项目命令及子进程必须选择指定 nightly，不能只依赖 rust-toolchain.toml |
+| ELF 链接器 | 两套稳定版的 rust-lld 为 LLD 22.1.2 / 22.1.6；新 nightly 自带 LLD 23.1.3，GNU 模式版本查询通过 | nightly 链接器加载同一工具链的 libLLVM；尚未链接项目内核，无须预先增加完整 LLVM 安装 |
 | 本机 C 工具链 | Apple clang 21.0.0，默认 target `arm64-apple-darwin27.0.0` | 默认宿主配置不能视为 x86_64 裸机 C 工具链 |
 | 独立 QEMU CLI | `/opt/homebrew/bin/qemu-system-x86_64`、`qemu-img` 均为 11.1.2，原生 arm64；版本 / 能力枚举与动态链接核验通过 | 工具已安装；项目 guest 自动化运行入口尚未建立，未启动 guest，见第 2.8 节 |
 | UTM | `/Applications/UTM.app` 4.7.5；内置 QEMU 与 qemu-img 动态库含 10.0.2 版本字符串 | `file` 确认是 Mach-O shared library，并非可直接运行的 CLI；版本来自静态字符串，未执行 guest |
@@ -32,12 +33,12 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 
 ## 2. 精确候选与已验证工具环境
 
-以下记录候选与实际验证范围：Debian 工具镜像已完成第 2.6 节的安装 / 可运行性核验，QEMU 已由用户按正常 Homebrew 方案安装并完成第 2.8 节核验，Rust 仍为候选；它们都不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。Rust / Debian 元数据于 2026-10-14 核对；正常 Homebrew QEMU 候选于 2026-10-19 重新核对并执行 dry-run。
+以下记录候选与实际验证范围：Debian 工具镜像已完成第 2.6 节的安装 / 可运行性核验，QEMU 已由用户按正常 Homebrew 方案安装并完成第 2.8 节核验，指定 Rust nightly 已安装并完成第 2.9 节工具核验；它们都不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。Rust / Debian 元数据于 2026-10-14 核对；正常 Homebrew QEMU 候选于 2026-10-19 重新核对并执行 dry-run。
 
 | 层次 | 精确候选 | 来源与核对结果 |
 | --- | --- | --- |
-| Rust | `nightly-2026-10-13-aarch64-apple-darwin`，rustc `1.101.0-nightly (e9bbadf68 2026-10-12)` | 官方日期 manifest 已读取；宿主工具链、`rust-std/x86_64-unknown-none`、rust-src、rustfmt-preview、clippy-preview 均为 available=true |
-| Rust 安装集 | minimal profile + rust-src、rustfmt、clippy；target 为 `x86_64-unknown-none` | 不增加其他 target；使用工具链自带 rust-lld，暂不增加 llvm-tools、GDB 或交叉 GCC |
+| Rust | `nightly-2026-10-13-aarch64-apple-darwin`，rustc `1.101.0-nightly (e9bbadf68 2026-10-12)` | 官方日期 manifest 已读取；安装后七项组件身份相符，rustc 实际版本与候选一致；尚未取得项目编译证据 |
+| Rust 安装集 | minimal profile + rust-src、rustfmt、clippy；target 为 `x86_64-unknown-none` | 已安装宿主及裸机两个 target，使用自带 rust-lld；本次安装集不包含额外 llvm-tools、GDB 或交叉 GCC |
 | QEMU | Homebrew `qemu 11.1.2`，formula revision 0、bottle rebuild 0，`arm64_golden_gate` | 官方 formula API 提供匹配 macOS 27 ARM64 的 bottle；已装版本与收据匹配，来源身份及哈希见下表及第 2.8 节 |
 | x86_64 UEFI | 上述 QEMU 11.1.2 包内的 `edk2-x86_64-code.fd` + `edk2-i386-vars.fd` | QEMU 对应 tag 的 README 标明固件源为 `edk2-stable202302`；已按安装包文件、descriptor 与实测哈希核对，见第 2.8 节；尚未启动，不借用 UTM 文件 |
 | Linux 基础环境 | `debian:trixie-20261005-slim`，`linux/arm64/v8` | registry index → ARM64 manifest 映射与响应哈希已核对，见第 2.1 节；已按该 digest 拉取并执行第 2.5 节验证 |
@@ -45,7 +46,7 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 | FAT 格式 / 检查 | Debian trixie ARM64 `dosfstools=4.2-1.2` | 提供 mkfs.fat、fsck.fat |
 | FAT 文件访问 | Debian trixie ARM64 `mtools=4.0.48-1` | 提供 mcopy、mdir 等，可操作普通镜像文件 |
 
-Rust manifest：[固定日期清单](https://static.rust-lang.org/dist/2026-10-13/channel-rust-nightly.toml)。网页工具未能读取该资源，已通过只读 HTTPS 文本请求成功解析；没有下载工具链归档。
+Rust manifest：[固定日期清单](https://static.rust-lang.org/dist/2026-10-13/channel-rust-nightly.toml)。安装前网页工具未能读取该资源，后经只读 HTTPS 文本请求成功解析；2026-10-19 重核清单与同源 SHA 一致。工具链后由用户安装，本轮不重新下载归档。
 
 QEMU：[formula API](https://formulae.brew.sh/api/formula/qemu.json)、[formula 源码](https://github.com/Homebrew/homebrew-core/blob/master/Formula/q/qemu.rb)、[固定 release 的固件来源](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/README)、[x86_64 配对 descriptor](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/descriptors/60-edk2-x86_64.json)。仅用包版本不能推断固件已兼容；安装后文件哈希已记录于第 2.8 节，实际启动结果仍未取得。
 
@@ -59,7 +60,7 @@ Linux：[Official Images 标签声明](https://github.com/docker-library/officia
 | QEMU arm64_golden_gate bottle | `a399faaf2f8fb45d3b1f35704041a9104f7f717e9fda1b12d4deac9e919d0d33` |
 | Debian ARM64 构建产物 manifest | `sha256:a2ca65377c251208de42e1a2722cb949211236c161b634f6f3663754e2d06850` |
 
-Rust 归档未下载，表内哈希来自官方文本元数据。QEMU 后由用户安装，本轮只核对已装文件 / 收据 / SBOM，不声称重新下载并校验了原始 bottle 归档。Debian 日期标签映射已补齐，并已按下述 ARM64 digest 拉取与运行任务验证容器；具体运行证据见第 2.5 节，不把原先的元数据核对本身当成执行证明。
+表内 Rust 哈希来自官方文本元数据；工具链后由用户安装，本轮核对已装 manifest、CLI 与文件，不声称独立复验了原始发行归档。QEMU 后由用户安装，本轮只核对已装文件 / 收据 / SBOM，不声称重新下载并校验了原始 bottle 归档。Debian 日期标签映射已补齐，并已按下述 ARM64 digest 拉取与运行任务验证容器；具体运行证据见第 2.5 节，不把原先的元数据核对本身当成执行证明。
 
 QEMU formula 原文现已取得并计算内容哈希，与 API 的 `df8fe626603a12e042c0b33141343a3c36f059990addff1be4db4479fabe3561` 一致；固定来源见第 2.3 节。普通 `brew install qemu` 会随 formula 变化，不能视为永久精确安装命令。
 
@@ -307,7 +308,7 @@ docker run --rm --network none --cap-drop ALL \
   cat /usr/local/share/radishroot-debian-tools/packages.tsv
 ```
 
-标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。2026-10-14 的工具版本 / 帮助和动态链接通过仅证明可执行入口可用，当时未创建测试盘；后续 GPT/FAT 文件操作证据见第 2.7 节，QEMU 安装后核验见第 2.8 节。nightly 安装及产品 AT 仍未执行。
+标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。2026-10-14 的工具版本 / 帮助和动态链接通过仅证明可执行入口可用，当时未创建测试盘；后续 GPT/FAT 文件操作证据见第 2.7 节，QEMU 安装后核验见第 2.8 节。Rust 安装后工具核验见第 2.9 节，项目编译及产品 AT 仍未执行。
 
 构建脚本仅供上述 Dockerfile 在固定容器内执行，不在 macOS 宿主直接运行。APT 更新、五包体核验、安装和完整清单对照是构建内检查；表中的七条 CLI 命令、ldd 和运行前后状态比较是本次构建后的独立验收，不由 Dockerfile 或现有 PR Checks 自动执行。修改配方后，应核对新镜像的固定输入与包清单，并在新 ID 上重新执行对应工具验收，不能沿用旧 ID 的成功记录。`sh -n tools/debian-image/build-image.sh` 只检查 shell 语法；`python3 scripts/check-repo.py` 只检查仓库治理，两者都不能替代真实构建。
 
@@ -378,6 +379,28 @@ QEMU 与 qemu-img 实际链接 `opt/libssh/lib/libssh.4.dylib`，该库链接 `o
 
 本节关闭 QEMU 版本、依赖缺失、默认 OpenSSL 与固件文件身份的核验缺口。真实 guest 启动 / 显示、网络 / 存储行为、RadishLex 打包及各项目功能兼容性仍未验证；T01、M0 与产品 AT 不能因此记为完成。
 
+### 2.9 Rust nightly 安装后工具核验
+
+2026-10-19，用户报告 Rust 安装完成，授权核对版本、组件、裸机 target 和链接器并更新文档。本轮只执行已装工具的查询与文件检查，没有运行安装器、下载发行归档、创建 Cargo 工程或编译源文件。工具链位于 `~/.rustup/toolchains/nightly-2026-10-13-aarch64-apple-darwin/`；下述路径除另注外均相对此目录。
+
+| 核验项 | 实际结果 | 证据边界 |
+| --- | --- | --- |
+| rustc | `1.101.0-nightly (e9bbadf68 2026-10-12)`，完整 commit `e9bbadf6824e65b3583c2dda3a0926ec76df9143`；host 为 aarch64-apple-darwin，LLVM 23.1.3 | 版本查询通过，尚未编译项目 |
+| Cargo | CLI 输出 `1.101.0-nightly (29c5daa1a 2026-10-07)` | manifest 的 Cargo 包版本为 `0.102.0-nightly`，与 CLI 展示版本分别记录；commit 一致，不把包版本误写成 CLI 版本 |
+| rustfmt / Clippy | rustfmt `1.11.0-nightly`，Clippy `0.1.101`，均报告 e9bbadf682 / 2026-10-12 | 只验证工具启动，未对项目执行格式化或静态分析 |
+| 七项组件 | rustc、cargo、宿主 rust-std、裸机 rust-std、rust-src、rustfmt、clippy，安装配置与候选集合完全一致 | manifest 中名称为 rustfmt-preview / clippy-preview；没有以 rustup 显示名差异误报缺失 |
+| 裸机 target | installed 查询包含 `aarch64-apple-darwin` 和 `x86_64-unknown-none`；后者 lib 目录含 core / alloc / compiler_builtins 各一份 rlib 与 rmeta | 六文件存在且非空；三个归档内共 431 个 ELF 对象头为 ELF64、小端、x86_64、可重定位；不是实际链接或运行证明 |
+| rust-src | `lib/rustlib/src/rust/library/` 中 core、alloc、std 的 src/lib.rs 存在且非空 | 文件身份记录于证据；目标使用预编译 core，T01 最小编译不必先启用 build-std；使用 alloc 仍需 allocator |
+| 内置目标配置 | arch=x86_64、64 位、std=false、panic=abort、disable-redzone=true、code-model=kernel、linker=rust-lld、linker-flavor=gnu-lld | 来自已安装 rustc 的 target-spec-json；没有创建自定义 target 或修改目标配置 |
+| 链接器 | `lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu --version` 输出 LLD 23.1.3，LLVM commit `aab11ee0ea5ea9a1d462ad0bc1fae9d9bb643019` | rustc / Cargo / rust-lld 均为原生 arm64 Mach-O；dyld 日志确认链接器加载同一 nightly 内的 libLLVM；未执行目标链接 |
+| 默认与显式选择 | 1.96.0、1.97.1 与新增 nightly 并存；默认仍是 1.96.0，本次进程 RUSTUP_TOOLCHAIN=1.96.0；显式 +nightly 查询命中正确 sysroot | 本轮未改默认、全局 profile、目录 override 或 shell；后续 xtask 及其子命令须使用相同工具链选择 |
+
+安装前保存的官方日期清单 SHA-256 为 `1919aa356b8e4a07d05fc702cd543c3d956d7caf5b3d80caa2a74e9c5d3b114c`。安装后的 multirust-channel-manifest.toml 不能与原文作全结构等同判断：本地版本缺少 artifacts / git_commit_hash 等字段，并补有空 components / extensions。逐项比较七项选定组件的日期、版本、available、gzip / xz URL 与摘要均相符；这是元数据身份核对，不是重新校验发行归档或全部已装文件来源。六个裸机库文件与 rust-lld 的实测 SHA-256 已经 Python 和系统 shasum 两路核对。
+
+已读取随包 README 的许可说明并保留 COPYRIGHT.html、COPYRIGHT-library.html 与 licenses/ 文本，见[许可与来源](../governance/licensing-and-sources.md)。原工具链保留；核验前后 rustup settings 摘要、三套工具链目录清单及合计 35 份配置 / 组件元数据摘要一致，不扩大为安装前后全部文件逐字不变证明。
+
+本地证据保存在忽略目录 `evidence/t01-rust-20261019-bac6c12/`，包括只读辅助脚本、14 项查询的命令 / 退出码、链接器实际加载输出、安装元数据、目标归档头检查、文件摘要与随包许可，约 16 MiB；不保存工具链二进制或目标库副本。没有后台资源。这关闭安装后工具核验缺口；最小内核实际编译、最终 ELF 链接、宿主 / 内核依赖隔离和产品运行仍未验证，T01、M0 与产品 AT 均未因此通过。
+
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
@@ -393,11 +416,11 @@ Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。此前 De
 
 Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL 宿主 runner 依赖属于后续实现所需的单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
 
-此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust 工具链仍待实际引入时核对；QEMU / EDK II 已在本机安装并读取许可，见第 2.8 节。QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 依据其 `edk2-licenses.txt` 单独记录。本表不是分发许可结论，也不承诺打包这些宿主工具。
+此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust nightly 已安装并记录来源 / 随包许可，见第 2.9 节；QEMU / EDK II 已在本机安装并读取许可，见第 2.8 节。QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 依据其 `edk2-licenses.txt` 单独记录。本表不是分发许可结论，也不承诺打包这些宿主工具。
 
 ## 4. 分层验证方案
 
-以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据。其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据；Rust nightly 的版本、组件、target 与链接器核验已有第 2.9 节证据。其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
@@ -415,7 +438,7 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、QEMU guest 与所有产品行为仍未验证；用户安装后的工具 / 链接 / 固件核验见第 2.8 节。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、QEMU guest 与所有产品行为仍未验证；用户安装后的 QEMU / 固件核验见第 2.8 节，Rust 工具链核验见第 2.9 节。
 
 早期 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，代理失败后改用只读 Cellar；这不是安装清单查询成功的证据。2026-10-19 采用任务专用缓存、官方 API 和实际 dry-run 成功取得当前计划。首次联网受沙盒代理限制，为同一元数据目标取得权限后成功；未安装工具或修改全局代理。Docker API 和 sysctl 的早期权限限制仍按原记录解释，不据此补填硬件性能。
 
