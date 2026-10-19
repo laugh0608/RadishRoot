@@ -1,6 +1,6 @@
 # 开发环境清单与安装候选
 
-盘点日期：2026-10-14（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功。
+盘点日期：2026-10-14；工具文件操作验证：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功。
 
 ## 1. 本机实测
 
@@ -387,9 +387,43 @@ docker run --rm --network none --cap-drop ALL \
   cat /usr/local/share/radishroot-debian-tools/packages.tsv
 ```
 
-标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。工具版本 / 帮助和动态链接通过仅证明可执行入口可用，尚未验证 GPT/FAT 文件写入、独立读回、故障样本或产品 AT；未创建任何测试盘，也未安装 QEMU / nightly。
+标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。2026-10-14 的工具版本 / 帮助和动态链接通过仅证明可执行入口可用，当时未创建测试盘；后续 GPT/FAT 文件操作证据见第 2.7 节。QEMU / nightly 安装及产品 AT 仍未执行。
 
 构建脚本仅供上述 Dockerfile 在固定容器内执行，不在 macOS 宿主直接运行。APT 更新、五包体核验、安装和完整清单对照是构建内检查；表中的七条 CLI 命令、ldd 和运行前后状态比较是本次构建后的独立验收，不由 Dockerfile 或现有 PR Checks 自动执行。修改配方后，应核对新镜像的固定输入与包清单，并在新 ID 上重新执行对应工具验收，不能沿用旧 ID 的成功记录。`sh -n tools/debian-image/build-image.sh` 只检查 shell 语法；`python3 scripts/check-repo.py` 只检查仓库治理，两者都不能替代真实构建。
+
+### 2.7 GPT/FAT 普通文件操作与独立读回
+
+2026-10-19 按授权复用第 2.6 节不可变镜像 ID，使用任务专用普通文件完成制盘、合成文件写入、独立读回和损坏检测。候选代码为 `ee6bcff7daad66cb780a9b1fb3bff5837254e4a2`；未修改镜像配方或安装依赖，没有 QEMU / guest、宿主设备透传或挂载真实磁盘。
+
+本地证据位于仓库忽略目录 `evidence/t01-disk-20261019-ee6bcff/`：`produce.sh` 为制盘步骤，`verify.py` 为宿主 Python 标准库只读检查，`damage.py` 创建新副本并记录精确损坏偏移，`check-damage.sh` 调用已有工具只读检查；`report.txt`、JSON、工具日志及 `SHA256SUMS` 保存结果与材料身份。这些是本批有限样本的验证材料，不是通用 FAT 实现、产品制盘入口或现有 CI 覆盖；大文件与本地材料不提交 Git。
+
+| 检查项 | 实际结果 |
+| --- | --- |
+| 整盘与 GPT | `disk.raw` 为 1,073,741,824 字节 / 512 字节扇区；独立核对保护 MBR、主备 GPT 头及分区数组 CRC、主备数组一致性、分区类型 / 名称 / 边界；通过 |
+| ESP | LBA 2048–264191，128 MiB FAT32；空文件系统，未放入引导程序；FAT 结构与检查通过 |
+| DATA | LBA 264192–2097118，共 1,832,927 扇区；mkfs.fat 实际文件系统为 1,832,922 扇区，分区末尾 5 扇区不属于 FAT；容量检查通过 |
+| 布局提示 | sgdisk 提示 DATA 结束位置未按 2048 扇区对齐，可能影响部分磁盘加密工具；此布局用至 GPT 最后可用 LBA，主备 GPT 与分区无重叠。本批不改变 MVP 契约或冻结未来产品制盘参数 |
+| 合成材料 | 空目录；1649 字节跨扇区文本；41 字节带空格名称文件；52 字节 UTF-8 名称 `萝卜.txt`；1 MiB 二进制模式文件。写盘前确定各自大小和 SHA-256 |
+| 独立读取 | 制盘容器退出后，宿主标准库解析 FAT32、双 FAT、备份引导扇区、FSInfo 签名、簇链、短名 / LFN；四文件的名称、长度和原始内容哈希均与独立预期一致，空目录成立 |
+| 写入边界 | mtools 写入前后 DATA 之外的两段字节（包含 ESP、主备 GPT）SHA-256 相同；正常镜像在故障测试后保持原哈希 |
+| 包状态 | 制盘容器前后 83 包名称 / 版本逐字一致，两个容器 dpkg status 前后均未变；未安装、更新或移除包 |
+| 正常镜像 SHA-256 | `fe3cc43bb11e88b84929c8b5bd7b712fc925f2e3c7b9b3749eb244d89a678583` |
+
+五个故障案例均由正常盘生成独立稀疏副本；逐字节对照证明只有声明偏移发生改变。工具检测将材料只读挂载，另核对检测前后哈希，未修复或格式化损坏盘。
+
+| 故障案例 | 独立检查（CLI 均退出 1） | 外部工具实际行为 |
+| --- | --- | --- |
+| 主 GPT 头 CRC 损坏 | 主头无效，备份有效 | sgdisk 退出 0，报告 Main header ERROR，并在内存中使用备份 |
+| 主备 GPT 头 CRC 均损坏 | 两头均无效 | sgdisk 退出 0，输出 Creating new GPT entries in memory，随后 No problems found；不能据此接受原盘 |
+| 主 GPT 分区数组损坏 | 主数组 CRC 无效，备份有效 | sgdisk 退出 0，报告 Main partition table ERROR 和 CRC 问题 |
+| DATA 主备 FAT 引导扇区的扇区大小清零 | 拒绝 FAT 几何参数 | fsck.fat -n 退出 1，Logical sector size is zero |
+| 合成文本首字节篡改 | 文件内容与预期哈希不符 | fsck.fat -n 退出 0；结构完整不证明内容正确 |
+
+**验收不能只取 sgdisk 的退出码或末尾 No problems found，也不能用 fsck.fat 的结构检查代替内容哈希。** 正常盘独立检查退出 0；五个损坏盘独立检查均退出 1，并核对具体失败类别。独立读取器的故障结果与原始 GPT CRC、预先生成的材料摘要及外部工具诊断一起构成本批证据，不声称覆盖所有 FAT/GPT 损坏模式。
+
+两个容器均使用 `--pull never`、无网络、只读根文件系统、cap-drop ALL、no-new-privileges、1 CPU / 256 MiB / 64 PID 上限；仅挂载本任务目录。容器均退出 0，按完整 ID 删除后，任务标签 `com.radishroot.task=t01-disk-20261019-ee6bcff` 查询无残留。保留原工具镜像、六份 1 GiB raw、五份分区 FAT 文件及日志；稀疏文件实际占盘约 50 MiB，逻辑容量合计约 10.33 GB，精确清单见本地报告。不保留后台资源。
+
+这关闭了已有工具制盘、独立读取及本批故障检测的缺口；不证明内核驱动、flush、guest 重启持久化、引导或安装成立，T01、M0 与产品 AT 均未因此通过。
 
 ## 3. 安装影响与清理边界
 
@@ -421,7 +455,7 @@ Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL �
 
 ## 4. 分层验证方案
 
-以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
@@ -439,7 +473,7 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、完整 formula 求解 / 动态链接及所有产品行为仍未验证。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、完整 formula 求解 / 动态链接及所有产品行为仍未验证。
 
 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，访问代理失败；其失败不能算安装清单查询成功，后续改为只读 Cellar。Docker API 首次被沙盒拒绝，经同一只读目标的权限批准后返回服务版本与架构。sysctl 硬件查询被权限限制，未据此填入 CPU 型号或内存容量。以上都没有启动服务或安装依赖。
 
