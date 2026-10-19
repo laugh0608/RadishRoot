@@ -40,3 +40,14 @@ CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1
 | [popt / libpopt0](https://ftp.osuosl.org/pub/rpm/popt/releases/popt-1.x/) | Debian ARM64 `1.19+dfsg-2` | 主体 expat，翻译部分 public-domain，Debian 包装 GPL-2+；保留 `/usr/share/doc/libpopt0/copyright` |
 
 五包来自 `20261005T000000Z` Debian snapshot，包体 SHA-256 以 [packages.tsv](../../tools/debian-image/packages.tsv) 为单一构建输入；镜像内完整 83 包清单为 `/usr/local/share/radishroot-debian-tools/packages.tsv`。上述许可标识按实际包内 copyright 记录，保留原声明与署名，不将摘要当作全部文件或未来发行的许可结论。若将来对外分发，再按实际产物处理相应源码、许可文本和归属义务；本地工具构建不替代 RadishRoot 原创许可证选择。
+
+### 本机 QEMU 与随包固件
+
+2026-10-19 用户通过正常 Homebrew 安装 QEMU 11.1.2；本轮只读核对实际收据、SBOM、运行与固件文件，结果见[开发环境第 2.8 节](../development/environment.md)。用途限宿主侧仿真工具；未向仓库复制 QEMU / 固件二进制，未启动 guest，未打包或分发这些材料，也未自行修改 / 编译。
+
+| 已安装材料 | 来源 / 身份 | 实际读取的许可与保留位置 |
+| --- | --- | --- |
+| QEMU 11.1.2，revision 0 / bottle rebuild 0 | 官方 homebrew/core 的 arm64_golden_gate bottle；SBOM 根制品 SHA 与环境清单候选相符，收据声明 poured_from_bottle。上游 [QEMU v11.1.2](https://github.com/qemu/qemu/tree/v11.1.2) | keg 内 LICENSE 说明模拟器整体为 GPL version 2、源码文件另有兼容声明，且固件具有单独许可；保留 LICENSE、COPYING、COPYING.LIB 和 sbom.spdx.json，不以单一 formula 标识覆盖所有文件 |
+| QEMU 随包 EDK II x86_64 code / VARS | 以安装包 descriptor、文件尺寸与环境清单的 SHA-256 识别；上游 [pc-bios README](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/README)为来源说明，不能代替已装字节身份 | `share/qemu/edk2-licenses.txt` 中 EDK II / OvmfPkg 声明 BSD-2-Clause-Patent，另含 MIT、历史许可、SoftFloat、OpenSSL / SSLeay 等声明；保留完整文本，不将汇总内容全部推定为这两份固件的实际链接组成 |
+
+其余 29 项 Homebrew 运行依赖的实际版本与包收据已记录在环境证据中，本轮没有逐项完成分发许可审查。许可证摘要仅记录本机工具来源；未来若分发 QEMU、固件或其他依赖，须按实际制品重新处理许可、源码与归属义务。宿主 OpenSSL 4 与固件内嵌密码库属于不同材料，不能用宿主版本推断固件的库版本或许可。

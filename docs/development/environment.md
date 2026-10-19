@@ -1,6 +1,6 @@
 # 开发环境清单与安装候选
 
-盘点日期：2026-10-14；工具文件操作验证及正常 Homebrew 方案复核：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功。
+盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 已由用户安装，本轮实际核验范围见第 2.8 节。
 
 ## 1. 本机实测
 
@@ -14,7 +14,7 @@
 | 工具链选择 | `rustup show active-toolchain` 返回 1.96.0，由 `RUSTUP_TOOLCHAIN` 环境变量覆盖 | 两套均为稳定版，未装 nightly；后续项目命令须显式选择候选，不能只依赖 rust-toolchain.toml |
 | ELF 链接器 | 两套工具链的 `lib/rustlib/aarch64-apple-darwin/bin/rust-lld` 分别报告 LLD 22.1.2 / 22.1.6 | 已有 ELF 链接器；尚未链接本项目内核，无须预先增加完整 LLVM 安装 |
 | 本机 C 工具链 | Apple clang 21.0.0，默认 target `arm64-apple-darwin27.0.0` | 默认宿主配置不能视为 x86_64 裸机 C 工具链 |
-| 独立 QEMU CLI | PATH 未发现 `qemu-system-x86_64`、`qemu-img`；Homebrew Cellar 无 qemu | 项目自动化运行入口缺失 |
+| 独立 QEMU CLI | `/opt/homebrew/bin/qemu-system-x86_64`、`qemu-img` 均为 11.1.2，原生 arm64；版本 / 能力枚举与动态链接核验通过 | 工具已安装；项目 guest 自动化运行入口尚未建立，未启动 guest，见第 2.8 节 |
 | UTM | `/Applications/UTM.app` 4.7.5；内置 QEMU 与 qemu-img 动态库含 10.0.2 版本字符串 | `file` 确认是 Mach-O shared library，并非可直接运行的 CLI；版本来自静态字符串，未执行 guest |
 | UTM 固件 | `Contents/Resources/qemu/edk2-x86_64-code.fd` 与 `edk2-i386-vars.fd` | 配对 JSON 声明 x86_64、pc-q35-*；没有启动证据，不能把 ARM 固件代入 |
 | Linux 服务 | OrbStack 2.2.4；Docker context 为 orbstack，CLI / server 均为 29.8.2，服务为 linux / aarch64 | 初次盘点只读 API 成功；已完成固定 Debian 的 apt / sqv 验证，并构建本地工具镜像；五包仅装在派生镜像，任务容器均已清理 |
@@ -32,14 +32,14 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 
 ## 2. 精确候选与已验证工具环境
 
-以下记录候选与实际验证范围：Debian 工具镜像已完成第 2.6 节的安装 / 可运行性核验，Rust / QEMU 仍为候选；它们都不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。Rust / Debian 元数据于 2026-10-14 核对；正常 Homebrew QEMU 候选于 2026-10-19 重新核对并执行 dry-run。
+以下记录候选与实际验证范围：Debian 工具镜像已完成第 2.6 节的安装 / 可运行性核验，QEMU 已由用户按正常 Homebrew 方案安装并完成第 2.8 节核验，Rust 仍为候选；它们都不是已冻结的产品依赖。版本号、包修订和架构一并核对；安装时如果来源内容变化、指定版本不可用或校验不符，应报告差异并调整方案，不能自动切换 latest。Rust / Debian 元数据于 2026-10-14 核对；正常 Homebrew QEMU 候选于 2026-10-19 重新核对并执行 dry-run。
 
 | 层次 | 精确候选 | 来源与核对结果 |
 | --- | --- | --- |
 | Rust | `nightly-2026-10-13-aarch64-apple-darwin`，rustc `1.101.0-nightly (e9bbadf68 2026-10-12)` | 官方日期 manifest 已读取；宿主工具链、`rust-std/x86_64-unknown-none`、rust-src、rustfmt-preview、clippy-preview 均为 available=true |
 | Rust 安装集 | minimal profile + rust-src、rustfmt、clippy；target 为 `x86_64-unknown-none` | 不增加其他 target；使用工具链自带 rust-lld，暂不增加 llvm-tools、GDB 或交叉 GCC |
-| QEMU | Homebrew `qemu 11.1.2`，formula revision 0、bottle rebuild 0，`arm64_golden_gate` | 官方 formula API 提供匹配 macOS 27 ARM64 的 bottle；来源身份及哈希见下表 |
-| x86_64 UEFI | 上述 QEMU 11.1.2 包内的 `edk2-x86_64-code.fd` + `edk2-i386-vars.fd` | QEMU 对应 tag 的 README 标明固件源为 `edk2-stable202302`；最终以安装包文件、descriptor 与实测哈希核对，不借用 UTM 文件 |
+| QEMU | Homebrew `qemu 11.1.2`，formula revision 0、bottle rebuild 0，`arm64_golden_gate` | 官方 formula API 提供匹配 macOS 27 ARM64 的 bottle；已装版本与收据匹配，来源身份及哈希见下表及第 2.8 节 |
+| x86_64 UEFI | 上述 QEMU 11.1.2 包内的 `edk2-x86_64-code.fd` + `edk2-i386-vars.fd` | QEMU 对应 tag 的 README 标明固件源为 `edk2-stable202302`；已按安装包文件、descriptor 与实测哈希核对，见第 2.8 节；尚未启动，不借用 UTM 文件 |
 | Linux 基础环境 | `debian:trixie-20261005-slim`，`linux/arm64/v8` | registry index → ARM64 manifest 映射与响应哈希已核对，见第 2.1 节；已按该 digest 拉取并执行第 2.5 节验证 |
 | GPT | Debian trixie ARM64 `gdisk=1.0.10-2+b1` | 提供 sgdisk；不能误用该包 amd64 的 `1.0.10-2` 修订 |
 | FAT 格式 / 检查 | Debian trixie ARM64 `dosfstools=4.2-1.2` | 提供 mkfs.fat、fsck.fat |
@@ -47,7 +47,7 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 
 Rust manifest：[固定日期清单](https://static.rust-lang.org/dist/2026-10-13/channel-rust-nightly.toml)。网页工具未能读取该资源，已通过只读 HTTPS 文本请求成功解析；没有下载工具链归档。
 
-QEMU：[formula API](https://formulae.brew.sh/api/formula/qemu.json)、[formula 源码](https://github.com/Homebrew/homebrew-core/blob/master/Formula/q/qemu.rb)、[固定 release 的固件来源](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/README)、[x86_64 配对 descriptor](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/descriptors/60-edk2-x86_64.json)。仅用包版本不能推断固件已兼容；安装后还需记录解包文件哈希及实际启动结果。
+QEMU：[formula API](https://formulae.brew.sh/api/formula/qemu.json)、[formula 源码](https://github.com/Homebrew/homebrew-core/blob/master/Formula/q/qemu.rb)、[固定 release 的固件来源](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/README)、[x86_64 配对 descriptor](https://github.com/qemu/qemu/blob/v11.1.2/pc-bios/descriptors/60-edk2-x86_64.json)。仅用包版本不能推断固件已兼容；安装后文件哈希已记录于第 2.8 节，实际启动结果仍未取得。
 
 Linux：[Official Images 标签声明](https://github.com/docker-library/official-images/blob/master/library/debian)、[ARM64 构建产物索引](https://github.com/debuerreotype/docker-debian-artifacts/blob/dist-arm64v8/trixie/slim/oci/index.json)、[gdisk](https://packages.debian.org/trixie/gdisk)、[dosfstools](https://packages.debian.org/trixie/dosfstools)、[mtools](https://packages.debian.org/trixie/mtools)。基础镜像标签不锁定后续 apt 软件源；正式工具镜像须同时记录软件源快照、完整 dpkg 清单和最终镜像 digest，不能仅靠这三项顶层版本宣称传递依赖已经锁定。
 
@@ -59,7 +59,7 @@ Linux：[Official Images 标签声明](https://github.com/docker-library/officia
 | QEMU arm64_golden_gate bottle | `a399faaf2f8fb45d3b1f35704041a9104f7f717e9fda1b12d4deac9e919d0d33` |
 | Debian ARM64 构建产物 manifest | `sha256:a2ca65377c251208de42e1a2722cb949211236c161b634f6f3663754e2d06850` |
 
-Rust / QEMU 归档未下载，表内哈希来自官方文本元数据。Debian 日期标签映射已补齐，并已按下述 ARM64 digest 拉取与运行任务验证容器；具体运行证据见第 2.5 节，不把原先的元数据核对本身当成执行证明。
+Rust 归档未下载，表内哈希来自官方文本元数据。QEMU 后由用户安装，本轮只核对已装文件 / 收据 / SBOM，不声称重新下载并校验了原始 bottle 归档。Debian 日期标签映射已补齐，并已按下述 ARM64 digest 拉取与运行任务验证容器；具体运行证据见第 2.5 节，不把原先的元数据核对本身当成执行证明。
 
 QEMU formula 原文现已取得并计算内容哈希，与 API 的 `df8fe626603a12e042c0b33141343a3c36f059990addff1be4db4479fabe3561` 一致；固定来源见第 2.3 节。普通 `brew install qemu` 会随 formula 变化，不能视为永久精确安装命令。
 
@@ -119,15 +119,15 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 
 固定基础包清单 SHA-256 为 `d36f1afce31468d16ff66da178751c73bfd5347271f8411015f8b937cd3b1132`。其中没有 ca-certificates，不能把宿主 HTTPS 查询成功推成容器 HTTPS 已可用；实际构建须遵循已审阅源模板的传输方式与签名校验，若改用需要新增 CA 包的方式，应重新记录依赖影响。新增包须纳入安装清单与授权范围。
 
-### 2.2 正常 Homebrew QEMU 候选与实际预演
+### 2.2 正常 Homebrew QEMU 安装基线与预演
 
-2026-10-19 按用户要求改用现有 `/opt/homebrew/bin/brew` 与官方 `homebrew/core`，安装到共享 `/opt/homebrew`。不再实施专用 `/opt/rrt01`、固定 tap 或第二套 Homebrew / portable Ruby；此前方案仅保留在月度日志与 Git 历史。当前 QEMU 候选仍为 **11.1.2（revision 0、bottle rebuild 0）**，运行依赖跟随本次官方 formula 解析，包含 **libssh 0.12.2_1 → openssl@4 4.0.3**。这不是原 OpenSSL 3 固定集合，也不是永久冻结的安装锁。
+2026-10-19 按用户要求改用现有 `/opt/homebrew/bin/brew` 与官方 `homebrew/core`，安装到共享 `/opt/homebrew`。不再实施专用 `/opt/rrt01`、固定 tap 或第二套 Homebrew / portable Ruby；此前方案仅保留在月度日志与 Git 历史。本次安装基线为 **11.1.2（revision 0、bottle rebuild 0）**，运行依赖跟随本次官方 formula 解析，包含 **libssh 0.12.2_1 → openssl@4 4.0.3**。这不是原 OpenSSL 3 固定集合，也不是永久冻结的安装锁。
 
 先核对本机 Homebrew 提交 `b3625f73d3e3574c5789ee32eb7b06627b788ec4`、所需目录和已有 portable Ruby 4.0.6_2，再实际执行 `/opt/homebrew/bin/brew install --formula --dry-run --no-ask qemu`，退出 0。命令级设置 `HOMEBREW_NO_AUTO_UPDATE=1`、`HOMEBREW_NO_ANALYTICS=1`、`HOMEBREW_NO_INSTALL_CLEANUP=1`，缓存 / 日志 / 临时目录放在本任务忽略目录；保留官方 API 解析及既有依赖检查，不改 HOME 或全局配置。预演下载了 API / bottle manifest 文本元数据，没有下载软件归档或执行安装。
 
-实际计划为 **QEMU 本体 + 22 项新增依赖、4 项依赖升级、3 项既有依赖复用**，共 30 项。30 份官方 API 与本机 `brew info --json=v2` 的版本、依赖及目标 bottle 身份一致，运行图为 30 节点 / 39 条引用。下表“复用”仅表示预演没有安排安装 / 升级，不表示既有 keg 与当前 bottle 字节相同或已通过运行兼容验证。
+实际计划为 **QEMU 本体 + 22 项新增依赖、4 项依赖升级、3 项既有依赖复用**，共 30 项。30 份官方 API 与本机 `brew info --json=v2` 的版本、依赖及目标 bottle 身份一致，运行图为 30 节点 / 39 条引用。下表记录安装前状态与预演；安装后的 30 项活动版本均与候选相符，实测见第 2.8 节。“复用”不表示既有 keg 与当前 bottle 字节相同或已通过全部功能兼容验证。
 
-| 包 | 当前 → 候选版本（含 formula revision） | 预演动作 | bottle rebuild / SHA-256 |
+| 包 | 安装前 → 候选版本（含 formula revision） | 预演动作 | bottle rebuild / SHA-256 |
 | --- | --- | --- | --- |
 | ca-certificates | 2026-08-13 → 2026-09-25 | 升级 | 0 / `81804ad8a70a7a8d2a0a964d106765ff88716b310decaeffb4b4895a3252186a` |
 | capstone | 未安装 → 5.0.9 | 新增 | 0 / `6b31fe379681e2c0778e30b3516cdfc2cfdff6424f666463643f1507039daf0b` |
@@ -160,7 +160,7 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 | xz | 5.8.4 → 5.8.4 | 复用 | 0 / `b2b5d6523153be05c20bcc51cd358ea3dd1f4bf893748fdedb779ab508ea63ce` |
 | zstd | 未安装 → 1.5.7_1 | 新增 | 0 / `7fb4af03304cc4897326168cdcd53290311c5543150f5502a61c3e84b6d62765` |
 
-除 ca-certificates 使用 `all` 外，目标平台均为 `arm64_golden_gate`。复用三项的 bottle 哈希仅识别当前候选，运行身份以已有收据与安装后实际链接为准。ca-certificates 还保留旧 keg 2026-05-14，当前 opt 指向 2026-08-13；预演不包含卸载旧 keg。当前集合没有安排升级 / 移除 openssl@3，也没有 pin 阻止上述四项升级。
+除 ca-certificates 使用 `all` 外，目标平台均为 `arm64_golden_gate`。复用三项的 bottle 哈希仅识别当前候选，运行身份以已有收据与安装后实际链接为准。ca-certificates 还保留旧 keg 2026-05-14，安装前 opt 指向 2026-08-13，安装后为 2026-09-25；旧 keg 保留，见第 2.8 节。当前集合没有安排升级 / 移除 openssl@3，也没有 pin 阻止上述四项升级。
 
 普通 Homebrew 会随上游和本机状态变化；执行前须重新预演并比较本表。`HOMEBREW_NO_AUTO_UPDATE` 只控制命令自动更新行为，不构成依赖锁。预演不验证真实 pour、链接、post-install 或所有反向依赖；实际安装发现损坏链接时仍可能触发相关依赖升级 / 重装，不能屏蔽检查来强行维持 23 / 4 / 3。出现额外动作、版本 / 哈希变化或源码构建需求时，先列明差异并更新影响范围。[Homebrew install / dry-run 说明](https://docs.brew.sh/Manpage#install-options-formulacask-)
 
@@ -178,7 +178,7 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 | [ca-certificates](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/c/ca-certificates.rb) | `e7807634f02d41cfad036cdebb546daacd45e118fcb463acc6c6e4f6e07dcf3f` |
 | [snappy](https://github.com/Homebrew/homebrew-core/blob/d929e58761d4e047dbb728b514fae89f9eef1cf1/Formula/s/snappy.rb) | `65ad62d494f32ebad469606114480e5aeb6e88cac51d6bd5067e7cfed4c86959` |
 
-**OpenSSL 4 的影响不止新增一个并存目录。** 当前 formula 不是 keg-only，明确允许覆盖共享 `bin/openssl`、OpenSSL 头文件、`libssl*` / `libcrypto*`、pkg-config 与 CMake 的 OpenSSL 发现入口。本机 `bin/openssl`、`include/openssl`、`lib/libssl.dylib`、`lib/libcrypto.dylib` 和 `lib/pkgconfig/openssl.pc` 当前均指向 openssl@3 3.6.4；按正常链接流程安装后，默认 CLI 与未限定版本的编译发现会转向 OpenSSL 4。`/opt/homebrew/opt/openssl@3` 及其版本化 dylib 可以保留，但不能据此声称共享默认不变或所有项目无影响。
+**OpenSSL 4 的影响不止新增一个并存目录。** 当前 formula 不是 keg-only，明确允许覆盖共享 `bin/openssl`、OpenSSL 头文件、`libssl*` / `libcrypto*`、pkg-config 与 CMake 的 OpenSSL 发现入口。安装前 `bin/openssl`、`include/openssl`、`lib/libssl.dylib`、`lib/libcrypto.dylib` 和 `lib/pkgconfig/openssl.pc` 均指向 openssl@3 3.6.4；安装后已核对默认 CLI 与这些共享入口转向 OpenSSL 4.0.3。`/opt/homebrew/opt/openssl@3` 及其版本化 dylib 可以保留，但不能据此声称共享默认不变或所有项目无影响。
 
 | 变化 | 已观察到的使用路径 | 实际影响与后续验证 |
 | --- | --- | --- |
@@ -187,9 +187,9 @@ trixie Release 的 Date 为 2026-09-12 07:55:41 UTC，没有 Valid-Until；updat
 | snappy 1.2.2 → 1.3.1 | leveldb 1.23_2 直接链接；librime 1.17.0 经 leveldb 使用 | RadishLex 使用共享 librime 的本机开发 / 重新打包路径受影响；需合成数据的原生库功能验证 |
 | ca-certificates 2026-08-13 → 2026-09-25 | OpenSSL 3、Ruby、CocoaPods、FFmpeg 的收据依赖链；OpenSSL 3 的 cert.pem 指向共享 CA 文件 | post-install 重建 `/opt/homebrew/etc/ca-certificates/cert.pem`，可能改变现有 TLS 信任结果；保留 OpenSSL 3 不隔离此影响 |
 | 新增 openssl@4 4.0.3 | 共享 CLI / 编译入口；RadishLex 脚本调用未限定路径的 `openssl cms` | 默认命令行为、算法 / provider 和构建发现需单独核对；未实测不能承诺兼容 |
-| 新增 glib / gnutls / openssl@4 | API 声明 post_install_steps | glib 创建 `lib/gio/modules`，gnutls / OpenSSL 4 建立各自 etc 下的 CA 链接；均会写共享 prefix，尚未执行 |
+| 新增 glib / gnutls / openssl@4 | API 声明 post_install_steps | glib 创建 `lib/gio/modules`，gnutls / OpenSSL 4 建立各自 etc 下的 CA 链接；均会写共享 prefix；本轮只核对安装结果，不重跑 post-install |
 
-ca-certificates 的 macOS post-install 会读取 `/Library/Keychains/System.keychain` 与 `/System/Library/Keychains/SystemRootCertificates.keychain` 中的证书，结合 Mozilla CA 生成上述 bundle；源码不读取登录钥匙串或私钥。本轮只审阅源码，没有执行 `security` 或读取证书内容；未来正常安装的这项宿主副作用须包含在安装影响范围内，不能以 bottle 哈希保证最终信任集合相同。
+ca-certificates 的 macOS post-install 会读取 `/Library/Keychains/System.keychain` 与 `/System/Library/Keychains/SystemRootCertificates.keychain` 中的证书，结合 Mozilla CA 生成上述 bundle；源码不读取登录钥匙串或私钥。安装前只审阅源码；安装后仅核对 bundle 的存在、大小、摘要及引用链接，未执行 `security` 或摘录证书内容，也未观测用户安装期间的 post-install 过程。不能以 bottle 哈希保证最终信任集合相同；升级后的 TLS 行为仍未验证。
 
 其他项目核对限于相关源码和已安装二进制的 `otool -L`，未修改或运行兄弟项目：RadishLex 的 `crates/ime-engine-rime/build.rs` 使用 `RIME_INCLUDE_DIR` / `RIME_LIB_DIR` 或 pkg-config 的 rime；`scripts/check-macos-upgrade-product-coordination.sh` 会取 `brew --prefix librime`；`scripts/build-manager-macos-dpk-qualified-product.sh` 使用未限定路径的 `openssl cms -verify`。其 `scripts/macos-imk/bundle_dylibs.py` 会复制动态库并改写包内引用，因此不能推断已打包应用会自动加载升级后的共享库；具体制品仍需独立核对。
 
@@ -197,7 +197,7 @@ FFmpeg 的已安装二进制明确指向 `opt/openssl@3` 的版本化 dylib，�
 
 ### 2.4 正常 Homebrew 安装与失败处理方案
 
-以下是后续实施方法；当前授权只覆盖核对与文档更新，未安装。
+以下保留正常安装 / 后续重装的操作边界。用户已完成本次安装并选择默认使用 OpenSSL 4；本轮仅做第 2.8 节安装后核验。需要 OpenSSL 3 的项目在各自命令或构建入口明确指定其专用路径，不全局切回，也不以 PATH 设置替代编译库路径选择。
 
 1. **复核实际范围。** 在现有 `/opt/homebrew` 重做版本 / 来源核对和 dry-run，确认本表的候选及新增 / 升级动作。若默认 OpenSSL 入口必须保持 3，则当前正常安装方案不满足该约束，应先调整方案；不临时加入强制链接、自定义 tap 或依赖跳过。
 2. **保存安装前状态。** 记录全部已装收据、相关 opt / linked-keg / bin / lib / 头文件及构建发现链接、受影响工具版本；在安装授权范围内保留受影响旧 keg、配置和 CA bundle 的可恢复副本，私密材料不进入仓库或日志。仅设置本次命令不清理旧版本；不运行全局 upgrade / cleanup / autoremove，不把保留旧 keg 当作完整回滚。
@@ -307,7 +307,7 @@ docker run --rm --network none --cap-drop ALL \
   cat /usr/local/share/radishroot-debian-tools/packages.tsv
 ```
 
-标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。2026-10-14 的工具版本 / 帮助和动态链接通过仅证明可执行入口可用，当时未创建测试盘；后续 GPT/FAT 文件操作证据见第 2.7 节。QEMU / nightly 安装及产品 AT 仍未执行。
+标签可被后续构建更新，运行证据绑定本次 ID；固定输入不保证包含构建时间 / provenance 元数据的整个镜像逐字重建为相同 ID。镜像只在本机保留，Docker 返回的本地 RepoDigests 不证明 registry 上已发布。2026-10-14 的工具版本 / 帮助和动态链接通过仅证明可执行入口可用，当时未创建测试盘；后续 GPT/FAT 文件操作证据见第 2.7 节，QEMU 安装后核验见第 2.8 节。nightly 安装及产品 AT 仍未执行。
 
 构建脚本仅供上述 Dockerfile 在固定容器内执行，不在 macOS 宿主直接运行。APT 更新、五包体核验、安装和完整清单对照是构建内检查；表中的七条 CLI 命令、ldd 和运行前后状态比较是本次构建后的独立验收，不由 Dockerfile 或现有 PR Checks 自动执行。修改配方后，应核对新镜像的固定输入与包清单，并在新 ID 上重新执行对应工具验收，不能沿用旧 ID 的成功记录。`sh -n tools/debian-image/build-image.sh` 只检查 shell 语法；`python3 scripts/check-repo.py` 只检查仓库治理，两者都不能替代真实构建。
 
@@ -345,6 +345,39 @@ docker run --rm --network none --cap-drop ALL \
 
 这关闭了已有工具制盘、独立读取及本批故障检测的缺口；不证明内核驱动、flush、guest 重启持久化、引导或安装成立，T01、M0 与产品 AT 均未因此通过。
 
+### 2.8 QEMU 正常安装后的实测核验
+
+2026-10-19，用户报告已完成正常 Homebrew 安装，授权核对版本、动态链接、默认 OpenSSL 与固件并更新文档。本轮没有执行安装 / 升级 / 卸载、修改共享链接或启动 guest。以下证据来自已安装文件、收据和真实 CLI；没有用户安装全过程日志，不补写下载 / post-install 成功过程，也不把历史预演当作安装结果。
+
+| 核验项 | 实际结果 | 证据边界 |
+| --- | --- | --- |
+| 可执行文件 | `/opt/homebrew/bin/qemu-system-x86_64` 与 `qemu-img` 均报告 11.1.2；`file` 为 Mach-O arm64；系统仿真器 `codesign --verify --verbose` 退出 0 | 证明本机工具可运行及签名结构校验通过，不等于产品引导通过 |
+| 安装版本与来源 | 第 2.2 节全部 30 项活动版本匹配候选；收据为 homebrew/core、arm64、poured_from_bottle；QEMU SBOM 的根 bottle digest 为表内 `a399faaf…9d0d33` | 不声称重新校验了下载归档；三项复用仍沿用既有安装身份 |
+| 相对安装前状态 | 新增 27 份收据，对应 23 个新增包和 4 个升级版本；原 40 份收据逐字未变且未删除；安装前采集的链接中 42 条发生变化 | 与预演范围一致；不是安装器全部动作的日志或完整恢复备份 |
+| 加速器 / 机器 | `-accel help` 仅列出 `tcg`；`-machine help` 列出 `pc-q35-11.1`，`q35` 为它的别名 | 后续运行候选使用精确机器名；未实例化机器、未冻结全部 CPU / 设备参数 |
+| 显示后端 | `-display help` 列出 `none`、`curses`、`cocoa`、`dbus` | 没有 SDL / GTK；本轮未打开 GUI 或验证显示交互 |
+| 依赖与库检查 | `brew missing qemu` 退出 0；QEMU 30 项集合加相关既有工具共 38 包的 `brew linkage --test` 退出 0，无缺失库 | 既有工具含 OpenSSL 3、Git、ripgrep、leveldb、librime、Ruby、CocoaPods、FFmpeg；不等于各项目功能回归通过 |
+| 实际加载路径 | 对 QEMU、qemu-img 与 OpenSSL 3 / 4 的 Homebrew 动态库递归读取 35 个 Mach-O 的依赖及 LC_RPATH，绝对库路径均存在，无待解析的 `@rpath` / `@loader_path` 引用；QEMU `--version` 的 dyld 加载日志确认 libssh 与 OpenSSL 4 加载 | macOS 系统库由系统加载器处理；没有用文件系统缺少 dyld shared-cache 实体误报缺库 |
+| OpenSSL 默认与并存 | 本次 shell 的 `openssl` 解析到共享入口并输出 4.0.3；`opt/openssl@3/bin/openssl` 仍输出 3.6.4；共享 bin、include、lib、pkg-config 与 CMake 的 OpenSSL 路径均解析到 4.0.3 | 核对的是本次进程 PATH 与文件路径；未执行各项目构建，也未改变用户 shell 配置 |
+| CA 引用 | OpenSSL 3 / 4 的 cert.pem 均指向 `/opt/homebrew/etc/ca-certificates/cert.pem`，文件非空，289562 字节；核验前后摘要一致 | 只记录文件状态，没有对比安装前 CA 内容或验证实际 HTTPS 信任结果 |
+
+QEMU 与 qemu-img 实际链接 `opt/libssh/lib/libssh.4.dylib`，该库链接 `opt/openssl@4/lib/libcrypto.4.dylib`；这里 libssh 的 `.4` 是它自己的 ABI 名称，不是 OpenSSL 版本号。已有 FFmpeg 仍显式链接 OpenSSL 3 的 `libssl.3.dylib` / `libcrypto.3.dylib`，相关库存在且链接检查通过。QEMU 的 SBOM 包含构建时较旧 libssh 的记录，而安装收据与实际链接对应当前 libssh 0.12.2_1；不能把 SBOM 的构建依赖当作当前运行依赖清单。
+
+固件使用本次 QEMU 包内的 `share/qemu/firmware/60-edk2-x86_64.json`：接口为 UEFI，映射为 flash / raw，目标为 x86_64、`pc-i440fx-*` / `pc-q35-*`；两个实体路径均位于当前 QEMU keg 内且存在。文件尺寸与 SHA-256 先由 Python 读取，再用系统 shasum 独立复核一致：
+
+| 已安装文件（相对 QEMU keg） | 字节数 | SHA-256 |
+| --- | --- | --- |
+| share/qemu/firmware/60-edk2-x86_64.json | 770 | `455a4a2212f79f01c843bb1dc7d520862331f912fe37a33edbe1bff8c31de8fe` |
+| share/qemu/edk2-x86_64-code.fd | 3653632 | `33090cc07675baa5190d9f1e84bf5176b33bcbfa9bacac522961150cdb6dbb2a` |
+| share/qemu/edk2-i386-vars.fd | 540672 | `5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e` |
+| share/qemu/edk2-licenses.txt | 42903 | `1ddeaed2e7d2e9ecb960bdfc1b8ee45387aff70d056d985d145949af3951657c` |
+
+固件代码与 VARS 均不同于第 1 节的 UTM 样本；VARS 尺寸也不同，不混用。后续每次 guest 运行从此模板复制独立 VARS，代码只读；本次没有写模板或做 UEFI 启动验证。已读取 QEMU 的 LICENSE / COPYING / COPYING.LIB 和 EDK II 汇总许可文本，登记见[许可与来源](../governance/licensing-and-sources.md)，不将 QEMU 许可代替固件许可。
+
+本地证据位于忽略目录 `evidence/t01-qemu-20261019-8909c35/`，包括步骤脚本、退出码、收据、静态 / 实际加载路径、固件摘要和前后基线，连同任务缓存约 40 MiB。核验前后 67 份收据、9789 条采集链接、Homebrew commit 与 CA bundle 摘要完全一致。`brew linkage` 首次提示自动开启开发者模式；核对发现持久设置未写入，配置文件修改时间早于本轮。随后仅在检查进程设置 `HOMEBREW_DEVELOPER=1` 复验，配置哈希 / 修改时间不变且持久键仍缺省；没有执行全局模式切换。检查只使用已缓存元数据，没有下载软件或启动后台资源。
+
+本节关闭 QEMU 版本、依赖缺失、默认 OpenSSL 与固件文件身份的核验缺口。真实 guest 启动 / 显示、网络 / 存储行为、RadishLex 打包及各项目功能兼容性仍未验证；T01、M0 与产品 AT 不能因此记为完成。
+
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
@@ -360,17 +393,17 @@ Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。此前 De
 
 Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL 宿主 runner 依赖属于后续实现所需的单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
 
-此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust 工具链、QEMU 与 EDK II 仍待实际引入时核对；QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 另核对 `edk2-licenses.txt`。本表不是分发许可结论，也不承诺打包这些宿主工具。
+此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust 工具链仍待实际引入时核对；QEMU / EDK II 已在本机安装并读取许可，见第 2.8 节。QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 依据其 `edk2-licenses.txt` 单独记录。本表不是分发许可结论，也不承诺打包这些宿主工具。
 
 ## 4. 分层验证方案
 
-以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据。其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
 | 安装前身份核对 | Rust 日期 manifest 与组件可用；正常 Homebrew 重新预演匹配第 2.2 节版本 / revision / rebuild / bottle 哈希和 23 / 4 / 3 动作，明确共享默认 OpenSSL / CA 影响；Debian 平台 digest、快照签名经实际 apt / sqv 策略验证，包身份及求解匹配 | 缺包、哈希不符、版本漂移或额外安装 / 重装项则停在该项；不自动换源或选 latest，先列出差异 |
 | Rust 工具可运行 | 显式 `cargo +nightly-2026-10-13 -V` / `rustc +nightly-2026-10-13 -Vv`，核对已装 target / 组件及 rust-lld | 避免 `RUSTUP_TOOLCHAIN=1.96.0` 干扰；不改用户全局默认；版本输出仅证明工具可执行 |
-| QEMU 功能枚举 | `qemu-system-x86_64 --version`、`-machine help`、`-accel help`、`-display help` 与 `qemu-img --version`；记录实际支持的精确 pc-q35-* 名称、TCG 和显示后端 | 当前没有独立 CLI，因此不编造最终机器版本；若缺 TCG 或所需后端，不降低为另一架构 / 加速器冒充通过 |
+| QEMU 功能枚举 | `qemu-system-x86_64 --version`、`-machine help`、`-accel help`、`-display help` 与 `qemu-img --version`；记录实际支持的精确 pc-q35-* 名称、TCG 和显示后端 | 已实测支持 pc-q35-11.1 / TCG，显示交互未验证；若缺所需后端，不降低为另一架构 / 加速器冒充通过 |
 | 宿主链接与共享影响 | 安装授权后核对 QEMU / libssh 的 `otool -L`、递归库 / LC_RPATH / 脚本来源，核对 libssh 使用 OpenSSL 4、既有 OpenSSL 3 路径仍有效；共享收据 / 链接变化与计划一致，按风险补共享工具及 CA 影响检查 | 元数据 ABI 标记不能替代运行证据；不能全局屏蔽反向依赖检查来宣称安全；失败时保留共享差异并按第 2.4 节处理；先确认归属，不盲目回写或批量卸载 |
 | 固件核对 | 读安装包 descriptor、许可证、两个文件尺寸与 SHA-256；代码只读，VARS 每次从模板复制 | 描述文件与实体路径不一致、架构不符则失败；不能用“有 .fd”证明可启动 |
 | Linux 工具可运行 | 在项目专用 ARM64 容器读取 dpkg 精确包版本、sgdisk / mkfs.fat / mtools 版本；记录基础与最终镜像 digest、完整包清单 | 不进入其他项目容器；没有目标包不得报告环境就绪；不使用 privileged 或透传宿主设备 |
@@ -382,10 +415,10 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、QEMU 实际安装 / 动态链接及所有产品行为仍未验证。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、QEMU guest 与所有产品行为仍未验证；用户安装后的工具 / 链接 / 固件核验见第 2.8 节。
 
 早期 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，代理失败后改用只读 Cellar；这不是安装清单查询成功的证据。2026-10-19 采用任务专用缓存、官方 API 和实际 dry-run 成功取得当前计划。首次联网受沙盒代理限制，为同一元数据目标取得权限后成功；未安装工具或修改全局代理。Docker API 和 sysctl 的早期权限限制仍按原记录解释，不据此补填硬件性能。
 
-`install --dry-run` 仍经过 `perform_preinstall_checks`，可能创建缺失目录或准备 portable Ruby，不能一概视作零写入命令。本轮先读本机源码，确认所需共享目录与 portable Ruby 已存在后执行；任务缓存、日志和临时文件产生写入。前后 Homebrew commit、全部 40 份安装收据 SHA-256、424 条已采集共享链接与目录存在性完全一致，qemu Cellar 和 `/opt/rrt01` 均未出现。此检查覆盖上述对象，不能扩大为全磁盘字节不变证明。
+`install --dry-run` 仍经过 `perform_preinstall_checks`，可能创建缺失目录或准备 portable Ruby，不能一概视作零写入命令。安装前预演先读本机源码，确认所需共享目录与 portable Ruby 已存在后执行；任务缓存、日志和临时文件产生写入。预演前后 Homebrew commit、全部 40 份安装收据 SHA-256、424 条已采集共享链接与目录存在性完全一致，当时 qemu Cellar 和 `/opt/rrt01` 均未出现。此检查覆盖上述对象，不能扩大为全磁盘字节不变证明。
 
-本地公开证据保存在忽略目录 `evidence/t01-homebrew-20261019-19ad0a5/`：官方 API、七份配方原文、27 份 registry manifest、dry-run / info 输出、已装库链接、前后基线与摘要，连同缓存实际占盘约 40 MiB。临时脚本仅用于此次盘点，不是项目安装入口；没有下载 bottle / 源码归档、读取钥匙串、安装 / 更新 / 卸载 / 链接操作或后台资源。旧 AST / 专用前缀分析保留为历史；当前方案以第 2.2–2.4 节和这次实际预演为准。
+本地公开证据保存在忽略目录 `evidence/t01-homebrew-20261019-19ad0a5/`：官方 API、七份配方原文、27 份 registry manifest、dry-run / info 输出、已装库链接、前后基线与摘要，连同缓存实际占盘约 40 MiB。临时脚本仅用于安装前盘点，不是项目安装入口；该预演没有下载 bottle / 源码归档、读取钥匙串、安装 / 更新 / 卸载 / 链接操作或后台资源。旧 AST / 专用前缀分析保留为历史；当前方案见第 2.2–2.4 节，安装后的事实以第 2.8 节为准。
