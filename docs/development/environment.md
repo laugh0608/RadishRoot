@@ -1,6 +1,6 @@
 # 开发环境清单与安装候选
 
-盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 与指定 Rust nightly 均已由用户安装，实际核验范围见第 2.8–2.9 节。
+盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19；T01 工程验证：2026-10-25（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 与指定 Rust nightly 均已由用户安装，实际核验范围见第 2.8–2.10 节。
 
 ## 1. 本机实测
 
@@ -11,9 +11,9 @@
 | 宿主 | Darwin arm64；macOS 27.0.1，build 26A434 | x86_64 guest 按规划使用 TCG；未测 CPU / 内存性能 |
 | Rust 1 | `1.96.0-aarch64-apple-darwin`；rustc `ac68faa20`，Cargo 1.96.0，LLVM 22.1.2 | 有 rustfmt、Clippy、rust-src；已装宿主、iOS、iOS simulator、Android ARM64 target，缺 `x86_64-unknown-none` |
 | Rust 2 | `1.97.1-aarch64-apple-darwin`；rustc `8bab26f4f`，Cargo 1.97.1，LLVM 22.1.6 | 有 rustfmt、Clippy；只有宿主 target，缺 rust-src 和裸机 target |
-| Rust nightly | `nightly-2026-10-13-aarch64-apple-darwin`；rustc / Cargo 1.101.0-nightly，LLVM 23.1.3 | 七项所需组件和裸机 target 已安装，安装后核验见第 2.9 节；尚未编译项目 |
+| Rust nightly | `nightly-2026-10-13-aarch64-apple-darwin`；rustc / Cargo 1.101.0-nightly，LLVM 23.1.3 | 七项所需组件和裸机 target 已安装，安装后核验见第 2.9 节；T01 本地编译与链接已通过，见第 2.10 节 |
 | 工具链选择 | 默认和 `RUSTUP_TOOLCHAIN` 仍选择 1.96.0；显式 `+nightly-2026-10-13` 查询正确进入 nightly | 三套工具链并存；项目命令及子进程必须选择指定 nightly，不能只依赖 rust-toolchain.toml |
-| ELF 链接器 | 两套稳定版的 rust-lld 为 LLD 22.1.2 / 22.1.6；新 nightly 自带 LLD 23.1.3，GNU 模式版本查询通过 | nightly 链接器加载同一工具链的 libLLVM；尚未链接项目内核，无须预先增加完整 LLVM 安装 |
+| ELF 链接器 | 两套稳定版的 rust-lld 为 LLD 22.1.2 / 22.1.6；新 nightly 自带 LLD 23.1.3，GNU 模式版本查询通过 | nightly 链接器加载同一工具链的 libLLVM；T01 两种 profile 真实链接已通过，无须增加完整 LLVM 安装 |
 | 本机 C 工具链 | Apple clang 21.0.0，默认 target `arm64-apple-darwin27.0.0` | 默认宿主配置不能视为 x86_64 裸机 C 工具链 |
 | 独立 QEMU CLI | `/opt/homebrew/bin/qemu-system-x86_64`、`qemu-img` 均为 11.1.2，原生 arm64；版本 / 能力枚举与动态链接核验通过 | 工具已安装；项目 guest 自动化运行入口尚未建立，未启动 guest，见第 2.8 节 |
 | UTM | `/Applications/UTM.app` 4.7.5；内置 QEMU 与 qemu-img 动态库含 10.0.2 版本字符串 | `file` 确认是 Mach-O shared library，并非可直接运行的 CLI；版本来自静态字符串，未执行 guest |
@@ -37,7 +37,7 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 
 | 层次 | 精确候选 | 来源与核对结果 |
 | --- | --- | --- |
-| Rust | `nightly-2026-10-13-aarch64-apple-darwin`，rustc `1.101.0-nightly (e9bbadf68 2026-10-12)` | 官方日期 manifest 已读取；安装后七项组件身份相符，rustc 实际版本与候选一致；尚未取得项目编译证据 |
+| Rust | `nightly-2026-10-13-aarch64-apple-darwin`，rustc `1.101.0-nightly (e9bbadf68 2026-10-12)` | 官方日期 manifest 已读取；安装后七项组件身份相符，rustc 实际版本与候选一致；T01 本地项目编译证据见第 2.10 节 |
 | Rust 安装集 | minimal profile + rust-src、rustfmt、clippy；target 为 `x86_64-unknown-none` | 已安装宿主及裸机两个 target，使用自带 rust-lld；本次安装集不包含额外 llvm-tools、GDB 或交叉 GCC |
 | QEMU | Homebrew `qemu 11.1.2`，formula revision 0、bottle rebuild 0，`arm64_golden_gate` | 官方 formula API 提供匹配 macOS 27 ARM64 的 bottle；已装版本与收据匹配，来源身份及哈希见下表及第 2.8 节 |
 | x86_64 UEFI | 上述 QEMU 11.1.2 包内的 `edk2-x86_64-code.fd` + `edk2-i386-vars.fd` | QEMU 对应 tag 的 README 标明固件源为 `edk2-stable202302`；已按安装包文件、descriptor 与实测哈希核对，见第 2.8 节；尚未启动，不借用 UTM 文件 |
@@ -401,6 +401,29 @@ QEMU 与 qemu-img 实际链接 `opt/libssh/lib/libssh.4.dylib`，该库链接 `o
 
 本地证据保存在忽略目录 `evidence/t01-rust-20261019-bac6c12/`，包括只读辅助脚本、14 项查询的命令 / 退出码、链接器实际加载输出、安装元数据、目标归档头检查、文件摘要与随包许可，约 16 MiB；不保存工具链二进制或目标库副本。没有后台资源。这关闭安装后工具核验缺口；最小内核实际编译、最终 ELF 链接、宿主 / 内核依赖隔离和产品运行仍未验证，T01、M0 与产品 AT 均未因此通过。
 
+### 2.10 T01 工作区与真实链接验证
+
+2026-10-25，用户授权按既有方案实施 T01、完成必要验证并同步文档，明确不提交或推送。本批使用已安装 nightly，不安装工具、引入第三方 crate、修改默认工具链或启动 guest。实际执行宿主为 aarch64-apple-darwin；Linux 仅同步了 CI 安装与验证入口，尚无运行证据。
+
+workspace 包含 radishroot-kernel 与 xtask，版本继承根 workspace.package.version（26.10.0-dev），publish=false。Cargo.lock 由 `generate-lockfile --offline` 生成，实际 metadata / tree 确认两个包均无外部依赖和自定义 features。裸机入口 no_std / no_main、不分配堆；目标沿用预编译 core、kernel code model、无 red zone、panic=abort，项目 target flags 指定 static relocation 与非 PIE。build.rs 使用宿主标准库，不将 std 引入 guest。
+
+| 验证 | 本批结果与边界 |
+| --- | --- |
+| 工具链选择 | 文件指定 nightly-2026-10-13；xtask 对照自身编译器 commit / host、rustup 项目文件来源、安装组件与目标，再用同一 rustup run 执行子命令；默认及进程外 RUSTUP_TOOLCHAIN 仍为 1.96.0 |
+| 检查 / 宿主测试 | fmt、分别指定包 / target 的 check 与 clippy -D warnings 通过；13 项宿主测试覆盖参数、缺工具 / target、配置、ELF 正负例、子进程失败 / 信号 / 超时和输出冲突 / 符号链接 |
+| dev 干净链接 | ELF 8,752 字节，SHA-256 `c4d1ececdf143cdbd108f951179daa1d7c6a997688fca063d78dfd655462ee26`；有效 RX LOAD 的文件 / 内存长度均为 6 字节，文件偏移 4096 |
+| release 干净链接 | ELF 4,648 字节，SHA-256 `a57e47137d2e2f09e504797f3ea6073708d1836b082f21661050ffcae7e64bc8`；有效 RX LOAD 的文件 / 内存长度均为 4 字节，文件偏移 4096 |
+| 独立复核 | 两种 profile 均为 ELF64 little-endian x86_64 ET_EXEC；Python struct 直接读取头 / program headers / symbol table，对照手写期望、LLD map 和系统 file；entry 与 _start 同为 0xffffffff80000000，LOAD 按 4 KiB 对齐，无动态段 / RWX；本例无 rodata / data，空段省略 |
+| 实际入口拒绝 | 直接运行已编译 xtask 并传合成错误活动工具链 / RUSTFLAGS，分别返回 1 且未启动 Cargo 子命令；未知命令与非法超时返回 2；本地 CI install 拒绝返回 2。缺组件等列表情形使用独立合成输入测试，没有卸载用户工具 |
+| 进程与输出 | 子进程独立进程组，默认 120 秒；超时返回 124、停止组并等待直接子进程。测试验证后代不能在超时后写标记；原始状态 / 信号及 PID 留在日志；独占输出冲突与符号链接拒绝 |
+| 仓库 / CI | 本地治理检查及 14 项回归通过；两份根入口一致；CI 精确包含 repo-hygiene / rust-checks，聚合拒绝缺项、失败、取消、跳过及未知组件。实际 Ubuntu Actions 未执行，不借用旧治理运行作为 Rust 证据 |
+
+本地复核调用了 CI 的 verify 辅助入口，它从 TOML 读取 channel 并依次调用相同的四个 xtask 命令；未调用 CI install。CI 使用 Python 3.11+ tomllib；安装仅允许在显式 GitHub Actions 步骤中进行，后续入口均锁定 / 离线且关闭自动安装。当前宿主工具面向 macOS / Linux Unix 进程组，不宣称 Windows 支持。
+
+证据保存在忽略目录 `evidence/t01-workspace-20261025-e924ee1/`：独立 verify_elf.py、dev-elf.json / release-elf.json、entry-rejections.json、最终运行日志、产物及 map 副本、source-manifest.json 与 SHA256SUMS。最终四次入口的原始输出目录为 `target/t01-66377-1792904192915895000/`（check）、`target/t01-66665-1792904194387198000/`（test）、`target/t01-66825-1792904195976349000/`（dev）、`target/t01-67002-1792904196503277000/`（release）。候选为 e924ee1 加本批未提交文件的内容摘要，不将 HEAD 单独当作实现版本。
+
+初次 Clippy 因两处手写取模对齐检查被拒绝，改用整数 is_multiple_of 后通过；独立复核脚本最初假设旧 Cargo 的 build 输出目录形式，读实际目录后改为在本次输出内定位唯一 kernel.map，未修改产物或放宽 ELF 断言。失败与最终成功日志分开保留。T01 的本地构建门槛已通过；高半区静态地址不证明分页、物理装载、栈或引导成立，M0 / AT01 / AT23 仍未通过。
+
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
@@ -420,7 +443,7 @@ Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL �
 
 ## 4. 分层验证方案
 
-以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据；Rust nightly 的版本、组件、target 与链接器核验已有第 2.9 节证据。其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据；Rust nightly 的版本、组件、target 与链接器核验已有第 2.9 节证据。第 2.10 节补齐 T01 工程编译、宿主检查和独立 ELF 证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
@@ -438,7 +461,7 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、nightly 实际编译、QEMU guest 与所有产品行为仍未验证；用户安装后的 QEMU / 固件核验见第 2.8 节，Rust 工具链核验见第 2.9 节。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、QEMU guest 与所有产品行为仍未验证；nightly 的 T01 实际编译 / 链接见第 2.10 节；用户安装后的 QEMU / 固件核验见第 2.8 节，Rust 工具链核验见第 2.9 节。
 
 早期 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，代理失败后改用只读 Cellar；这不是安装清单查询成功的证据。2026-10-19 采用任务专用缓存、官方 API 和实际 dry-run 成功取得当前计划。首次联网受沙盒代理限制，为同一元数据目标取得权限后成功；未安装工具或修改全局代理。Docker API 和 sysctl 的早期权限限制仍按原记录解释，不据此补填硬件性能。
 

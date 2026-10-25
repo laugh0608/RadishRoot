@@ -26,4 +26,4 @@ RadishRoot 是以可解释操作与结构化交互为核心的 Rust 实验操作
 
 仓库文档与治理检查：`python3 scripts/check-repo.py`；检查器回归：`python3 -B -m unittest discover -s scripts/tests -v`。仅需已有 Python 3.10+，不安装依赖。检查通过不代表内核、真实虚拟机或安装交付通过。安全问题见 [SECURITY.md](SECURITY.md)。
 
-构建、运行和检查命令的实际可用性以当前状态为准；规划命令不是现有工具。产品原创内容的许可尚未选定，见[许可与来源策略](docs/governance/licensing-and-sources.md)。
+T01 构建与宿主检查入口见[开发规范](docs/development/standards.md#t01-本地入口)；系统启动、镜像与运行命令尚未建立，实际能力以当前状态为准。产品原创内容的许可尚未选定，见[许可与来源策略](docs/governance/licensing-and-sources.md)。

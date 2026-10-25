@@ -274,7 +274,7 @@ flush 失败时停止正常关机流程，界面保留错误和已知状态。�
 
 ### 统一入口
 
-计划提供 `cargo xtask build`、`check`、`image`、`run --serial`、`run --gui`、`test --host`、`test --vm`、`demo`、`package` 和 `verify-install` 子命令。它们是待实现接口，不是当前可执行命令；按 T01、T13、T24、T29–T31 随真实能力分批建立。每个入口需给出明确退出码、参数说明、超时和输出位置；不建立默认返回成功的占位入口。开发 shell 包装仅转发至同一 xtask 实现。
+统一入口为 `cargo xtask`。T01 已实现 `build --profile dev|release [--fresh]`、`check`、`test --host` 和 `help`；本机有工具链环境覆盖时须显式使用项目 nightly，实际命令见[开发规范](development/standards.md#t01-本地入口)。`image`、`run --serial`、`run --gui`、`test --vm`、`demo`、`package` 和 `verify-install` 仍待 T02、T13、T24、T29–T31 随真实能力分批建立。每个入口需给出明确退出码、参数说明、超时和输出位置；不建立默认返回成功的占位入口。开发 shell 包装仅转发至同一 xtask 实现。
 
 构建在宿主执行；镜像制作使用锁定的 Linux 工具环境，复用 GPT、mkfs.fat 和文件复制工具。固定工具链、固件、机器配置及依赖，并记录版本和校验值。目标是可重复构建和运行，不在首版承诺镜像逐字节可重现。
 
@@ -342,43 +342,43 @@ M1 记录内核 / heap / framebuffer / DMA / UI / 缓存预算及测量范围；
 
 ### T01 建立可编译工作区与环境清单
 
-- [ ] 完成状态以[当前状态](status/current.md)为准；环境事实与候选见[开发环境清单](development/environment.md)。
+- [x] 本地实现与必要验证通过；新增 Linux CI 配置已同步但远端未执行。实际证据与限制见[当前状态](status/current.md)及[开发环境清单第 2.10 节](development/environment.md#210-t01-工作区与真实链接验证)。
 
 预计 2 人日 · 前置：无 · 验收关联：AT01、AT23
 
-**交付：**实施授权后建立 Cargo workspace、固定工具链候选、目标配置和实际 build / host 检查入口；列依赖与许可证候选。
+**交付：**Cargo workspace、固定工具链、目标配置和实际 build / host 检查入口；环境与来源记录。第一批没有第三方 crate，原创许可仍待定。
 
 **通过条件：**干净目录能编译最小 no_std 内核，宿主与内核依赖隔离；环境清单记录 QEMU、机器版本、固件、Rust 与功能开关。
 
-#### T01 具体实施方案（待实现）
+#### T01 实施契约与验证入口
 
-本节细化已有 T01，不扩大到 T02 引导或业务功能。实施顺序为工作区与工具链选择、真实内核链接、宿主检查与失败测试、CI 接入及证据收口；每步保留实际输出，失败停在对应阶段。以下文件和命令均为规划，目前尚不存在可执行工程。
+本节细化已有 T01，不扩大到 T02 引导或业务功能。实施顺序为工作区与工具链选择、真实内核链接、宿主检查与失败测试、CI 接入及证据收口；每步保留实际输出，失败停在对应阶段。以下文件和三个实际入口已实现；本地验收见环境清单，远端 CI 与产品运行分别记录。
 
 **最小文件与依赖范围：**
 
-| 计划位置 | 具体职责与边界 |
+| 位置 | 具体职责与边界 |
 | --- | --- |
-| 根 Cargo.toml / Cargo.lock | 虚拟 workspace，仅含 kernel 与 xtask；edition 2024、resolver 3，default-members 为 xtask。产品版本仅由 workspace.package.version 提供，成员继承；首次实施按既定日历规则填写开发版本，publish=false，不创建 tag 或宣称发行 |
+| 根 Cargo.toml / Cargo.lock | 虚拟 workspace，仅含 kernel 与 xtask；edition 2024、resolver 3，default-members 为 xtask。产品版本仅由 workspace.package.version 提供，成员继承；当前开发版本为 26.10.0-dev，publish=false，不创建 tag 或宣称发行 |
 | rust-toolchain.toml | 工具链日期的唯一配置源：nightly-2026-10-13、minimal、rust-src / rustfmt / clippy、x86_64-unknown-none；不把 macOS host 后缀写入跨宿主配置，不改全局默认 |
 | .cargo/config.toml | xtask alias 只转发到宿主包；裸机 flags 仅放在对应 target 段。不开 workspace 全局 build.target，不把 kernel 的链接脚本或 panic 设置传播到宿主 |
 | kernel/Cargo.toml、kernel/src/main.rs | 包名 radishroot-kernel，no_std / no_main，最小不返回的入口和 panic handler；不分配堆、不访问设备、不输出启动成功。关闭该裸机 bin 的宿主 test / bench harness；暂不建立库或业务模块 |
 | kernel/linker.ld、kernel/build.rs | 链接布局单一来源；build.rs 只用标准库，按 CARGO_MANIFEST_DIR 取得脚本绝对路径，向本包 bin 发出链接参数、OUT_DIR 下的 linker map 输出和 rerun-if-changed，不编译 C、下载资产或实现产品行为 |
-| xtask/Cargo.toml、xtask/src/ | 包名 xtask，宿主 std；承担参数解析、前置检查、子进程执行、ELF 结构检查和结果记录。按这些实际职责组织模块；不依赖 kernel，不构造通用插件 / 进程管理框架 |
+| xtask/Cargo.toml、xtask/build.rs、xtask/src/ | 包名 xtask，宿主 std；承担参数解析、前置检查、子进程执行、ELF 结构检查和结果记录。build.rs 仅记录编译器 commit / host，运行前与项目工具链核对；按这些实际职责组织模块，不依赖 kernel，不构造通用插件 / 进程管理框架 |
 | .github/workflows/pr-check.yml、scripts/check-repo.py 及其 tests | Rust 检查进入既有 Candidate Quality；同步任务集合、超时规则与拒绝回归，详见下文 |
 
 第一批不引入 crates.io / Git 第三方 crate；kernel 仅使用预编译 core，xtask 与 build.rs 仅使用标准库，Cargo.lock 由实际 workspace 离线生成并提交。保留 rust-src，但不启用 build-std、不新增自定义 target JSON、完整 LLVM 或交叉 C 工具链。system-core、services、shell、ui、host-runner 在有实际职责时再建立；alloc / allocator、Limine 配对与内存、设备初始化分别留在对应后续任务。
 
 **工具链与目标隔离：**本机 RUSTUP_TOOLCHAIN=1.96.0 仍有效，初次入口显式使用 `cargo +nightly-2026-10-13 xtask …`。本地执行前设置仅本进程的 RUSTUP_AUTO_INSTALL=0，缺工具链 / 组件直接失败，不隐式安装。xtask 在仓库根清除仅探测子进程的 RUSTUP_TOOLCHAIN，让 rustup 按项目文件解析指定工具链；若解析来源是目录 override 或默认值则报错。将实际运行工具链与该解析结果比较，子命令使用同一已装工具链的 rustup run，不带 --install；不另抄一份日期到 Rust 常量、alias 或 CI。官方选择规则与自动安装开关见 [rustup overrides](https://rust-lang.github.io/rustup/overrides.html)、[环境变量](https://rust-lang.github.io/rustup/devel/environment-variables.html)。
 
-宿主 triple 从选定 rustc -Vv 取得；宿主 check / clippy / test 与 kernel build / clippy 分别指定包和目标，禁止用 workspace 全量命令把 xtask 编成裸机或把 kernel 当宿主测试。检查会影响编译结果的外部 RUSTFLAGS / CARGO_ENCODED_RUSTFLAGS、CARGO_BUILD_TARGET、编译器 / linker override 和上层 Cargo 配置，只报告相关键及冲突，不打印整个环境或凭据；冲突时要求明确修正，不通过静默忽略或切换 target 继续。Cargo 分层配置和 target flags 依据[官方配置说明](https://doc.rust-lang.org/cargo/reference/config.html)。
+宿主 triple 从选定 rustc -Vv 取得；宿主 check / clippy / test 与 kernel build / clippy 分别指定包和目标，禁止用 workspace 全量命令把 xtask 编成裸机或把 kernel 当宿主测试。检查会影响编译结果的外部 RUSTFLAGS / CARGO_ENCODED_RUSTFLAGS、CARGO_BUILD_TARGET、编译器 / linker override 和上层 Cargo 配置，只报告相关键及冲突，不打印整个环境或凭据。T01 对外部 Cargo 配置文件整体拒绝；项目配置只接受 xtask alias 与裸机 target 的 rustflags，工具链文件接受当前单行 schema，未知键或重复键拒绝；冲突时要求明确修正，不通过静默忽略或切换 target 继续。Cargo 分层配置和 target flags 依据[官方配置说明](https://doc.rust-lang.org/cargo/reference/config.html)。
 
 **最小链接契约：**采用内置 x86_64-unknown-none 与 rust-lld GNU 模式，沿用 kernel code model、无 red zone、panic=abort；对裸机目标明确采用 static relocation 和非 PIE 链接，产出 ELF64 little-endian x86_64 ET_EXEC。链接脚本以 `0xffffffff80000000` 为 T01 虚拟链接基址，入口 `_start` 位于可执行段；按 4 KiB 对齐分离 text RX、rodata R、data / bss RW，空只读 / 数据段允许省略，禁止 RWX 段、动态解释器及动态链接段。入口、panic handler 仅形成最小不返回路径；Rust 2024 的导出符号 unsafe 属性须注明唯一符号与调用前提，不引入硬件 unsafe。
 
 上述地址只约束静态产物，不代表已建立分页、物理装载地址或启动栈；实际加载及协议响应由 T02 完成。用 linker ASSERT 与产物检查同时拒绝入口 / 段布局错误，不以吞掉未知 alloc section 的方式让链接通过。脚本根据[LLD 文档](https://lld.llvm.org/ELF/linker_script.html)已实现的基本语法编写，最终以本机 LLD 23.1.3 的真实链接验证；不假定网页新版本中的全部功能在当前工具链可用。
 
-**计划入口与失败行为：**
+**实际入口与失败行为：**
 
-| 待实现入口（统一前缀 cargo +nightly-2026-10-13 xtask） | 实际工作与成功条件 |
+| 入口（统一前缀 cargo +nightly-2026-10-13 xtask） | 实际工作与成功条件 |
 | --- | --- |
 | check | 工具链 / 组件 / target / 配置前置检查；fmt --check；宿主与裸机分别 check / clippy 并拒绝警告。此命令不代替最终链接 |
 | build --profile dev 或 release，可加 --fresh | 以 --locked --offline 显式构建 radishroot-kernel 的裸机 bin；使用本次输出文件检查 ELF，成功记录产物路径与身份；无输出、错误格式或子进程失败均不得成功 |
@@ -400,9 +400,9 @@ M1 记录内核 / heap / framebuffer / DMA / UI / 缓存预算及测量范围；
 | 执行失败用例 | 覆盖缺工具链 / target、错误工具链选择、外部配置冲突、未知参数、子进程非零和超时；仅用任务临时目录与可回收测试进程，不卸载用户组件、不改 rustup 配置、不改真实内核源来制造失败 |
 | 仓库 / CI | 本地运行治理检查、检查器回归和上述 Rust 入口；CI 同一候选中所有组件成功才允许 Candidate Quality 通过；本地结果不等于远端 Actions 已运行 |
 
-**CI 同步范围：**在现有 ubuntu-24.04 工作流新增 rust-checks，调用同一 check、test --host 和干净 dev / release build 入口；保留 repo-hygiene，Candidate Quality 的 needs 明确包含两项。Rust 安装阶段按仓库 rust-toolchain.toml 解析 host 与组件，允许该 CI 步骤从官方源安装；后续构建关闭自动安装并离线锁定依赖，不增加工具链版本常量或浮动第三方 action。日期清单中的 Linux x86_64 宿主组件已标为 available，本轮尚未在 runner 安装或运行。新 job 预算 15 分钟，原治理 job / 聚合 job 的 5 / 2 分钟不变；检查器改为精确的逐 job 基线，不放开任意任务或取消超时校验。
+**CI 同步范围：**在现有 ubuntu-24.04 工作流新增 rust-checks，调用同一 check、test --host 和干净 dev / release build 入口；保留 repo-hygiene，Candidate Quality 的 needs 明确包含两项。Rust 安装阶段按仓库 rust-toolchain.toml 解析 host 与组件，允许该 CI 步骤从官方源安装；后续构建关闭自动安装并离线锁定依赖，不增加工具链版本常量或浮动第三方 action。日期清单中的 Linux x86_64 宿主组件已标为 available，尚未在 runner 安装或运行；scripts/ci-rust.py 从同一工具链文件读取配置，仅 install 模式且位于 GitHub Actions 时允许安装，verify 模式复用四次 xtask 调用。新 job 预算 15 分钟，原治理 job / 聚合 job 的 5 / 2 分钟不变；检查器改为精确的逐 job 基线，不放开任意任务或取消超时校验。
 
-同步修改 scripts/check-repo.py 中写死的 job 集合、needs 与各 job 约束，补充其实际聚合脚本回归：缺任一预期任务、failure、cancelled、skipped 和未知任务集合都不得通过；不关闭既有拒绝测试。checkout commit、只读权限、PR / 手动触发及禁止忽略失败的规则保留；本次规划不改远端 Ruleset、push、PR 或启动 Actions。
+同步修改 scripts/check-repo.py 中写死的 job 集合、needs 与各 job 约束，补充其实际聚合脚本回归：缺任一预期任务、failure、cancelled、skipped 和未知任务集合都不得通过；不关闭既有拒绝测试。checkout commit、只读权限、PR / 手动触发及禁止忽略失败的规则保留；本批仅同步本地实现，不改远端 Ruleset、push、PR 或启动 Actions。
 
 T01 收口须同时具备真实工作区、工具链 / 配置单一来源、两种 profile 的干净链接、宿主检查 / 负向测试、依赖隔离记录及 CI 配置同步；已运行的本地与远端证据分开记录。T01 通过仍不代表 AT01 / AT23 或 M0 通过；T02 的十次启动、串口、引导响应校验不并入本批。
 
@@ -924,7 +924,7 @@ MVP 完成要求全部 FR / AT 覆盖且没有未解决 P0 / P1；P2 必须不�
 
 ### 开始实施的第一步
 
-实施顺序为 T01 环境盘点、版本候选与真实最小编译入口，随后依 T02–T05 取得存储证据，再按 T06–T13 实现第一条真实图形闭环。实际进度、下一步与授权边界统一见[当前状态](status/current.md)，本规划不构成安装依赖或写内核的授权。
+T01 已建立真实最小编译入口；接续实施依 T02–T05 取得引导与存储证据，再按 T06–T13 实现第一条真实图形闭环。实际进度、下一步与授权边界统一见[当前状态](status/current.md)，本规划不构成安装依赖或写内核的授权。
 
 [R1]: https://www.qemu.org/docs/master/system/introduction.html
 [R2]: https://github.com/Limine-Bootloader/Limine

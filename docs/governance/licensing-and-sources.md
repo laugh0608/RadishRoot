@@ -56,4 +56,4 @@ CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1
 
 2026-10-19 用户安装 `nightly-2026-10-13-aarch64-apple-darwin`，本轮只核对工具与文件，未编译、修改或分发 Rust 材料。来源为此前核对的 [Rust 官方日期清单](https://static.rust-lang.org/dist/2026-10-13/channel-rust-nightly.toml)；已装七项组件的版本、归档 URL 和摘要与该清单一致，实际 rustc commit 为 `e9bbadf6824e65b3583c2dda3a0926ec76df9143`，链接器为 LLD 23.1.3。详细身份与核验边界见[开发环境第 2.9 节](../development/environment.md)。
 
-随包 `share/doc/rust/README.md` 声明 Rust 主体使用 MIT / Apache-2.0，部分材料适用其他许可；完整归属由 `COPYRIGHT.html`、`COPYRIGHT-library.html` 与 `licenses/` 文本记录，已在忽略证据目录中保留。该摘要不将所有组件、LLVM 或未来静态链接进内核的库归为同一许可。本轮仅登记本机工具来源，尚无项目编译 / 分发产物；实际依赖引入或发行时按最终组成补齐许可及归属，不把此记录当作完整分发审查。
+随包 `share/doc/rust/README.md` 声明 Rust 主体使用 MIT / Apache-2.0，部分材料适用其他许可；完整归属由 `COPYRIGHT.html`、`COPYRIGHT-library.html` 与 `licenses/` 文本记录，已在忽略证据目录中保留。该摘要不将所有组件、LLVM 或未来静态链接进内核的库归为同一许可。2026-10-19 仅登记本机工具来源。2026-10-25 的 T01 已使用该工具链与预编译 core 生成本地静态 ELF；两个本地包没有 crates.io / Git 依赖，未复制第三方源代码或分发产物。实际发行时仍须按最终组成补齐许可及归属，不把工具来源记录或本地链接成功当作完整分发审查。

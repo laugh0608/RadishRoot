@@ -1,0 +1,11 @@
+[package]
+name = "radishroot-kernel"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "radishroot-kernel"
+path = "src/main.rs"
+test = false
+bench = false

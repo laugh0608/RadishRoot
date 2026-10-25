@@ -6,7 +6,7 @@
 | --- | --- |
 | [当前状态](status/current.md) | 实际能力、当前阶段、下一步与临时停止线 |
 | [产品规划](product-plan.md) | 产品定位、用户价值、长期演进与家族关系 |
-| [MVP 规划](mvp-plan.md) | 第一阶段 FR 范围、架构、UI、M0–M5、任务与 AT 验收的实施基线；当前工程起步细节见 [T01 实施方案](mvp-plan.md#t01-具体实施方案待实现) |
+| [MVP 规划](mvp-plan.md) | 第一阶段 FR 范围、架构、UI、M0–M5、任务与 AT 验收的实施基线；当前工程起步细节见 [T01 实施契约](mvp-plan.md#t01-实施契约与验证入口) |
 | [开发规范](development/standards.md) | 工程风格、工具链、版本、测试与文档组织 |
 | [开发环境清单](development/environment.md) | 本机工具证据、精确安装候选、工具镜像构建入口与分层验证方法；不代替当前任务状态 |
 | [协作规则](governance/agent-collaboration.md) | 授权、工作区、执行、资源清理与交接 |

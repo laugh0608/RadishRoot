@@ -6,7 +6,7 @@
 
 先核对工作区，再读[当前状态](../status/current.md)和任务对应的[MVP 规划](../mvp-plan.md)。每轮优先完成可以复验的一条行为路径，交接写清启动入口、当前画面 / 能力、证据和下一项任务。
 
-正式实现后采用 Cargo workspace；kernel / platform、system-core / services、shell / ui、host-runner、xtask 按职责分离。开始时可用少量 crate 内模块承载这些边界；出现不同目标依赖、独立测试或稳定复用价值时再拆 crate，不为架构图机械建空目录。
+当前 Cargo workspace 仅含 kernel 与 xtask；后续 kernel / platform、system-core / services、shell / ui、host-runner、xtask 按职责分离。开始时可用少量 crate 内模块承载这些边界；出现不同目标依赖、独立测试或稳定复用价值时再拆 crate，不为架构图机械建空目录。
 
 共享核心以 no_std + alloc 为基线；宿主窗口库和 std 后端只在 host-runner / 测试工具中。UI 调用类型化服务，服务通过明确存储边界访问 FAT；文件语义不在不同入口重复实现。
 
@@ -35,7 +35,7 @@
 
 构建、镜像、运行、demo、host / VM 测试与安装验证通过同一 xtask 编排；shell 包装不另实现规则。每个入口随真实能力建立，说明参数、资源、时限、输出与错误码，不提供返回成功的空检查。
 
-工程建立前，仓库治理已有独立真实入口 `python3 scripts/check-repo.py`，只依赖 Python 3.10+ 标准库；回归用 `python3 -B -m unittest discover -s scripts/tests -v`。它不运行 Rust 或 VM。未来迁入 xtask 时保留单一实现，不在 Python 与 Rust 中复制两套政策。检查范围及限制见[仓库治理](../governance/repository-governance.md)。
+仓库治理保留独立真实入口 `python3 scripts/check-repo.py`，只依赖 Python 3.10+ 标准库；回归用 `python3 -B -m unittest discover -s scripts/tests -v`。它不运行 Rust 或 VM。未来迁入 xtask 时保留单一实现，不在 Python 与 Rust 中复制两套政策。检查范围及限制见[仓库治理](../governance/repository-governance.md)。
 
 开发工具环境使用 [tools/debian-image/Dockerfile](../../tools/debian-image/Dockerfile) 构建，由容器内的 build-image.sh 核对固定来源并安装工具；脚本不是宿主安装入口，也不是产品制盘 / 运行入口。构建参数、包清单与验收方法统一见[开发环境清单第 2.6 节](environment.md)。后续 xtask 若使用此工具环境，应调用同一配方，不复制包版本与安装逻辑。仓库治理检查只检查这些文件的文本规范，不自动构建镜像或验收工具行为。
 
@@ -48,9 +48,28 @@
 | 镜像 / 安装 | 独立副本、危险目标拒绝、读回校验、移除介质与干净 UEFI 启动 |
 | 阶段候选 | 对应门槛和 demo；最终候选按全部 AT 及人工清单核对 |
 
-Rust 工程进入时同步建立真实 fmt、check、test、clippy 等相关检查；只检查文档的工具不能继续被宣称覆盖 Rust。高价值测试验证行为、独立预期、边界和失败，不机械重写实现。低影响文案不要求无关全量测试；只有新变化、失败或未解决风险才扩大复验。
+Rust 工程已接入真实 fmt、check、test、clippy 与最终链接检查；只检查文档的工具不能继续被宣称覆盖 Rust。高价值测试验证行为、独立预期、边界和失败，不机械重写实现。低影响文案不要求无关全量测试；只有新变化、失败或未解决风险才扩大复验。
 
 具体命令是否已存在只看实际文件和当前状态。自动化、CI 或脚本未创建时明确未建立，不列出虚假“通过”。文档检查包含未跟踪文件，普通 git diff 无法代表全部文件。
+
+### T01 本地入口
+
+在仓库根使用已安装的项目工具链执行；以下命令不会安装组件或联网解析 crate。nightly 日期由 rust-toolchain.toml 定义，示例对应当前配置；默认工具链与全局环境保持不变。
+
+```sh
+env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask check
+env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --host
+env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile dev --fresh
+env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile release --fresh
+```
+
+`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
+
+首次进入 Cargo 的编译发生在 xtask 启动前，应先按上述方式选择工具链；xtask 随后验证自身编译器身份、项目工具链来源与外部配置，不修改 shell、rustup override 或全局默认。当前宿主进程管理使用 Unix 进程组，目标宿主为 macOS / Linux，Windows 不在 T01 支持范围。系统需有 git、shasum 和 /bin/kill；Python 独立复核及 CI 辅助使用标准库，CI 辅助脚本需 Python 3.11+。
+
+每次实际执行在忽略的 target/t01-<pid>-<时间戳>/ 保存 steps.txt 与分步 stdout / stderr。xtask 子进程默认上限 120 秒，可加 `--timeout-secs 1..3600`；超时停止自己的进程组并回收直接子进程，返回 124；前置 / 构建 / 校验失败返回 1，参数错误返回 2。错误输出指向日志；不能将失败目录中的半成品当作成功产物。独立验收材料保存在 evidence/，其路径和候选身份记录于环境清单。
+
+CI 的 install 步骤才允许从官方源安装 TOML 指定的工具链；本地不运行它。verify 步骤复用上述四个入口；本地验证结果不能替代 Ubuntu runner 的实际 Actions 结果。
 
 ## 5. 视觉与数据材料
 
