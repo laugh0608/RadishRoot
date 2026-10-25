@@ -121,6 +121,14 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 实际结果、首次 IRQ 失败修复、独立 ELF / 磁盘 / 坏日志对照及资源统计见[环境清单第 2.17 节](environment.md#217-t06-异常时钟与事件循环验收)。仅启用已批准的 x86_64 0.15.5 中断 ABI 特性，无新增包、下载、工具链或 lockfile 变化。后续新依赖或新增资源仍按任务授权，不把本轮额度延伸到 T07。
 
+### T07 入口规划（尚未实现）
+
+T07 的显示 / 输入所有权、PS/2 状态机、队列丢失恢复、同视图宿主 runner、依赖及资源方案统一见 [T07 实施契约与验证方案](../mvp-plan.md#t07-实施契约与验证方案)。T07 只交付基础输入 / 显示校验页；T10 的真实双面板和 AT07 完整控件验收仍待后续实现。
+
+拟新增的 `ui --host`、`ui --host --gui`、`run --gui`、`test --vm --graphics-only` 当前均不存在，不能作为已可执行命令。计划由 xtask 编排独立 host-runner 和既有 QEMU，宿主默认无窗口 / 无 SDL，GUI 显式启用；QMP 使用任务私有 Unix socket，真实 PS/2 注入、状态断言及实际 screendump 联合判定，不能只以 READY 文本或共享渲染器自证正确。
+
+新增依赖、锁变更及 VM / GUI 资源尚待确认；本轮仅核对文档与现有源码、读取原生 SDL 版本 / 路径，没有下载、安装、构建、打开窗口或创建 VM。原有 T06 入口与通过证据保持不变。
+
 ## 5. 视觉与数据材料
 
 采用 RadishX family-ui v26.7.3 的 Workbench 方向，项目映射以 MVP 规划为准。参考规则而非搬运外部截图、品牌或整包 UI；具体设计资产若使用 .pen，只通过支持的 Pencil 工具读写。
