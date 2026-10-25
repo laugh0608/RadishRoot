@@ -1,0 +1,22 @@
+# T02 单一工具与资产身份；绝对宿主路径由已装 QEMU 实体目录派生。
+limine_version	12.9.4
+limine_url	https://github.com/Limine-Bootloader/Limine/releases/download/v12.9.4/limine-binary.tar.xz
+limine_archive_sha256	9880cc04681262214db9b824ed8a5c55296955027d8caa9f55ab52a6dd85d6a0
+qemu_version	11.1.2
+machine	pc-q35-11.1
+memory_mib	512
+cpus	1
+disk_bytes	1073741824
+esp_start	2048
+esp_sectors	262144
+data_start	264192
+last_lba	2097118
+debian_image	sha256:cd67b70bf3a9c2f064349e7283a73412e726b053d309dc36f1960600e745395b
+limine_efi_sha256	8a7214bfd8b9a044b780f1e71b2752dc12ecc25c06b9cf39ac6a0a341c802282
+limine_license_sha256	5372ada69c825812b93b9e3f222253be3919bed3489372e797c9a85cd4e37fbc
+limine_notices_sha256	ebf4d3c706df8e2492dbe2c5ff020a050d1f48005ca6c8933b129455722be29c
+firmware_code	edk2-x86_64-code.fd
+firmware_code_sha256	33090cc07675baa5190d9f1e84bf5176b33bcbfa9bacac522961150cdb6dbb2a
+firmware_vars	edk2-i386-vars.fd
+firmware_vars_sha256	5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e
+boot_timeout_seconds	60

@@ -9,3 +9,10 @@ name = "radishroot-kernel"
 path = "src/main.rs"
 test = false
 bench = false
+
+[dependencies]
+limine = { version = "=0.6.5", default-features = false }
+uart_16550 = { version = "=0.9.0", default-features = false }
+
+[features]
+boot-test = []

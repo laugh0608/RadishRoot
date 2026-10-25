@@ -99,6 +99,12 @@ impl Runner {
         Ok(())
     }
     pub fn run(&mut self, command: &mut Command) -> Result<String> {
+        self.run_inner(command, None)
+    }
+    pub fn boot(&mut self, command: &mut Command, serial: &Path) -> Result<String> {
+        self.run_inner(command, Some(serial))
+    }
+    fn run_inner(&mut self, command: &mut Command, serial: Option<&Path>) -> Result<String> {
         self.sequence += 1;
         let prefix = format!("{:03}", self.sequence);
         let stdout = self.dir.join(format!("{prefix}.stdout"));
@@ -121,10 +127,34 @@ impl Runner {
         let pid = child.id();
         // The child creates its own process group before exec. Only this group is signalled.
         let mut timed_out = false;
+        let mut observed = false;
+        let mut terminal_since = None;
+        let mut prior_length = 0;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
                 Ok(None) if started.elapsed() < self.timeout => {
+                    if let Some(path) = serial {
+                        let output = match read_output(path) {
+                            Ok(output) => output,
+                            Err(error) => {
+                                stop_and_wait(&mut child, pid)?;
+                                return Err(error);
+                            }
+                        };
+                        let terminal = output.lines().any(|line| {
+                            line.starts_with("RR:T02:READY ") || line.starts_with("RR:T02:FAIL ")
+                        });
+                        if terminal && (terminal_since.is_none() || output.len() != prior_length) {
+                            terminal_since = Some(Instant::now());
+                        }
+                        prior_length = output.len();
+                        if terminal_since.is_some_and(|t| t.elapsed() >= Duration::from_millis(250))
+                        {
+                            observed = true;
+                            break stop_and_wait(&mut child, pid)?;
+                        }
+                    }
                     thread::sleep(Duration::from_millis(10))
                 }
                 Ok(None) => {
@@ -140,7 +170,7 @@ impl Runner {
         // Also stop any descendants left behind by an exited parent.
         kill_group(pid)?;
         self.record(&format!(
-            "{prefix} pid={pid} code={:?} signal={:?} timeout={timed_out} elapsed_ms={}",
+            "{prefix} pid={pid} code={:?} signal={:?} timeout={timed_out} host_stopped_after_terminal={observed} elapsed_ms={}",
             status.code(),
             status.signal(),
             started.elapsed().as_millis()
@@ -151,6 +181,15 @@ impl Runner {
                 detail: format!("child group {pid} stopped; logs: {}", self.dir.display()),
                 exit: 124,
             });
+        }
+        if let Some(path) = serial {
+            if !observed {
+                return Err(Error::new(
+                    "vm-exited",
+                    "guest exited before terminal observation; not a successful shutdown",
+                ));
+            }
+            return read_output(path);
         }
         if !status.success() {
             return Err(Error::new(
@@ -243,6 +282,41 @@ mod tests {
         assert_eq!(e.exit, 124);
         thread::sleep(Duration::from_millis(600));
         assert!(!marker.exists(), "descendant survived group timeout");
+        fs::remove_dir_all(&r.dir).unwrap();
+    }
+    #[test]
+    fn boot_monitor_requires_terminal_then_stops_only_owned_child() {
+        let mut r = runner();
+        r.timeout = Duration::from_secs(2);
+        let serial = r.dir.join("serial.log");
+        fs::write(&serial, "").unwrap();
+        let output = r
+            .boot(
+                Command::new("/bin/sh")
+                    .args([
+                        "-c",
+                        "echo 'RR:T02:READY revision=6' > \"$1\"; sleep 5",
+                        "test",
+                    ])
+                    .arg(&serial),
+                &serial,
+            )
+            .unwrap();
+        assert!(output.contains("READY"));
+        fs::write(&serial, "").unwrap();
+        assert_eq!(
+            r.boot(Command::new("/bin/sh").args(["-c", "exit 0"]), &serial)
+                .unwrap_err()
+                .kind,
+            "vm-exited"
+        );
+        r.timeout = Duration::from_millis(100);
+        assert_eq!(
+            r.boot(Command::new("/bin/sh").args(["-c", "sleep 5"]), &serial)
+                .unwrap_err()
+                .exit,
+            124
+        );
         fs::remove_dir_all(&r.dir).unwrap();
     }
     #[test]

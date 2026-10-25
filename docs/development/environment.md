@@ -1,6 +1,6 @@
 # 开发环境清单与安装候选
 
-盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19；T01 工程验证：2026-10-25（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 与指定 Rust nightly 均已由用户安装，实际核验范围见第 2.8–2.10 节。
+盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19；T01 工程与 T02 引导验证：2026-10-25（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01–T02。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 与指定 Rust nightly 均已由用户安装，实际核验范围见第 2.8–2.11 节。
 
 ## 1. 本机实测
 
@@ -15,11 +15,11 @@
 | 工具链选择 | 默认和 `RUSTUP_TOOLCHAIN` 仍选择 1.96.0；显式 `+nightly-2026-10-13` 查询正确进入 nightly | 三套工具链并存；项目命令及子进程必须选择指定 nightly，不能只依赖 rust-toolchain.toml |
 | ELF 链接器 | 两套稳定版的 rust-lld 为 LLD 22.1.2 / 22.1.6；新 nightly 自带 LLD 23.1.3，GNU 模式版本查询通过 | nightly 链接器加载同一工具链的 libLLVM；T01 两种 profile 真实链接已通过，无须增加完整 LLVM 安装 |
 | 本机 C 工具链 | Apple clang 21.0.0，默认 target `arm64-apple-darwin27.0.0` | 默认宿主配置不能视为 x86_64 裸机 C 工具链 |
-| 独立 QEMU CLI | `/opt/homebrew/bin/qemu-system-x86_64`、`qemu-img` 均为 11.1.2，原生 arm64；版本 / 能力枚举与动态链接核验通过 | 工具已安装；项目 guest 自动化运行入口尚未建立，未启动 guest，见第 2.8 节 |
+| 独立 QEMU CLI | `/opt/homebrew/bin/qemu-system-x86_64`、`qemu-img` 均为 11.1.2，原生 arm64；版本 / 能力枚举与动态链接核验通过 | 工具核验见第 2.8 节；T02 已建立真实 guest 串口入口，验证见第 2.11 节 |
 | UTM | `/Applications/UTM.app` 4.7.5；内置 QEMU 与 qemu-img 动态库含 10.0.2 版本字符串 | `file` 确认是 Mach-O shared library，并非可直接运行的 CLI；版本来自静态字符串，未执行 guest |
 | UTM 固件 | `Contents/Resources/qemu/edk2-x86_64-code.fd` 与 `edk2-i386-vars.fd` | 配对 JSON 声明 x86_64、pc-q35-*；没有启动证据，不能把 ARM 固件代入 |
 | Linux 服务 | OrbStack 2.2.4；Docker context 为 orbstack，CLI / server 均为 29.8.2，服务为 linux / aarch64 | 初次盘点只读 API 成功；已完成固定 Debian 的 apt / sqv 验证，并构建本地工具镜像；五包仅装在派生镜像，任务容器均已清理 |
-| 镜像 / 引导工具 | PATH 未发现 sgdisk、gdisk、mkfs.fat、fsck.fat、mformat、mcopy、mdir、xorriso、limine | 宿主搜索不是全机不存在的断言；基础镜像未含五包；派生工具镜像已安装五个精确版本并通过 7 个 CLI 命令，见第 2.6 节；Limine 资产未建立 |
+| 镜像 / 引导工具 | PATH 未发现 sgdisk、gdisk、mkfs.fat、fsck.fat、mformat、mcopy、mdir、xorriso、limine | 宿主搜索不是全机不存在的断言；基础镜像未含五包；派生工具镜像已安装五个精确版本并通过 7 个 CLI 命令，见第 2.6 节；Limine 12.9.4 资产已按第 2.11 节引入 |
 | 系统辅助工具 | hdiutil、diskutil、newfs_msdos、fsck_msdos、file、shasum 存在 | 不用这些存在性证据替代规划中的固定 Linux GPT/FAT 工具环境 |
 
 Rust 可执行文件位于 `~/.rustup/toolchains/<toolchain>/bin/`；本轮直接调用已安装二进制及 rustup 的 installed 查询，未执行工具链安装或更新。官方说明 `x86_64-unknown-none` 有预编译组件，支持 no_std，使用 alloc 需提供 allocator；目标本身不强制 nightly。项目仍沿用固定日期 nightly 方向，具体依赖功能通过实际编译确认。[Rust target 说明](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html)
@@ -40,7 +40,7 @@ UTM 的固件 JSON 保留上游构建机路径，不能原样复用。以下 SHA
 | Rust | `nightly-2026-10-13-aarch64-apple-darwin`，rustc `1.101.0-nightly (e9bbadf68 2026-10-12)` | 官方日期 manifest 已读取；安装后七项组件身份相符，rustc 实际版本与候选一致；T01 本地项目编译证据见第 2.10 节 |
 | Rust 安装集 | minimal profile + rust-src、rustfmt、clippy；target 为 `x86_64-unknown-none` | 已安装宿主及裸机两个 target，使用自带 rust-lld；本次安装集不包含额外 llvm-tools、GDB 或交叉 GCC |
 | QEMU | Homebrew `qemu 11.1.2`，formula revision 0、bottle rebuild 0，`arm64_golden_gate` | 官方 formula API 提供匹配 macOS 27 ARM64 的 bottle；已装版本与收据匹配，来源身份及哈希见下表及第 2.8 节 |
-| x86_64 UEFI | 上述 QEMU 11.1.2 包内的 `edk2-x86_64-code.fd` + `edk2-i386-vars.fd` | QEMU 对应 tag 的 README 标明固件源为 `edk2-stable202302`；已按安装包文件、descriptor 与实测哈希核对，见第 2.8 节；尚未启动，不借用 UTM 文件 |
+| x86_64 UEFI | 上述 QEMU 11.1.2 包内的 `edk2-x86_64-code.fd` + `edk2-i386-vars.fd` | QEMU 对应 tag 的 README 标明固件源为 `edk2-stable202302`；已按安装包文件、descriptor 与实测哈希核对，见第 2.8 节；第 2.11 节已取得启动证据，不借用 UTM 文件 |
 | Linux 基础环境 | `debian:trixie-20261005-slim`，`linux/arm64/v8` | registry index → ARM64 manifest 映射与响应哈希已核对，见第 2.1 节；已按该 digest 拉取并执行第 2.5 节验证 |
 | GPT | Debian trixie ARM64 `gdisk=1.0.10-2+b1` | 提供 sgdisk；不能误用该包 amd64 的 `1.0.10-2` 修订 |
 | FAT 格式 / 检查 | Debian trixie ARM64 `dosfstools=4.2-1.2` | 提供 mkfs.fat、fsck.fat |
@@ -424,6 +424,28 @@ workspace 包含 radishroot-kernel 与 xtask，版本继承根 workspace.package
 
 初次 Clippy 因两处手写取模对齐检查被拒绝，改用整数 is_multiple_of 后通过；独立复核脚本最初假设旧 Cargo 的 build 输出目录形式，读实际目录后改为在本次输出内定位唯一 kernel.map，未修改产物或放宽 ELF 断言。失败与最终成功日志分开保留。T01 的本地构建门槛已通过；高半区静态地址不证明分页、物理装载、栈或引导成立，M0 / AT01 / AT23 仍未通过。
 
+### 2.11 T02 引导与失败验收
+
+2026-10-25 接续 T01 提交 5b64eac，按明确授权引入 limine 0.6.5、uart_16550 0.9.0、bitflags 2.13.2，下载 Limine 12.9.4，并运行既有容器 / QEMU。nightly、全局工具链及 Homebrew 环境未变；依赖缓存隔离于 work/cargo-home。本节候选为该 HEAD 加未提交源码摘要，不将 T02 归入旧提交。
+
+版本与摘要的可执行单一源是 [Cargo.lock](../../Cargo.lock)和 [tools/boot/manifest.tsv](../../tools/boot/manifest.tsv)。Limine 归档 SHA-256 为 `9880cc04681262214db9b824ed8a5c55296955027d8caa9f55ab52a6dd85d6a0`，BOOTX64.EFI 为 `8a7214bfd8b9a044b780f1e71b2752dc12ecc25c06b9cf39ac6a0a341c802282`；固定白名单校验 LICENSE / 3RDPARTY.md。许可及来源见[对应清单](../governance/licensing-and-sources.md#t02-已引入的引导组件)。
+
+| 验证层 | 实际结果与边界 |
+| --- | --- |
+| 构建与宿主 | 16 项 xtask + 4 项 kernel lib 测试、fmt、宿主 / 裸机 check 与严格 clippy（含 boot-test）通过；本机 ci-rust.py verify 四入口通过。CI install 只补 `fetch --locked`，未运行远端 Ubuntu job |
+| ELF | dev 为 1,624,056 字节、SHA-256 `10912198585e517eb8a1cee03c318b7bd61dbf9cab52eb961067d45d2feb59d1`；正常 release 为 26,824 字节、SHA-256 `5b7105d6a45e4f49030817a15662f0b0b6fef3615824b520ed1264c3e61c1b43`。独立 Python struct / symbol / map、file、shasum 验证 ET_EXEC、RX / R / RW 三段、无动态段 / RWX、入口在 text；T02 不再要求 _start 必须位于 text 首字节 |
+| 工具与镜像 | 已有 Debian 镜像 ID 末尾 95b，完整身份由 manifest 校验；5 张专用 1 GiB GPT raw，ESP 128 MiB，DATA 剩余。QEMU 11.1.2 / pc-q35-11.1 / TCG / qemu64，1 vCPU / 512 MiB，VGA + modern VirtIO-blk，只读盘；沿用已核对的 EDK II code / 全新 VARS，无网络 / GUI |
+| 正常启动 | 同一 release 镜像连续 10 次从新 VARS 进入内核；每次 32 段内存图、478,855,168 字节 usable、内核区域 kind=6、framebuffer kind=7，1024×768×32 / pitch 4096；reclaim=none。所有非 usable 类型保留，未建立分配器 |
+| 负向启动 | 独立 boot-test release SHA-256 `81108f4267ae3a32a28d718941ffd22655c9d5756bb16d36ef4ee50cd72d3294`；4 张隔离盘分别注入协议不支持、缺必要响应、pitch=0、panic，得到 BOOT_PROTOCOL / BOOT_RESPONSE_MISSING / BOOT_FB_GEOMETRY / BOOT_PANIC，无 READY。注入复用生产校验路径，不是运行真实旧版 bootloader 或破坏任意指针映射 |
+| 独立读盘 | Python 标准库读取主 / 备 GPT、CRC、布局、FAT mirrors / backup / FSInfo、8 个 ESP 文件与空 DATA；5 张盘全部通过。串口独立复核 10 正常 + 4 失败；正常盘启动前后哈希一致。最终 clippy 整理后重建的正常 / 故障 ELF 与 VM 候选逐字节相同 |
+| 退出与资源 | 14 次 guest 都在终态后由宿主终止自身 QEMU 进程组并 wait；未发生超时，不把 signal 9 记成 guest 正常关机。容器 --rm、失败时按唯一名称清理；本批进程 / 容器已回收，大盘、缓存和证据留在忽略目录 |
+
+成功套件为 `target/xtask-80390-1792905921433080000/`。最终静态检查 / 宿主测试 / dev / release 分别为 `target/xtask-82030-1792906031116898000/`、`target/xtask-82305-1792906033407006000/`、`target/xtask-82540-1792906035848953000/`、`target/xtask-82737-1792906036900443000/`；最终故障重建在 target/t02-final-fault-20261025。独立证据包为 `evidence/t02-boot-20261025-5b64eac/`，含独立读盘 / 串口 / ELF 脚本、结果、源码快照、日志和摘要；大盘不重复复制。
+
+首轮真实启动确已进入内核，但固件 ANSI 输出与 ENTER 连行，严格宿主读取拒绝；修正内核先输出换行后才取得完整通过证据。开发链接最初因 .got orphan 拒绝，明确将必要 GOT 放在 RW 段；clippy 三项结构 / 表达检查修复后通过，未禁用检查。Docker 在沙盒中不可访问，获得同一范围的运行许可后执行；失败记录独立保留，不计算为通过。
+
+这些证据关闭 T02 本批通过条件，并给 AT01 提供当前候选证据；T03–T05、M0、AT23 以及正常关机 / 写回 / 图形 / 安装仍无通过声明。硬件映射和响应对象生命周期仍依赖受信 Limine 交接，边界检查不声称安全解析恶意 bootloader 任意指针。
+
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
@@ -437,13 +459,13 @@ workspace 包含 radishroot-kernel 与 xtask，版本继承根 workspace.package
 
 Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。此前 Debian 构建由 BuildKit 报告基础元数据阶段 37.2 秒、安装 RUN 阶段 29.2 秒；这些分阶段时间受网络与缓存影响，不是完整构建计时或固定预算。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
 
-Limine 二进制与 Rust crate 的配对、业务 crates / 功能开关、SDL 宿主 runner 依赖属于后续实现所需的单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
+Limine 二进制与 Rust crate 已按第 2.11 节单独授权配对；其他业务 crates / 功能开关、SDL 宿主 runner 依赖仍属后续单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
 
 此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust nightly 已安装并记录来源 / 随包许可，见第 2.9 节；QEMU / EDK II 已在本机安装并读取许可，见第 2.8 节。QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 依据其 `edk2-licenses.txt` 单独记录。本表不是分发许可结论，也不承诺打包这些宿主工具。
 
 ## 4. 分层验证方案
 
-以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据；Rust nightly 的版本、组件、target 与链接器核验已有第 2.9 节证据。第 2.10 节补齐 T01 工程编译、宿主检查和独立 ELF 证据；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据；Rust nightly 的版本、组件、target 与链接器核验已有第 2.9 节证据。第 2.10 节补齐 T01 工程编译、宿主检查和独立 ELF 证据，第 2.11 节补齐 T02 真实引导；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |
@@ -461,7 +483,7 @@ ARM64 宿主模拟 x86_64 使用 TCG，硬件虚拟化要求宿主与 guest 架�
 
 ## 5. 盘点限制与复核入口
 
-本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能、QEMU guest 与所有产品行为仍未验证；nightly 的 T01 实际编译 / 链接见第 2.10 节；用户安装后的 QEMU / 固件核验见第 2.8 节，Rust 工具链核验见第 2.9 节。
+本机事实来自 `uname` / `sw_vers`、`command -v`、rustup installed 查询、已有 rustc / cargo / rust-lld 的版本输出、应用 Info.plist、`file` / `strings`、固件 descriptor / `shasum` / 文件尺寸，以及 Docker 格式化只读 API。新增核对包括 Docker / GHCR registry JSON、固定官方配方与 AST、签名快照索引、包路径 HEAD、本地安装收据，以及固定 Debian 容器的 sqv / APT 更新、负向检查、模拟求解和派生工具镜像的包体 / 安装 / CLI 证据。2026-10-19 补充 GPT/FAT 普通文件制盘、宿主独立解析、原始 CRC / 文件哈希及五类损坏副本的实际证据。UTM 动态库字符串不是独立 QEMU 的运行结果；本机性能与完整产品行为仍未验证；nightly 的 T01 实际编译 / 链接见第 2.10 节，T02 guest 引导见第 2.11 节；用户安装后的 QEMU / 固件核验见第 2.8 节，Rust 工具链核验见第 2.9 节。
 
 早期 Homebrew 的 `list --versions` 即使设置 NO_AUTO_UPDATE 仍尝试刷新 API，代理失败后改用只读 Cellar；这不是安装清单查询成功的证据。2026-10-19 采用任务专用缓存、官方 API 和实际 dry-run 成功取得当前计划。首次联网受沙盒代理限制，为同一元数据目标取得权限后成功；未安装工具或修改全局代理。Docker API 和 sysctl 的早期权限限制仍按原记录解释，不据此补填硬件性能。
 

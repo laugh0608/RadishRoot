@@ -57,3 +57,18 @@ CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1
 2026-10-19 用户安装 `nightly-2026-10-13-aarch64-apple-darwin`，本轮只核对工具与文件，未编译、修改或分发 Rust 材料。来源为此前核对的 [Rust 官方日期清单](https://static.rust-lang.org/dist/2026-10-13/channel-rust-nightly.toml)；已装七项组件的版本、归档 URL 和摘要与该清单一致，实际 rustc commit 为 `e9bbadf6824e65b3583c2dda3a0926ec76df9143`，链接器为 LLD 23.1.3。详细身份与核验边界见[开发环境第 2.9 节](../development/environment.md)。
 
 随包 `share/doc/rust/README.md` 声明 Rust 主体使用 MIT / Apache-2.0，部分材料适用其他许可；完整归属由 `COPYRIGHT.html`、`COPYRIGHT-library.html` 与 `licenses/` 文本记录，已在忽略证据目录中保留。该摘要不将所有组件、LLVM 或未来静态链接进内核的库归为同一许可。2026-10-19 仅登记本机工具来源。2026-10-25 的 T01 已使用该工具链与预编译 core 生成本地静态 ELF；两个本地包没有 crates.io / Git 依赖，未复制第三方源代码或分发产物。实际发行时仍须按最终组成补齐许可及归属，不把工具来源记录或本地链接成功当作完整分发审查。
+
+## T02 已引入的引导组件
+
+2026-10-25 按用户明确授权引入下表，完成真实构建、UEFI 启动及串口负向验证。源码和二进制均未做上游补丁；本地适配代码独立实现。Cargo.lock 保存 registry 包摘要，[引导 manifest](../../tools/boot/manifest.tsv)保存 Limine 归档、EFI、许可文件及已有工具 / 固件摘要；这些身份不由随手下载的 latest 替代。
+
+| 材料 | 官方来源 / 精确身份 | 使用方式与声明 |
+| --- | --- | --- |
+| Limine 引导器 | [v12.9.4](https://github.com/Limine-Bootloader/Limine/releases/tag/v12.9.4)，limine-binary.tar.xz；对应协议 commit `3a0526b700e356f0eac1b71a77697b3fd1c707a3`，base revision 6 | 使用原始 BOOTX64.EFI；主体 BSD-2-Clause，完整 LICENSE 与 3RDPARTY.md 从同一归档校验后随 ESP `/licenses/` 保存。3RDPARTY.md 包含其他实际声明，不以主体许可覆盖它们 |
+| limine Rust 绑定 | [limine-boot-rust](https://github.com/robotman2412/limine-boot-rust)，[crate 0.6.5](https://crates.io/crates/limine/0.6.5) | MIT OR Apache-2.0；选择 MIT，default-features=false；仅协议请求 / 响应，无 std 或 allocator；[原 MIT 文本](../../tools/boot/licenses/limine-0.6.5.txt) |
+| UART 驱动 | [rust-osdev/uart_16550](https://github.com/rust-osdev/uart_16550)，[crate 0.9.0](https://crates.io/crates/uart_16550/0.9.0) | MIT OR Apache-2.0；选择 MIT，default-features=false；使用 PIO 与有界非阻塞发送，不使用 TTY 无界等待；[原 MIT 文本](../../tools/boot/licenses/uart_16550-0.9.0.txt) |
+| bitflags | [bitflags/bitflags](https://github.com/bitflags/bitflags)，[crate 2.13.2](https://crates.io/crates/bitflags/2.13.2) | UART 必要传递依赖；MIT OR Apache-2.0，选择 MIT；[原 MIT 文本](../../tools/boot/licenses/bitflags-2.13.2.txt) |
+
+三份 crate MIT 文本来自已按 Cargo.lock 校验的包内 LICENSE-MIT，仅为原 limine 文本补齐缺失的末尾 LF，其余字节不变；作为署名材料保存并放入 ESP `/licenses/`；没有整包源码进入仓库。Limine 原始文件保留在忽略的 work/t02-assets，归档内容使用固定成员白名单与尺寸 / 哈希校验，不使用不受约束的 tar 解包。EFI 及 crate 制品未对外分发。
+
+既有 QEMU / EDK II 固件与 Debian 容器工具仍仅为本地验证工具；固件不进入开发盘，完整声明保留在既有安装环境。Rust core / compiler_builtins 等工具链组成仍按前节来源记录；本批本地验证不替代未来发行的完整材料清单、原创许可选择及分发审查。

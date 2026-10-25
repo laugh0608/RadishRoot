@@ -63,13 +63,31 @@ env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile dev --
 env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile release --fresh
 ```
 
-`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
+`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试和 kernel lib 的纯引导契约测试（不运行硬件入口）。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
 
 首次进入 Cargo 的编译发生在 xtask 启动前，应先按上述方式选择工具链；xtask 随后验证自身编译器身份、项目工具链来源与外部配置，不修改 shell、rustup override 或全局默认。当前宿主进程管理使用 Unix 进程组，目标宿主为 macOS / Linux，Windows 不在 T01 支持范围。系统需有 git、shasum 和 /bin/kill；Python 独立复核及 CI 辅助使用标准库，CI 辅助脚本需 Python 3.11+。
 
-每次实际执行在忽略的 target/t01-<pid>-<时间戳>/ 保存 steps.txt 与分步 stdout / stderr。xtask 子进程默认上限 120 秒，可加 `--timeout-secs 1..3600`；超时停止自己的进程组并回收直接子进程，返回 124；前置 / 构建 / 校验失败返回 1，参数错误返回 2。错误输出指向日志；不能将失败目录中的半成品当作成功产物。独立验收材料保存在 evidence/，其路径和候选身份记录于环境清单。
+每次实际执行在忽略的 target/xtask-<pid>-<时间戳>/（早期 T01 记录仍为 target/t01-*） 保存 steps.txt 与分步 stdout / stderr。xtask 子进程默认上限 120 秒，可加 `--timeout-secs 1..3600`；超时停止自己的进程组并回收直接子进程，返回 124；前置 / 构建 / 校验失败返回 1，参数错误返回 2。错误输出指向日志；不能将失败目录中的半成品当作成功产物。独立验收材料保存在 evidence/，其路径和候选身份记录于环境清单。
 
-CI 的 install 步骤才允许从官方源安装 TOML 指定的工具链；本地不运行它。verify 步骤复用上述四个入口；本地验证结果不能替代 Ubuntu runner 的实际 Actions 结果。
+CI 的 install 步骤才允许从官方源安装 TOML 指定的工具链，并按 Cargo.lock 执行 `cargo fetch --locked`；本地不运行它。verify 步骤复用上述四个入口；本地验证结果不能替代 Ubuntu runner 的实际 Actions 结果。
+
+### T02 镜像与串口入口
+
+已授权的首次依赖准备使用 `cargo +nightly-2026-10-13 fetch --locked`，Limine 资产准备使用 `python3 scripts/fetch-boot-assets.py --download`；这些操作联网，日常 xtask 不自动下载、安装或更新。资产存在时脚本只校验精确哈希，冲突文件不覆盖。本次 Cargo 缓存隔离在 work/cargo-home；复用本机验收环境时为所有命令显式加 `CARGO_HOME="$PWD/work/cargo-home"`，无需修改全局配置。
+
+```sh
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask image
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask run --serial
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm
+```
+
+`image` 在新目录构建 release ELF，调用锁定的既有 Debian 工具镜像产生 1 GiB GPT / FAT32 开发盘，输出真实路径。容器禁用网络、只读根、无新增 capabilities，仅挂本次输入 / 输出普通目录，`--pull=never`；工具镜像缺失即失败。工具脚本只由 xtask 编排，参数来自 manifest，不提供第二套独立制盘入口。
+
+`run --serial` 创建镜像并完成一次无窗口 UEFI 启动，串口保存到本次 boot-*/serial.log；`test --vm` 对同一正常镜像启动 10 次，然后使用独立 boot-test 构建 / 4 张隔离镜像校验协议不支持、缺响应、无效 framebuffer 和 panic。每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，只读开发盘，无网络、无 GUI、禁止自动重启。固件从 PATH 中 QEMU 实体所在 prefix/share/qemu 派生并验证哈希；当前实际 VM 环境为 Homebrew macOS，其他安装布局未经验证。
+
+单次 QEMU 限时为 `min(--timeout-secs, 60)` 秒。宿主观察到 READY / FAIL 且串口稳定 250 ms 后停止自己的进程组并回收，随后严格校验序列；这是 T02 halt 后的宿主终止，不是 guest 正常关机。提前退出、无终态、非预期错误或事实不符均失败；超时仍返回 124。没有 UART 时内核也不能保证可见串口原因，由宿主超时明确报告失败；不承诺未建立的 CPU 异常处理。无状态资源回收 / 磁盘写回或图形交互能力。
+
+完整启动套件需创建 5 张逻辑容量各 1 GiB 的稀疏盘；本机实际用时约 70 秒，未来不能据此承诺固定时长。各次构建、工具身份、命令、PID、镜像摘要、串口、VARS 与失败材料留在 target/xtask-*，后台子进程及容器结束即回收；复制证据时不复制大盘。普通 CI 只运行宿主 / 静态入口，VM 验收按授权独立运行。
 
 ## 5. 视觉与数据材料
 

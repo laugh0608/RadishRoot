@@ -274,7 +274,7 @@ flush 失败时停止正常关机流程，界面保留错误和已知状态。�
 
 ### 统一入口
 
-统一入口为 `cargo xtask`。T01 已实现 `build --profile dev|release [--fresh]`、`check`、`test --host` 和 `help`；本机有工具链环境覆盖时须显式使用项目 nightly，实际命令见[开发规范](development/standards.md#t01-本地入口)。`image`、`run --serial`、`run --gui`、`test --vm`、`demo`、`package` 和 `verify-install` 仍待 T02、T13、T24、T29–T31 随真实能力分批建立。每个入口需给出明确退出码、参数说明、超时和输出位置；不建立默认返回成功的占位入口。开发 shell 包装仅转发至同一 xtask 实现。
+统一入口为 `cargo xtask`。T01 已实现 `build --profile dev|release [--fresh]`、`check`、`test --host` 和 `help`；本机有工具链环境覆盖时须显式使用项目 nightly，实际命令见[开发规范](development/standards.md#t01-本地入口)。T02 已增加 `image`、`run --serial`、`test --vm`；`run --gui`、`demo`、`package` 和 `verify-install` 仍待 T13、T24、T29–T31 随真实能力分批建立。每个入口需给出明确退出码、参数说明、超时和输出位置；不建立默认返回成功的占位入口。开发 shell 包装仅转发至同一 xtask 实现。
 
 构建在宿主执行；镜像制作使用锁定的 Linux 工具环境，复用 GPT、mkfs.fat 和文件复制工具。固定工具链、固件、机器配置及依赖，并记录版本和校验值。目标是可重复构建和运行，不在首版承诺镜像逐字节可重现。
 
@@ -370,7 +370,7 @@ M1 记录内核 / heap / framebuffer / DMA / UI / 缓存预算及测量范围；
 
 **工具链与目标隔离：**本机 RUSTUP_TOOLCHAIN=1.96.0 仍有效，初次入口显式使用 `cargo +nightly-2026-10-13 xtask …`。本地执行前设置仅本进程的 RUSTUP_AUTO_INSTALL=0，缺工具链 / 组件直接失败，不隐式安装。xtask 在仓库根清除仅探测子进程的 RUSTUP_TOOLCHAIN，让 rustup 按项目文件解析指定工具链；若解析来源是目录 override 或默认值则报错。将实际运行工具链与该解析结果比较，子命令使用同一已装工具链的 rustup run，不带 --install；不另抄一份日期到 Rust 常量、alias 或 CI。官方选择规则与自动安装开关见 [rustup overrides](https://rust-lang.github.io/rustup/overrides.html)、[环境变量](https://rust-lang.github.io/rustup/devel/environment-variables.html)。
 
-宿主 triple 从选定 rustc -Vv 取得；宿主 check / clippy / test 与 kernel build / clippy 分别指定包和目标，禁止用 workspace 全量命令把 xtask 编成裸机或把 kernel 当宿主测试。检查会影响编译结果的外部 RUSTFLAGS / CARGO_ENCODED_RUSTFLAGS、CARGO_BUILD_TARGET、编译器 / linker override 和上层 Cargo 配置，只报告相关键及冲突，不打印整个环境或凭据。T01 对外部 Cargo 配置文件整体拒绝；项目配置只接受 xtask alias 与裸机 target 的 rustflags，工具链文件接受当前单行 schema，未知键或重复键拒绝；冲突时要求明确修正，不通过静默忽略或切换 target 继续。Cargo 分层配置和 target flags 依据[官方配置说明](https://doc.rust-lang.org/cargo/reference/config.html)。
+宿主 triple 从选定 rustc -Vv 取得；宿主 check / clippy / test 与 kernel build / clippy 分别指定包和目标，禁止用 workspace 全量命令把 xtask 编成裸机或把 kernel 硬件入口当宿主测试。T02 新增无硬件访问的 kernel lib，允许仅以 `--lib` 运行其纯校验测试。检查会影响编译结果的外部 RUSTFLAGS / CARGO_ENCODED_RUSTFLAGS、CARGO_BUILD_TARGET、编译器 / linker override 和上层 Cargo 配置，只报告相关键及冲突，不打印整个环境或凭据。T01 对外部 Cargo 配置文件整体拒绝；项目配置只接受 xtask alias 与裸机 target 的 rustflags，工具链文件接受当前单行 schema，未知键或重复键拒绝；冲突时要求明确修正，不通过静默忽略或切换 target 继续。Cargo 分层配置和 target flags 依据[官方配置说明](https://doc.rust-lang.org/cargo/reference/config.html)。
 
 **最小链接契约：**采用内置 x86_64-unknown-none 与 rust-lld GNU 模式，沿用 kernel code model、无 red zone、panic=abort；对裸机目标明确采用 static relocation 和非 PIE 链接，产出 ELF64 little-endian x86_64 ET_EXEC。链接脚本以 `0xffffffff80000000` 为 T01 虚拟链接基址，入口 `_start` 位于可执行段；按 4 KiB 对齐分离 text RX、rodata R、data / bss RW，空只读 / 数据段允许省略，禁止 RWX 段、动态解释器及动态链接段。入口、panic handler 仅形成最小不返回路径；Rust 2024 的导出符号 unsafe 属性须注明唯一符号与调用前提，不引入硬件 unsafe。
 
@@ -408,13 +408,24 @@ T01 收口须同时具备真实工作区、工具链 / 配置单一来源、两�
 
 ### T02 引导、串口与最小故障停止
 
-- [ ] 状态：未开始
+- [x] 本地实现与真实 QEMU 验证通过；连续 10 次正常启动及 4 类注入失败均有独立证据，见[环境清单第 2.11 节](development/environment.md#211-t02-引导与失败验收)。
 
 预计 2 人日 · 前置：T01 · 验收关联：AT01
 
 **交付：**Limine 开发镜像、内存图 / framebuffer 校验、串口及最小 panic 输出。
 
 **通过条件：**连续 10 次进入内核；协议不支持时明确停止；保留固件、内核和 framebuffer 区域，错误不导致无信息重启。
+
+#### T02 本批实施范围与验收
+
+本批接续 T01，已按明确授权实现 UEFI 开发镜像、串口及引导事实校验；不进入 T03 内存分配 / PCI / DMA 或文件系统。实际配对为 Limine 12.9.4、limine 0.6.5（base revision 6）、uart_16550 0.9.0 及其必要 bitflags 2.13.2；默认 / 可选依赖 features 均关闭，版本由 Cargo.lock 及 tools/boot/manifest.tsv 固定。具体来源与摘要见环境及许可记录。
+
+- **引导与存储边界：**沿用 1 GiB GPT raw、128 MiB FAT32 ESP、剩余 DATA 分区；只在任务独占目录创建普通文件，使用既有锁定 Debian 工具镜像。ESP 放置 BOOTX64.EFI、内核、limine.conf 及必要第三方声明；DATA 保持空。此时没有内核磁盘写入或正常关机能力。
+- **内核输入：**声明并保留 Limine request markers、base revision、内存图、framebuffer、HHDM、内核物理地址与栈请求。单核、禁用中断、不回收 bootloader / 固件 / 内核 / framebuffer 内存、不重建页表。协议提供的映射与对象生命周期属于引导交接前提；显式检查必要响应、修订、数量、整数溢出、区域覆盖、framebuffer 几何与像素布局。
+- **串口与失败：**复用 uart_16550 的非阻塞发送接口，有界轮询输出阶段和稳定错误码；未满足输入要求时不得打印成功。panic 保留串口诊断并 cli / hlt 停止；不启用堆或无界串口等待。成功只表示完成 T02 引导校验，随后同样受控停止。
+- **宿主入口：**扩展既有 xtask 的 image、run --serial、test --vm；镜像生成 / QEMU 参数、素材校验与日志由同一实现负责，不复制另一套版本表。所有材料按哈希识别；每次运行使用全新固件变量副本与独占日志。锁定 QEMU 11.1.2、pc-q35-11.1、TCG、1 vCPU、512 MiB，禁用网络和自动重启，单次启动上限 60 秒；资源退出后保留证据。
+- **验收：**同一正常候选连续 10 次从全新变量存储启动，串口报告真实内存图、内核 / framebuffer 区域和校验成功；独立检查启动序列、成功事件唯一性及目标身份。另用隔离的故障候选覆盖协议不支持、缺必要响应、无效 framebuffer 和 panic；注入必须明确标识，复用生产校验路径，不篡改真实基线产物或把宿主测试当 guest 证据。
+- **停止线：**授权范围内只推进 T02；不改宿主固件 / 系统配置，不接触真实磁盘，不启动 GUI，不推送或发布。缺依赖、哈希漂移、工具失配或运行环境受限时报告具体阶段与已验证部分，不放宽断言。
 
 ### T03 最小内存、PCI 与 DMA 所有权
 
@@ -924,7 +935,7 @@ MVP 完成要求全部 FR / AT 覆盖且没有未解决 P0 / P1；P2 必须不�
 
 ### 开始实施的第一步
 
-T01 已建立真实最小编译入口；接续实施依 T02–T05 取得引导与存储证据，再按 T06–T13 实现第一条真实图形闭环。实际进度、下一步与授权边界统一见[当前状态](status/current.md)，本规划不构成安装依赖或写内核的授权。
+T01 已建立真实最小编译入口，T02 已取得引导与注入失败证据；接续实施依 T03–T05 取得内存、设备与存储证据，再按 T06–T13 实现第一条真实图形闭环。实际进度、下一步与授权边界统一见[当前状态](status/current.md)，本规划不构成安装依赖或写内核的授权。
 
 [R1]: https://www.qemu.org/docs/master/system/introduction.html
 [R2]: https://github.com/Limine-Bootloader/Limine

@@ -6,6 +6,9 @@ pub enum Action {
     Check,
     Build { release: bool, fresh: bool },
     TestHost,
+    Image,
+    Run,
+    TestVm,
 }
 #[derive(Debug)]
 pub struct Options {
@@ -28,6 +31,9 @@ pub fn parse(args: &[String]) -> Result<Options> {
         [] | ["help"] | ["--help"] => Action::Help,
         ["check"] => Action::Check,
         ["test", "--host"] => Action::TestHost,
+        ["image"] => Action::Image,
+        ["run", "--serial"] => Action::Run,
+        ["test", "--vm"] => Action::TestVm,
         ["build", "--profile", profile] | ["build", "--profile", profile, "--fresh"]
             if ["dev", "release"].contains(profile) =>
         {
@@ -70,7 +76,6 @@ mod tests {
         );
         for s in [
             "run",
-            "image",
             "build",
             "build --profile test",
             "test",

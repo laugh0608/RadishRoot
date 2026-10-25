@@ -335,7 +335,7 @@ impl Context {
         ]))?;
         require_installed(&targets, &config.targets, "target-missing")?;
         runner.record(&format!(
-            "compiler={version}features=default (no third-party dependencies)"
+            "compiler={version}features=default; dependency identities in Cargo.lock"
         ))?;
         Ok(Self {
             root: root.into(),

@@ -1,20 +1,52 @@
 #![no_std]
 #![no_main]
 
-use core::panic::PanicInfo;
+mod boot;
+mod serial;
+use core::{
+    fmt::Write,
+    panic::PanicInfo,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
-// SAFETY: 本程序只导出一个 _start。T01 仅检查静态产物；调用方必须在
-// T02 建立有效的 x86_64 执行环境、映射与栈，当前产物不能直接启动。
+// SAFETY: 唯一导出入口，Limine 按 x86_64 System V ABI 提供有效栈及高半区映射。
+// 本阶段只运行 BSP，不启用中断，不释放引导器提供的内存，不返回引导器。
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
+    // SAFETY: CPL0 下关闭中断；尚无 IDT / 中断处理，避免运行未建立的处理程序。
+    unsafe {
+        core::arch::asm!("cli", options(nomem, nostack));
+    }
+    let Ok(mut serial) = serial::Serial::new() else {
+        halt();
+    };
+    if let Err(error) = boot::run(&mut serial) {
+        let _ = writeln!(
+            serial,
+            "RR:T02:FAIL code={} stage=boot-validation",
+            error.code()
+        );
+    }
+    halt()
+}
+pub fn halt() -> ! {
     loop {
-        core::hint::spin_loop();
+        // SAFETY: CPL0、唯一 BSP；IF=0 后停止 CPU，不释放仍有效的资源，不伪报关机。
+        unsafe {
+            core::arch::asm!("cli", "hlt", options(nomem, nostack));
+        }
     }
 }
-
 #[panic_handler]
-fn panic(_info: &PanicInfo<'_>) -> ! {
-    loop {
-        core::hint::spin_loop();
+fn panic(info: &PanicInfo<'_>) -> ! {
+    static PANICKING: AtomicBool = AtomicBool::new(false);
+    if !PANICKING.swap(true, Ordering::Relaxed)
+        && let Ok(mut serial) = serial::Serial::new()
+    {
+        let _ = writeln!(
+            serial,
+            "RR:T02:FAIL code=BOOT_PANIC stage=panic detail={info}"
+        );
     }
+    halt()
 }

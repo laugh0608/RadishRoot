@@ -12,8 +12,15 @@ SECTIONS {
   . = 0xffffffff80000000;
   .text ALIGN(4096) : { *(.text .text.*) } :text
   .rodata ALIGN(4096) : { *(.rodata .rodata.*) } :rodata
-  .data ALIGN(4096) : { *(.data .data.*) } :data
+  .data ALIGN(4096) : {
+    KEEP(*(.limine_requests_start))
+    KEEP(*(.limine_requests))
+    KEEP(*(.limine_requests_end))
+    *(.data .data.*)
+    *(.got .got.*)
+  } :data
   .bss ALIGN(4096) (NOLOAD) : { *(.bss .bss.*) *(COMMON) } :data
+  __kernel_end = .;
   /DISCARD/ : { *(.eh_frame .eh_frame_hdr .comment .note.GNU-stack) }
   .debug_abbrev 0 : { *(.debug_abbrev) }
   .debug_info 0 : { *(.debug_info) }

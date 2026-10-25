@@ -1,12 +1,15 @@
+mod boot_image;
+mod build;
 mod cli;
 mod config;
 mod elf;
 mod error;
 mod process;
+mod vm;
 
 use cli::{Action, Options};
 use config::{Context, TARGET};
-use error::{Error, Result};
+use error::Result;
 use process::Runner;
 use std::{env, fs, path::Path, process::Command, time::Duration};
 
@@ -20,7 +23,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/t01-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nT01 produces a static ELF only; no boot/run/image implementation."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm (T02 headless UEFI)."
         );
         return Ok(());
     }
@@ -29,12 +32,12 @@ fn execute(options: Options) -> Result<()> {
         .unwrap()
         .canonicalize()?;
     process::directory(&root.join("target"))?;
-    let dir = process::unique_directory(&root.join("target"), "t01")?;
+    let dir = process::unique_directory(&root.join("target"), "xtask")?;
     println!("run={}", dir.display());
     let mut runner = Runner::new(dir.clone(), Duration::from_secs(options.timeout))?;
     let result = perform(&root, &options, &mut runner);
     runner.record(&match &result {
-        Ok(()) => "result=success (T01 static/host only)".into(),
+        Ok(()) => "result=success (scope recorded by action)".into(),
         Err(e) => format!(
             "result=failure kind={} exit={} detail={}",
             e.kind, e.exit, e.detail
@@ -77,6 +80,8 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
                     cmd.arg("--target-dir").arg(&checks_dir);
                     if package == "xtask" {
                         cmd.arg("--all-targets");
+                    } else {
+                        cmd.arg("--all-features");
                     }
                     if command == "clippy" {
                         cmd.args(["--", "-D", "warnings"]);
@@ -101,56 +106,25 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
                     .arg(&checks_dir),
             )?;
             print!("{output}");
+            let output = runner.run(
+                context
+                    .cargo(&[
+                        "test",
+                        "--locked",
+                        "--offline",
+                        "-p",
+                        "radishroot-kernel",
+                        "--lib",
+                        "--target",
+                        &context.host,
+                    ])
+                    .arg("--target-dir")
+                    .arg(&checks_dir),
+            )?;
+            print!("{output}");
         }
         Action::Build { release, fresh } => {
-            let target_dir = if fresh {
-                let path = runner.dir.join("build");
-                process::directory(&path)?;
-                path
-            } else {
-                let path = root.join("target/kernel");
-                process::directory(&path)?;
-                path
-            };
-            process::reject_output_symlinks(&target_dir)?;
-            let mut cmd = context.cargo(&[
-                "build",
-                "--locked",
-                "--offline",
-                "-p",
-                "radishroot-kernel",
-                "--bin",
-                "radishroot-kernel",
-                "--target",
-                TARGET,
-            ]);
-            cmd.arg("--target-dir")
-                .arg(&target_dir)
-                .env("CARGO_INCREMENTAL", "0");
-            if release {
-                cmd.arg("--release");
-            }
-            runner.run(&mut cmd)?;
-            let artifact = target_dir
-                .join(TARGET)
-                .join(if release { "release" } else { "debug" })
-                .join("radishroot-kernel");
-            let resolved = artifact.canonicalize()?;
-            if !resolved.starts_with(target_dir.canonicalize()?) {
-                return Err(Error::new(
-                    "output-path",
-                    "artifact escapes output directory",
-                ));
-            }
-            let layout = elf::read(&artifact)?;
-            digest(&artifact, runner)?;
-            runner.record(&format!(
-                "artifact={} entry={:#x} loads={} fresh={fresh} profile={}",
-                artifact.display(),
-                layout.entry,
-                layout.loads,
-                if release { "release" } else { "dev" }
-            ))?;
+            let artifact = build::kernel(&context, runner, release, fresh, false)?;
             for (package, target) in [
                 ("xtask", context.host.as_str()),
                 ("radishroot-kernel", TARGET),
@@ -176,6 +150,9 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
             ]))?;
             fs::write(runner.dir.join("metadata.json"), metadata)?;
             println!("verified static ELF: {}", artifact.display());
+        }
+        Action::Image | Action::Run | Action::TestVm => {
+            vm::execute(&context, runner, &options.action)?
         }
         Action::Help => unreachable!(),
     }

@@ -4,33 +4,32 @@
 
 ## 当前结论
 
-**T01 本地实现与必要验证通过，下一项为 T02 引导、串口与最小故障停止。** 产品文档仍为 2.0，第一 MVP、M0–M5、32 项任务和 24 项验收未变。已建立 kernel / xtask 两成员 Cargo workspace，取得两种 profile 的真实静态 ELF；新增 CI 配置已同步，但尚未运行远端 Actions。T02–T32 未开始，M0、AT01、AT23 未通过；没有可启动的产品镜像、guest 运行入口或业务验收证据。
+**T01 已提交为 5b64eac；T02 本地实现与必要验证通过，新增修改尚未提交。** 已有真实 UEFI 开发镜像、串口、内存图 / framebuffer 校验和最小故障停止。产品文档仍为 2.0，第一 MVP、M0–M5、32 项任务和 24 项验收未变；T03–T32 未开始，M0 尚未通过，没有磁盘写回、正常关机、图形交互或安装能力。
 
 | 层级 | 实际状态 |
 | --- | --- |
-| 工程与工具链 | 版本由 workspace.package.version 单一提供（26.10.0-dev）；nightly-2026-10-13、x86_64-unknown-none；锁文件离线生成，仅两个本地包，无第三方 crate；全局默认仍为 1.96.0 |
-| 本地 Rust 验证 | fmt、宿主 / 裸机 check 与 clippy（拒绝警告）、13 项宿主测试通过；覆盖参数、工具链 / 配置拒绝、ELF 损坏、子进程非零 / 信号 / 超时及输出边界 |
-| 真实链接 | dev / release 各用新输出目录完成链接；独立 Python struct、系统 file、shasum 与 linker map 核对通过；两者均为 x86_64 ET_EXEC，entry=_start=0xffffffff80000000，无动态段 / RWX |
-| 实际入口拒绝 | 错误活动工具链、冲突 RUSTFLAGS、未知命令、非法超时及本地 CI install 拒绝通过；配置拒绝发生在 xtask 启动 Cargo 子命令前 |
-| 仓库 / CI | 本地仓库检查、14 项检查器回归通过；根入口逐字一致。新增 rust-checks，聚合要求精确两组件全部 success，超时 5 / 15 / 2 分钟；新增 Linux job 的实际运行未验证 |
-| 既有环境 | QEMU 11.1.2 / pc-q35-11.1 / TCG、固件及 Debian GPT/FAT 工具沿用既有核验证据；本轮没有重新安装、启动 QEMU 或容器 |
-| 产品能力 | 仅编译与宿主工具，不代表分页、物理装载、引导、存储写回、图形交互或安装通过 |
-| Git | dev，HEAD=e924ee1；本批源码 / 配置 / 文档留在工作区，未暂存、提交或推送。与本地 origin/dev 的提交差为 0 / 0，本轮未 fetch，不能据此声明远端实时同步 |
+| 依赖与身份 | 两成员 workspace；nightly-2026-10-13 / x86_64-unknown-none；limine 0.6.5、uart_16550 0.9.0、bitflags 2.13.2 锁定；Limine 12.9.4 与固定 QEMU / 固件 / 工具镜像配对通过 |
+| 本地 Rust | fmt、宿主 / 裸机 check 与 clippy（含故障 feature）、16 项 xtask + 4 项纯引导契约测试通过；dev / release 新目录链接与独立 ELF 复核通过 |
+| 真实 guest | 正常 release 镜像连续 10 次从新 VARS 启动；每次 32 段内存图、内核保留区域和 1024×768×32 framebuffer 事实通过。4 个受控注入用例均输出对应错误并 halt，无 READY |
+| 独立读回 | 5 张专用镜像的主 / 备 GPT CRC、分区布局、FAT、8 个 ESP 文件及空 DATA 通过；正常盘启动前后摘要相同。最终重建的正常 / 故障 ELF 与 VM 用例字节一致 |
+| 验收边界 | T02 门槛通过；AT01 取得当前候选的 10 次启动与无效输入证据，负向采用明确标识的生产校验路径注入，未测试真实旧版 bootloader。宿主终止 QEMU 不代表 guest 正常关机；AT23 / M0 未通过 |
+| 仓库 / CI | 仓库检查及 14 项检查器回归通过；根入口逐字一致。CI install 补齐锁文件依赖获取，verify 仍复用本地入口；Ubuntu Actions 和 VM CI 未执行 |
+| Git | dev；T01 提交为 5b64eac，领先本地 origin/dev 1 个提交；T02 留在工作树，暂存区为空。未 fetch / push / PR / 发布，远端实时状态未刷新 |
 
 ## 可执行入口与证据
 
-- 本地使用方式见[开发规范的 T01 入口](../development/standards.md#t01-本地入口)，实施契约见 [MVP T01](../mvp-plan.md#t01-实施契约与验证入口)。`check`、`build --profile dev|release [--fresh]`、`test --host` 已实际执行；其他产品入口仍未实现。
-- 本批证据：忽略目录 `evidence/t01-workspace-20261025-e924ee1/`，含独立 ELF 复核脚本与结果、入口拒绝结果、源码内容摘要、日志 / 产物副本和 SHA256SUMS。候选由 HEAD 与未提交源码摘要共同标识，不能仅引用 HEAD 冒充已提交实现。具体结果见[环境清单第 2.10 节](../development/environment.md#210-t01-工作区与真实链接验证)及[本月日志](../devlogs/2026-10.md)。
-- 日常命令分步输出保留于 `target/t01-*/`；失败日志单独标记。本地检查不代替远端 Actions，不将静态 ELF 当作可启动镜像。
+- 使用方式见[开发规范](../development/standards.md#t02-镜像与串口入口)，范围见 [MVP T02](../mvp-plan.md#t02-本批实施范围与验收)。既有 check / build / test --host 继续有效；新增 `image`、`run --serial`、`test --vm`。首次依赖 / 资产准备与长时运行仍按明确授权执行，日常构建锁定且离线。
+- 本批证据：`evidence/t02-boot-20261025-5b64eac/`，包含独立 GPT / FAT / 串口与 ELF 复核、源码摘要、日志 / ELF 副本和 SHA256SUMS。完整 VM 运行目录为 `target/xtask-80390-1792905921433080000/`；失败尝试另行保留，不算通过。候选身份为 HEAD 加源码内容摘要，不能只引用 5b64eac 冒充 T02 已提交。
+- 具体结果见[环境清单第 2.11 节](../development/environment.md#211-t02-引导与失败验收)及[本月日志](../devlogs/2026-10.md)。T01 历史证据仍保留。当前只验收固定 macOS Homebrew / TCG 环境，不外推真机、其他固件 / QEMU 或 GUI。
 
-既有远端治理沿用先前证据，本轮未修改或重新读回：master 为默认稳定主线，只经 PR 晋级；允许 merge / rebase，禁用 squash；master Ruleset 25073496 要求严格最新的 Candidate Quality（Actions App 15368），dev 无保护且普通 push 不触发 CI。此前治理 Actions 成功记录见 [master 首跑](https://github.com/laugh0608/RadishRoot/actions/runs/38557500889)与[验证 PR #1](https://github.com/laugh0608/RadishRoot/pull/1)，它们未覆盖本批 Rust 实现。操作流程见[Ruleset 手册](../../.github/rulesets/README.md)。
+既有远端治理本轮未修改或重新读回：master 为默认稳定主线，只经 PR 晋级；允许 merge / rebase，禁用 squash；master Ruleset 25073496 要求严格最新的 Candidate Quality（Actions App 15368），dev 无保护且普通 push 不触发 CI。此前治理 Actions 与 PR #1 未覆盖新增 Rust / T02 实现；流程见[Ruleset 手册](../../.github/rulesets/README.md)。
 
 ## 接下来的事项与停止线
 
-1. **先审阅本地 T01 交付。** 必要的本地验证已通过；后续按用户授权处理提交 / push / PR / Actions，不把这些外部动作混入本批。第一次实际运行新增 Linux CI 时记录安装、宿主构建与聚合结果；失败按真实原因修复。
-2. **进入 T02 前明确 Limine 配对。** 沿既有 T02 范围核对 bootloader 与 Rust 协议绑定的精确版本、协议修订、资产哈希和许可；实际引入依赖 / 下载资产按明确范围授权。无需重复整套已完成环境盘点。
-3. **T02 交付真实启动证据。** 开发镜像、串口、内存图 / framebuffer 必要响应校验、最小 panic 停止；按契约连续 10 次进入内核并验证无效响应拒绝，然后再推进 T03–T05。
+1. **审阅 T02 本地交付。** 依后续授权处理提交、push、PR 与实际 Linux Actions；这些动作没有并入本批。首次远端运行记录工具安装、依赖获取、宿主测试与聚合结果。
+2. **下一项为 T03 最小内存、PCI 与 DMA 所有权。** 先按既有 T03 条目细化从真实内存图选择可用页、保留区域与 DMA 生命周期，再接 PCI / BAR；必要新依赖在精确版本与影响明确后引入。不得回收正在使用的引导映射或把超时视为设备已停止访问。
+3. **随后推进 T04–T05 的真实存储闭环。** 本次空 DATA 和只读开发盘不构成内核文件系统 / 写回能力，不跳过 flush、重启读回与宿主独立校验。
 
-**本批停止线：**T01 完成后停止，不开始 T02，不安装 / 更新依赖，不启动 guest，不暂存、提交、推送、创建 PR、启动 Actions 或发布。每周投入预算尚未提供，不承诺后续日历排期。原创许可与实际引入资产的分发条件仍在对应节点核对。
+**本批停止线：**已完成用户授权的 T01 提交与 T02 开发 / 验证，在 T02 收口；不自动进入 T03、推送或发布。每周投入预算尚未提供，不承诺后续日历排期；原创许可仍待选择。
 
-**保留资源：**本批保留忽略的构建缓存、分步日志和独立证据，无新增常驻服务或 VM；测试子进程已回收，专用临时测试目录由测试清理。此前 Rust / QEMU / GPT-FAT 证据与 Docker 工具镜像继续保留，精确身份见环境清单与历史日志，未清理用户或其他任务资源。
+**保留资源：**忽略目录保留隔离 Cargo 缓存、构建输出、稀疏测试盘、固件变量副本及证据。任务 QEMU 和容器已回收，无新增后台服务；既有 Docker 服务 / 工具镜像及用户其他资源保留。完整成功套件共 5 张 1 GiB 逻辑盘，实际占盘另见证据，不是 5 GiB 全量写入。

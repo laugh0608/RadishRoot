@@ -24,6 +24,8 @@ def main():
                         '--component', ','.join(config['components']),
                         '--target', ','.join(config['targets']), '--no-self-update'],
                        cwd=ROOT, check=True, timeout=600)
+        subprocess.run(['cargo', f'+{channel}', 'fetch', '--locked'],
+                       cwd=ROOT, check=True, timeout=180)
     else:
         environment = dict(os.environ, RUSTUP_AUTO_INSTALL='0')
         for command in [('check',), ('test', '--host'),
