@@ -5,6 +5,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -51,12 +52,23 @@ pub fn reject_output_symlinks(path: &Path) -> Result<()> {
     Ok(())
 }
 pub fn unique_directory(parent: &Path, prefix: &str) -> Result<PathBuf> {
-    directory_existing(parent)?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| Error::new("clock", e.to_string()))?
         .as_nanos();
-    let path = parent.join(format!("{prefix}-{}-{stamp}", std::process::id()));
+    reserve_directory(parent, prefix, stamp)
+}
+fn reserve_directory(parent: &Path, prefix: &str, stamp: u128) -> Result<PathBuf> {
+    directory_existing(parent)?;
+    // 墙钟精度不保证同一进程的并行调用有不同时间戳。序号不重置、不复用目录。
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+    let sequence = NEXT_DIRECTORY
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+        .map_err(|_| Error::new("output-path", "directory sequence exhausted"))?;
+    let path = parent.join(format!(
+        "{prefix}-{}-{stamp}-{sequence}",
+        std::process::id()
+    ));
     fs::create_dir(&path)?; // collision is a failure; never reuse or delete another run
     Ok(path)
 }
@@ -143,7 +155,9 @@ impl Runner {
                             }
                         };
                         let terminal = output.lines().any(|line| {
-                            line.starts_with("RR:T04:READY ")
+                            line.starts_with("RR:T05:READY ")
+                                || line.starts_with("RR:T05:FAIL ")
+                                || line.starts_with("RR:T04:READY ")
                                 || line.starts_with("RR:T04:FAIL ")
                                 || line.starts_with("RR:T03:FAIL ")
                                 || line.starts_with("RR:T02:FAIL ")
@@ -240,6 +254,23 @@ mod tests {
             Duration::from_millis(150),
         )
         .unwrap()
+    }
+    #[test]
+    fn equal_timestamps_never_reuse_a_directory() {
+        let r = runner();
+        let paths = thread::scope(|scope| {
+            let handles = (0..16)
+                .map(|_| scope.spawn(|| reserve_directory(&r.dir, "same-tick", 42).unwrap()))
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        let distinct = paths.iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(distinct.len(), 16);
+        assert!(paths.iter().all(|p| p.is_dir()));
+        fs::remove_dir_all(&r.dir).unwrap();
     }
     #[test]
     fn child_failure_and_spawn_failure_are_errors() {

@@ -10,6 +10,7 @@ mod platform_memory;
 mod serial;
 mod t03;
 mod t04;
+mod t05;
 use core::{
     fmt::Write,
     panic::PanicInfo,
@@ -30,7 +31,12 @@ pub extern "C" fn _start() -> ! {
     match boot::run(&mut serial) {
         Ok(facts) => match t03::run(&mut serial, &facts) {
             Ok(device) => {
-                if let Err(error) = t04::run(&mut serial, device, facts.mode) {
+                if facts.mode.starts_with("t05-") {
+                    if let Err(error) = t05::run(&mut serial, device, facts.mode) {
+                        let _ = writeln!(serial, "RR:T05:DETAIL error={error:?}");
+                        let _ = writeln!(serial, "RR:T05:FAIL code={} stage=fat", error.code());
+                    }
+                } else if let Err(error) = t04::run(&mut serial, device, facts.mode) {
                     let _ = writeln!(serial, "RR:T04:DETAIL error={error:?}");
                     let _ = writeln!(serial, "RR:T04:FAIL code={} stage=storage", error.code());
                 }

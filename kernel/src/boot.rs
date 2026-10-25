@@ -83,7 +83,11 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
     } else {
         ""
     };
-    if !mode.is_empty() && !mode.starts_with("t03-") && !mode.starts_with("t04-") {
+    if !mode.is_empty()
+        && !mode.starts_with("t03-")
+        && !mode.starts_with("t04-")
+        && !mode.starts_with("t05-")
+    {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
     boot_contract::protocol(
@@ -195,6 +199,13 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t04-conflict-gpt",
         "t04-timeout",
         "t04-no-flush",
+        "t05-write",
+        "t05-reopen",
+        "t05-readonly",
+        "t05-file-sync",
+        "t05-volume-sync",
+        "t05-device-flush",
+        "t05-bad-fat",
     ]
     .contains(&mode)
     {

@@ -63,11 +63,11 @@ env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile dev --
 env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile release --fresh
 ```
 
-`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试和 kernel lib 的纯引导、内存、PCI、DMA、块接口与 GPT 契约测试（不运行硬件入口）。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
+`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试和 kernel lib 的纯引导、内存、PCI、DMA、块接口、GPT、FAT 字节流与名称契约测试（不运行硬件入口）。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
 
 首次进入 Cargo 的编译发生在 xtask 启动前，应先按上述方式选择工具链；xtask 随后验证自身编译器身份、项目工具链来源与外部配置，不修改 shell、rustup override 或全局默认。当前宿主进程管理使用 Unix 进程组，目标宿主为 macOS / Linux，Windows 不在 T01 支持范围。系统需有 git、shasum 和 /bin/kill；Python 独立复核及 CI 辅助使用标准库，CI 辅助脚本需 Python 3.11+。
 
-每次实际执行在忽略的 target/xtask-<pid>-<时间戳>/（早期 T01 记录仍为 target/t01-*） 保存 steps.txt 与分步 stdout / stderr。xtask 子进程默认上限 120 秒，可加 `--timeout-secs 1..3600`；超时停止自己的进程组并回收直接子进程，返回 124；前置 / 构建 / 校验失败返回 1，参数错误返回 2。错误输出指向日志；不能将失败目录中的半成品当作成功产物。独立验收材料保存在 evidence/，其路径和候选身份记录于环境清单。
+每次实际执行在忽略的 target/xtask-<pid>-<时间戳>-<进程序号>/（既有记录无进程序号，早期 T01 记录为 target/t01-*；进程序号防止相同墙钟时间戳碰撞） 保存 steps.txt 与分步 stdout / stderr。xtask 子进程默认上限 120 秒，可加 `--timeout-secs 1..3600`；超时停止自己的进程组并回收直接子进程，返回 124；前置 / 构建 / 校验失败返回 1，参数错误返回 2。错误输出指向日志；不能将失败目录中的半成品当作成功产物。独立验收材料保存在 evidence/，其路径和候选身份记录于环境清单。
 
 CI 的 install 步骤才允许从官方源安装 TOML 指定的工具链，并按 Cargo.lock 执行 `cargo fetch --locked`；本地不运行它。verify 步骤复用上述四个入口；本地验证结果不能替代 Ubuntu runner 的实际 Actions 结果。
 
@@ -83,15 +83,29 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `image` 在新目录构建 release ELF，调用锁定的既有 Debian 工具镜像产生 1 GiB GPT / FAT32 开发盘，输出真实路径。容器禁用网络、只读根、无新增 capabilities，仅挂本次输入 / 输出普通目录，`--pull=never`；工具镜像缺失即失败。工具脚本只由 xtask 编排，参数来自 manifest，不提供第二套独立制盘入口。
 
-`run --serial` 创建镜像并完成一次无窗口 UEFI 启动及只读 GPT / DATA 探测，串口保存到本次 boot-*/serial.log。`test --vm` 对正常镜像启动 10 次，再使用独立 boot-test 构建校验 4 个 T02、3 个 T03 和 7 个 T04 用例；共 24 次启动、15 张引导盘及 4 张数据副本，逻辑容量均为 1 GiB，实际稀疏占用另记。T04 覆盖写入 / flush、同盘重新启动读回、单 GPT 损坏降级、双损坏拒绝、有效副本冲突拒绝、请求超时隔离及缺少 flush 能力拒绝。`test --vm --storage-only` 复用同一存储用例实现，只运行 7 个 T04 用例，生成 8 张引导 / 源盘与 4 张数据副本；日志明确未执行 T02 / T03 独立回归，不能冒充完整套件。完整套件按资源授权运行，普通 CI 不自动执行 VM。
+`run --serial` 创建镜像并完成一次无窗口 UEFI 启动及只读 GPT / DATA 探测，串口保存到本次 boot-*/serial.log。`test --vm` 对正常镜像启动 10 次，再使用独立 boot-test 构建校验 4 个 T02、3 个 T03、7 个 T04 和 7 个 T05 用例；共 31 次启动、22 张引导 / 源盘及 10 张数据副本，逻辑容量均为 1 GiB，实际稀疏占用另记。T04 覆盖写入 / flush、同盘重新启动读回、单 GPT 损坏降级、双损坏拒绝、有效副本冲突拒绝、请求超时隔离及缺少 flush 能力拒绝。`test --vm --storage-only` 复用同一存储用例实现，只运行 7 个 T04 用例，生成 8 张引导 / 源盘与 4 张数据副本；日志明确未执行 T02 / T03 独立回归，不能冒充完整套件。完整套件按资源授权运行，普通 CI 不自动执行 VM。
 
-每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，无网络、无 GUI、禁止自动重启。普通盘只读；T04 双盘用例由固件从只读 virtio-scsi / scsi-hd 引导，内核仅操作唯一 VirtIO-blk 数据盘。仅 t04-write 打开数据盘写权限，使用 cache=writeback、aio=threads、无 snapshot；其他数据盘只读。所有盘均为任务普通文件，不挂宿主物理盘。固件路径从 QEMU 实体 prefix/share/qemu 派生并核对哈希；实际 VM 环境是 Homebrew macOS，其他安装布局未验证。
+每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，无网络、无 GUI、禁止自动重启。普通盘只读；T04 / T05 双盘用例由固件从只读 virtio-scsi / scsi-hd 引导，内核仅操作唯一 VirtIO-blk 数据盘。t04-write 及 T05 写入 / 同步失败用例打开各自新建数据副本的写权限，使用 cache=writeback、aio=threads、无 snapshot；其他数据盘只读。所有盘均为任务普通文件，不挂宿主物理盘。固件路径从 QEMU 实体 prefix/share/qemu 派生并核对哈希；实际 VM 环境是 Homebrew macOS，其他安装布局未验证。
 
-单次 QEMU 限时为 `min(--timeout-secs, 60)` 秒。宿主观察到 T04 READY / FAIL、T03 FAIL 或 T02 FAIL 且串口稳定 250 ms 后停止自己的进程组并回收，再严格校验序列；T02 / T03 READY 只是中间阶段。提前退出、无终态、非预期错误或事实不符均失败；超时返回 124。这是内核 halt 后宿主终止，重新打开同盘验证不代表正常重启 / 关机验收。没有 UART 时由宿主超时报告，尚未建立通用 CPU 异常处理。
+单次 QEMU 限时为 `min(--timeout-secs, 60)` 秒。宿主观察到 T05 READY / FAIL、T04 READY / FAIL、T03 FAIL 或 T02 FAIL 且串口稳定 250 ms 后停止自己的进程组并回收，再严格校验序列；T02 / T03 READY 只是中间阶段。提前退出、无终态、非预期错误或事实不符均失败；超时返回 124。这是内核 halt 后宿主终止，重新打开同盘验证不代表正常重启 / 关机验收。没有 UART 时由宿主超时报告，尚未建立通用 CPU 异常处理。
 
 正常请求需真实 used token 与响应状态成功，flush 单独确认；停止时确认设备 status=0、关闭 bus master 后释放 queue。轮询预算为请求 2000000 次、复位 100000 次、配置一致性 64 次，属于次数上限而非实时时钟保证。超时用例实际发布请求再隐藏完成观察，保留全部 DMA 与原始缓冲、拒绝释放 / 复用后 halt；不声称制造了设备物理延迟。缺 flush 用例是明确标记的能力拒绝注入；不声称 QEMU 实际未提供该能力。
 
 写入用例在 DATA 尾部 4096 字节合成区域执行对齐与跨扇区写入并 flush；guest 退出后宿主按独立期望比较整盘，确认 ESP / GPT 及所有非目标字节不变，然后重新启动同一盘只读复核。各次构建、工具身份、命令、PID、镜像摘要、串口、VARS 与失败材料留在 target/xtask-*；后台子进程及容器结束即回收，复制证据不复制大盘。T04 不提供 FAT 文件语义、正常电源流程、GUI 或安装。
+
+### T05 FAT 持久化与独立读取入口
+
+```sh
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --fat-only
+```
+
+`--fat-only` 复用完整 suite 中同一 T05 编排，生成 8 张引导 / 源盘与 6 张 DATA 副本，执行 7 次启动：写入、同盘只读重开、只读拒绝、文件目录项写回失败、卷 FSInfo 写回失败、最终设备 flush 失败、损坏 FAT 拒绝。单次仍为 60 秒上限；不得与 `--storage-only` 同时使用，分组成功不代表整套 `test --vm` 通过。默认 `run --serial` 保持 T04 只读探测，FAT 写入仅由 boot-test 白名单调用；T08 的正式文件服务尚未建立。
+
+DATA 挂载只经 GPT 验证的 Partition；字节流每次最多操作一个扇区内的字节，不增加缓存。首次 IO 错误锁存并拒绝后续设备访问，避免 File / FileSystem 的 Drop 自动重试隐藏错误。每次挂载最多 100000 次流操作（含 seek），用完明确失败，这是防止异常遍历的次数边界，不是实时超时或未来文件服务的长期配额。成功顺序为文件显式 flush、释放目录句柄、卷 flush、显式 unmount、最终设备 flush；只读挂载无脏写入，流 flush 是无写入动作且不会发设备请求。具体名称限制见 [T05 实施契约](../mvp-plan.md#t05-本批实施契约)。
+
+预置材料由 mtools 写入本次副本；guest 写入后，宿主先结束并 wait QEMU，再通过 `tools/boot/check-fat.sh` 调用固定 mtools / dosfstools。磁盘以只读 bind 挂入无网络工具容器，`mdir -b -s` 核对精确名称，`mcopy` 提取到 ASCII 案例文件名，避免宿主路径规范化混淆 `é` 与 `e` + combining acute；比较长度、字节、SHA-256，分区副本仅运行 `fsck.fat -n`。原磁盘不挂载写入、不修复；DATA 外字节与源盘逐块比较。工具容器限制 1 CPU / 256 MiB / 64 PID，结束按唯一名称回收。
+
+文件 / 卷写回失败是流入口的显式单次写失败注入，后续尝试由首错锁存拒绝；最终 flush 失败将该次 VirtIO 请求类型改为 unsupported，核对真实设备负响应及 Flush 阶段。两者不冒充物理设备损坏。失败副本仍独立观察，记录零长文件、未引用簇、脏标记或过期 FSInfo；文件可读不能推翻先前失败，也不能宣称持久化已确认。无正常关机、重启命令或断电事务保证。
 
 ## 5. 视觉与数据材料
 

@@ -121,3 +121,11 @@ T03 提交复核时，`git diff --cached --check` 对 zerocopy 与 zerocopy-deri
 | uguid 2.2.1 | [uguid](https://github.com/google/gpt-disk-rs)；[crate](https://crates.io/crates/uguid/2.2.1) | MIT OR Apache-2.0；保留 MIT；[完整文本](../../tools/boot/licenses/uguid-2.2.1.txt) |
 
 上游源文件未修改、未整包复制入仓库；许可从经 Cargo 校验的原包复制，仅对缺末尾换行的文本补 LF，原始与复制摘要见 evidence/t04-preflight-20261025-a37b3ef/license-copies.json。全部 30 个外部包对应 31 份许可文本（含 Unicode 声明），随本地 ESP 保存。ucs2 是 MPL-2.0，不将其归为 MIT；未来对外分发需按实际制品履行其源码提供和告知义务。当前仍无对外分发，原创许可未定。
+
+## T05 FAT 候选与来源
+
+2026-10-25 用户确认后，仅新增 rust-fatfs 的 fatfs 0.4.0 Git 包，固定 commit `38b3a7950bf0e765e34286d1dfe76c519ee347e2`，并更新 Cargo.lock。来源为[上游固定提交](https://github.com/rafalh/rust-fatfs/tree/38b3a7950bf0e765e34286d1dfe76c519ee347e2)，包内声明 MIT；[完整许可文本](../../tools/boot/licenses/fatfs-0.4.0.txt)逐字复制，随本地 ESP 保存。无上游源码修改，无整包源码迁入正式源，无对外分发。
+
+关闭默认 feature，仅启用 alloc / lfn / unicode；不启用 std、chrono 或默认日志等级。复用既有 bitflags 2.13.2 与 log 0.4.34，保留全部 30 个 registry 包版本和 checksum；合计 31 个外部包、32 份许可文本。no_std 使用库内 IO traits，无新增 core_io / byteorder。v0.3.6 的 no_std 路线涉及不同 IO 依赖，因此本批选用精确 commit，不跟随 master，也未宣称已验证 v0.3.6 的工具链兼容性。
+
+来源、commit、feature 及原始 / 复制许可摘要保存于 `evidence/t05-preflight-20261025-4bacb57/fatfs-identity.json`；Cargo.lock 固定 Git 来源，真实编译 / 运行结果与候选冻结状态以 current 指向的 T05 证据为准。Git commit 固定不等于对所有 FAT 用法的安全或兼容承诺；当前仅验证项目 DATA 接口及合成材料。

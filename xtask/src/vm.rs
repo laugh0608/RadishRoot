@@ -64,7 +64,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     let machine = Machine { qemu, code, vars };
     let repetitions = match action {
         Action::TestVm => 10,
-        Action::TestStorageVm => 0,
+        Action::TestStorageVm | Action::TestFatVm => 0,
         _ => 1,
     };
     for number in 1..=repetitions {
@@ -82,7 +82,10 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         println!("normal boot {number}/{repetitions}: verified");
     }
     crate::digest(&disk, runner)?;
-    if matches!(action, Action::TestVm | Action::TestStorageVm) {
+    if matches!(
+        action,
+        Action::TestVm | Action::TestStorageVm | Action::TestFatVm
+    ) {
         let kernel = build::kernel(context, runner, true, true, true)?;
         for fault in [
             "unsupported-protocol",
@@ -93,7 +96,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             "t03-bad-capability",
             "t03-dma-timeout",
         ] {
-            if *action == Action::TestStorageVm {
+            if matches!(action, Action::TestStorageVm | Action::TestFatVm) {
                 break;
             }
             let disk = boot_image::create(&context.root, runner, &manifest, &kernel, fault)?;
@@ -110,12 +113,21 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             )?;
             println!("fault {fault}: verified stop");
         }
-        crate::vm_storage::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
+        if *action != Action::TestFatVm {
+            crate::vm_storage::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
+        }
+        if *action != Action::TestStorageVm {
+            crate::vm_fat::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
+        }
     }
-    runner.record(if *action == Action::TestStorageVm {
+    runner.record(if *action == Action::TestFatVm {
+        "T05 FAT cases complete; T02/T03/T04 standalone regressions not run; host termination is not guest shutdown"
+    } else if *action == Action::TestStorageVm {
         "T04 storage cases complete; T02/T03 standalone regressions not run; host termination is not guest shutdown"
+    } else if *action == Action::TestVm {
+        "T02/T03/T04/T05 complete: terminal serial observation followed by host termination; no guest shutdown claim"
     } else {
-        "T02/T03/T04 complete: terminal serial observation followed by host termination; no guest shutdown claim"
+        "one normal read-only boot complete; standalone fault suites not run; no guest shutdown claim"
     })
 }
 pub(super) fn boot(
@@ -212,17 +224,31 @@ pub(super) fn boot(
     let output = output?;
     validate(
         &output,
-        if fault.starts_with("t03-") || fault.starts_with("t04-") {
+        if fault.starts_with("t03-") || fault.starts_with("t04-") || fault.starts_with("t05-") {
             ""
         } else {
             fault
         },
     )?;
-    if fault.is_empty() || fault.starts_with("t03-") || fault.starts_with("t04-") {
-        crate::vm_platform::validate(&output, if fault.starts_with("t04-") { "" } else { fault })?;
+    if fault.is_empty()
+        || fault.starts_with("t03-")
+        || fault.starts_with("t04-")
+        || fault.starts_with("t05-")
+    {
+        crate::vm_platform::validate(
+            &output,
+            if fault.starts_with("t04-") || fault.starts_with("t05-") {
+                ""
+            } else {
+                fault
+            },
+        )?;
     }
     if fault.is_empty() || fault.starts_with("t04-") {
         crate::vm_storage::validate(&output, fault)?;
+    }
+    if fault.starts_with("t05-") {
+        crate::vm_fat::validate(&output, fault)?;
     }
     runner.record(&format!(
         "boot={} case={fault:?} validation=pass",

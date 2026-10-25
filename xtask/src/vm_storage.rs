@@ -15,7 +15,7 @@ struct Patch {
     offset: u64,
     bytes: Vec<u8>,
 }
-fn clone_sparse(source: &Path, runner: &mut Runner) -> Result<PathBuf> {
+pub(super) fn clone_sparse(source: &Path, runner: &mut Runner) -> Result<PathBuf> {
     if !fs::symlink_metadata(source)?.is_file() || fs::metadata(source)?.len() != 1073741824 {
         return Err(Error::new(
             "storage-fixture",

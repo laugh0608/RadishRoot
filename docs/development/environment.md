@@ -487,6 +487,42 @@ T03 只在固定四级分页、单 BSP / IF=0、root bus 0 下验收；映射与
 
 T04 只验证固定平台的块存储闭环；轮询为次数预算，不宣称真实时钟超时。超时保留到 halt，不等于设备已停止 DMA；缺 flush 与超时注入分别注明机制。宿主终止后重开同一盘不代表正常电源循环，DATA 块模式测试不代表 FAT 文件语义或文件系统断电一致性。T05、AT03 / AT23 / M0、GUI、安装、其他平台仍未通过。验收时 T04 源码尚未提交，原候选身份由 a37b3ef 与源码摘要共同确定；随后按用户要求提交，原始证据保留，不改写历史快照。
 
+### 2.14 T05 FAT 持久化与独立读盘验收
+
+2026-10-25，基于 dev / 4bacb57，工作区初始干净、领先本地 origin/dev 4 个提交。按本轮明确授权增加 FAT 候选并执行专用 VM 验证；未提交、fetch、push、PR 或发布。用户重新批准了 T05 依赖与资源，不沿用 T04 的运行额度；原有测试盘、失败材料和依赖版本保留。
+
+| 冻结项 | 本批验证的组合 |
+| --- | --- |
+| 编译与引导 | nightly-2026-10-13、x86_64-unknown-none；Limine 12.9.4 / limine 0.6.5 / protocol revision 6；固件哈希仍以 tools/boot/manifest.tsv 为准 |
+| 设备与 GPT | virtio-drivers 0.13.0、modern PCI、16 项队列、512 字节扇区、真实 FLUSH；gpt_disk_io 0.17.0，无 std / alloc；沿用 GPT 主备与 DATA 边界校验 |
+| FAT | fatfs 0.4.0，Git commit `38b3a7950bf0e765e34286d1dfe76c519ee347e2`；仅 alloc / lfn / unicode，无 std / chrono。30 个既有 registry 包逐项不变，仅新增 1 个 Git 包；MIT 文本随 ESP 保存 |
+| 镜像与宿主 | 1 GiB raw / GPT；ESP LBA 2048–264191，DATA LBA 264192–2097118；FAT32 / 512 字节，DATA 每簇 4096 字节；QEMU 11.1.2、pc-q35-11.1、TCG、qemu64、1 vCPU / 512 MiB、cache=writeback、aio=threads、无 snapshot |
+| 独立工具 | manifest 固定 Debian 镜像；mtools 4.0.48-1、dosfstools 4.2-1.2。guest 退出后以只读 bind 读盘；mdir / mcopy 比较名称、长度、原始字节；分区副本 fsck.fat -n；Python 标准库另核对 GPT、FAT、ELF 和合成期望 |
+
+| 验证层 / 案例 | 实际证据 |
+| --- | --- |
+| 宿主与裸机 | fmt、宿主 / 裸机 check、严格 clippy（含 boot-test）、21 项 xtask + 28 项 kernel lib 测试通过；dev / release 全新链接及独立 ELF 复核通过。没有运行本轮远端 Actions，也没有重跑本机 ci-rust.py 聚合入口 |
+| 正常 FAT 写入 | 读取预置 seed.txt（23 字节），新增 11 文件共 1055220 字节；跨扇区二进制 4099 字节、UTF-8 内容 2425 字节、one-mib.bin 1048576 字节。全部文件及目录元数据显式写回、卸载及最终设备 flush 成功；49628 次流操作、27147 次块请求、111 次成功 flush；无首错或被阻止的后续调用 |
+| 同盘重开 | 使用同一 DATA 副本，新的 VARS、只读 backend 重新启动；12 文件精确读回，5474 次块请求、0 写入字节 / 0 flush；整盘 SHA-256 与上次写入后相同。两个时点的独立 mtools 提取与 fsck 均通过 |
+| 只读与坏 FAT | 创建新文件在 DATA 入口以 BLOCK_READ_ONLY 拒绝，首错保留 Create 阶段，无设备写入 / flush；原盘摘要不变。主备 BPB 的 bytes_per_sector 清零后返回 FAT_CORRUPT，不修复；整盘摘要不变，独立 Python 同样拒绝几何参数 |
+| 文件目录项写回失败 | 1649 个内容字节已确认写入后，在 FileSync 的下一次流写入注入失败；锁存原始阶段，阻止 3 次后续调用，无 READY。mtools 读到 failed.txt 长度为 0；fsck -n 记录一个未引用簇及脏标记，退出 1，明确未修改磁盘 |
+| 卷 FSInfo 写回失败 | 11 文件内容及目录项写完后，在 VolumeSync / offset=512 注入写失败；阻止后续析构写回，无 READY。独立文件内容可读且相符，但 fsck 报告脏标记和过期空闲簇统计（228661 / 实际 228393），退出 1；保留失败结论 |
+| 最终设备 flush 失败 | 完成卷写回及卸载后将最后一次请求类型改为 unsupported，取得真实负响应，阶段保留 Flush / DeviceFlush，无 READY；先前已有 110 次 flush 不能替代最后一次。独立文件和 fsck 均可通过，仍报告持久化未确认 |
+| 既有行为 | 7 个 T04 存储用例完整分组回归通过；另一次默认构建只读启动通过，默认入口未写 FAT。所有正常返回均确认设备复位、bus master 关闭、allocations=0 / shared=0；T04 超时用例继续隔离并 halt |
+| 独立结构与边界 | 17 张引导 / 源盘的 GPT、FAT、每盘 37 个 ESP 文件通过（含 32 份 crate 许可）；正常 DATA 的 12 文件经独立 Python 再验证。6 张 T05 DATA 副本所有分区外字节与源盘相同；原有 59 张测试盘均存在 |
+
+名称实测冻结：每分量 1–255 个 UTF-8 字节、BMP 字符；255 个 ASCII 或 85 个三字节汉字可创建，256 个 ASCII / 86 个汉字及补充平面字符拒绝。中文、空格与大小写保留；ReadMe / readme、Straße / STRASSE、长名短别名、已有文件及目录共 5 项碰撞拒绝，8 项非法 / 超长路径拒绝。`é.txt` 与 `e` + combining acute 名称不同且内容分别保留，不做 Unicode 规范化。同目录和跨目录文件重命名通过；库对仅大小写重命名返回 no-op，不承诺改名。跨卷、跨目录目录迁移、覆盖原子性、中文输入 / 字形显示均不在本次结论内。时间戳仅为库默认 1980-01-01，不代表真实创建时间。
+
+最终 dev ELF 为 7022952 字节，SHA-256 `d23dd126f3837ac85e4f9c7b93b78dca699ab7ad745bda13cc43e364085d17b2`；release 为 178992 字节，SHA-256 `e227730071d636cd247e84a08fbc5e3aabb62d364988a655e24f38c8808d037b`。独立 header / symbol / LLD map / file 一致，静态 RX / R / RW，无动态段或 RWX。两个 VM 分组所有 boot-test 内核的 SHA-256 均为 `7eca17f7a30b6855ef2ad5f3ac6c40242c5541fa190656f3fb867d0c12d71440`；普通启动与独立 release 构建逐字节相同。
+
+T05 成功分组位于 `target/xtask-92988-1792912024474624000/`；T04 回归为 `target/xtask-97592-1792912230948893000/`；默认启动为 `target/xtask-27641-1792912462909417000/`。最终 check / host-test 为 target 下 xtask-31926-1792912933128723000-0 / xtask-31927-1792912933129705000-0；dev / release 构建为 xtask-26477-1792912386451718000 / xtask-26976-1792912426985590000。证据入口为 `evidence/t05-fat-20261025-4bacb57/`，依赖身份为 `evidence/t05-preflight-20261025-4bacb57/`。证据包含源码清单、日志、ELF、独立读取脚本及结果、文件摘要、资源检查和 SHA256SUMS；大盘仍保留在原 target 路径。
+
+资源实际使用：27 张 1 GiB raw / 15 次启动；raw 实际分配 93159424 字节，包含保留的 FAT 分区材料合计 203735040 字节（约 194.30 MiB），低于本次 32 盘 / 32 次 / 1 GiB 实际分配上限。每次启动均在 60 秒内观察终态并回收；容器无网络、1 CPU / 256 MiB / 64 PID。本任务 PID 与容器名经只读查询确认无残留，不清理新旧磁盘、既有 Docker 服务或其他用户资源。
+
+首次 clippy 报告非 Drop 类型的显式 drop，改用借用自然结束后通过；两次沙盒 VM 入口均在 Docker 查询处因权限被拒绝，没有启动 guest 或生成磁盘，提升同目标权限后分组通过；这些失败日志保留。最终宿主复验在 xtask-28821-1792912707628335000 暴露了并行测试的同时间戳目录碰撞；为目录名增加原子序号，补同时间戳 16 并发回归后通过。VM 验收后仅修正宿主目录命名及回归测试，内核 / 已验收 ELF 未改变。没有放宽存储断言、删除故障覆盖或将环境拒绝当作产品通过。
+
+**结论边界：**T05 本地门槛通过、AT02 在固定同盘重开方式下取得证据；不是完整 test --vm 单次运行，也不替代正常电源流程。M0、AT03 / AT23、T06 及后续图形 / 安装未通过；本批不进入 T06，不提交或推送。FAT 失败可留下部分内容和不可达簇，未提供断电事务保证。候选身份是 4bacb57 加源码内容清单，不能仅以 HEAD 代表未提交实现。
+
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
@@ -500,7 +536,7 @@ T04 只验证固定平台的块存储闭环；轮询为次数预算，不宣称�
 
 Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。此前 Debian 构建由 BuildKit 报告基础元数据阶段 37.2 秒、安装 RUN 阶段 29.2 秒；这些分阶段时间受网络与缓存影响，不是完整构建计时或固定预算。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
 
-Limine 二进制与 Rust crate 已按第 2.11 节单独授权配对；T03 内存 / 设备依赖与 T04 GPT 依赖已按第 2.12–2.13 节单独授权引入，其余业务 crates / 功能开关、SDL 宿主 runner 依赖仍属后续单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
+Limine 二进制与 Rust crate 已按第 2.11 节单独授权配对；T03 内存 / 设备、T04 GPT 与 T05 FAT 依赖已按第 2.12–2.14 节单独授权引入，其余业务 crates / 功能开关、SDL 宿主 runner 依赖仍属后续单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
 
 此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust nightly 已安装并记录来源 / 随包许可，见第 2.9 节；QEMU / EDK II 已在本机安装并读取许可，见第 2.8 节。QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 依据其 `edk2-licenses.txt` 单独记录。本表不是分发许可结论，也不承诺打包这些宿主工具。
 

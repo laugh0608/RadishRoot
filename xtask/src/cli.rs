@@ -10,6 +10,7 @@ pub enum Action {
     Run,
     TestVm,
     TestStorageVm,
+    TestFatVm,
 }
 #[derive(Debug)]
 pub struct Options {
@@ -36,6 +37,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["run", "--serial"] => Action::Run,
         ["test", "--vm"] => Action::TestVm,
         ["test", "--vm", "--storage-only"] => Action::TestStorageVm,
+        ["test", "--vm", "--fat-only"] => Action::TestFatVm,
         ["build", "--profile", profile] | ["build", "--profile", profile, "--fresh"]
             if ["dev", "release"].contains(profile) =>
         {
@@ -61,6 +63,10 @@ mod tests {
     }
     #[test]
     fn arguments_are_explicit() {
+        assert_eq!(
+            parse(&args("test --vm --fat-only")).unwrap().action,
+            Action::TestFatVm
+        );
         assert_eq!(
             parse(&args("test --vm --storage-only")).unwrap().action,
             Action::TestStorageVm

@@ -67,6 +67,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fatfs"
+version = "0.4.0"
+source = "git+https://github.com/rafalh/rust-fatfs.git?rev=38b3a7950bf0e765e34286d1dfe76c519ee347e2#38b3a7950bf0e765e34286d1dfe76c519ee347e2"
+dependencies = [
+ "bitflags",
+ "log",
+]
+
+[[package]]
 name = "gpt_disk_io"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -128,6 +137,7 @@ dependencies = [
 name = "radishroot-kernel"
 version = "26.10.0-dev"
 dependencies = [
+ "fatfs",
  "gpt_disk_io",
  "limine",
  "linked_list_allocator",

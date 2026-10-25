@@ -109,6 +109,13 @@ pub fn create(
         "t04-conflict-gpt",
         "t04-timeout",
         "t04-no-flush",
+        "t05-write",
+        "t05-reopen",
+        "t05-readonly",
+        "t05-file-sync",
+        "t05-volume-sync",
+        "t05-device-flush",
+        "t05-bad-fat",
     ]
     .contains(&fault)
     {
@@ -177,6 +184,10 @@ pub fn create(
             "--name",
             &name,
             "--network=none",
+            "--cpus=1",
+            "--memory=256m",
+            "--pids-limit=64",
+            "--security-opt=no-new-privileges",
             "--cap-drop=ALL",
             "--read-only",
             "--tmpfs",
