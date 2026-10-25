@@ -7,6 +7,7 @@ mod error;
 mod process;
 mod vm;
 mod vm_platform;
+mod vm_storage;
 
 use cli::{Action, Options};
 use config::{Context, TARGET};
@@ -24,7 +25,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm (T02 headless UEFI)."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only] (T02–T04 headless UEFI; storage-only runs seven T04 cases)."
         );
         return Ok(());
     }
@@ -152,7 +153,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
             fs::write(runner.dir.join("metadata.json"), metadata)?;
             println!("verified static ELF: {}", artifact.display());
         }
-        Action::Image | Action::Run | Action::TestVm => {
+        Action::Image | Action::Run | Action::TestVm | Action::TestStorageVm => {
             vm::execute(&context, runner, &options.action)?
         }
         Action::Help => unreachable!(),

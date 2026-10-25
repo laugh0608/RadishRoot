@@ -27,6 +27,18 @@ fn executable() -> Result<PathBuf> {
     ))
 }
 
+pub(super) struct Machine {
+    pub qemu: PathBuf,
+    pub code: PathBuf,
+    pub vars: PathBuf,
+}
+pub(super) struct BootSpec<'a> {
+    pub boot_disk: &'a Path,
+    pub data_disk: Option<&'a Path>,
+    pub readonly: bool,
+    pub mode: &'a str,
+}
+
 pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Result<()> {
     let manifest = Manifest::load(&context.root)?;
     let kernel = build::kernel(context, runner, true, true, false)?;
@@ -49,13 +61,28 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     let vars = share.join(manifest.get("firmware_vars")?);
     manifest.hash(runner, &code, "firmware_code_sha256")?;
     manifest.hash(runner, &vars, "firmware_vars_sha256")?;
-    let repetitions = if *action == Action::TestVm { 10 } else { 1 };
+    let machine = Machine { qemu, code, vars };
+    let repetitions = match action {
+        Action::TestVm => 10,
+        Action::TestStorageVm => 0,
+        _ => 1,
+    };
     for number in 1..=repetitions {
-        boot(runner, &manifest, &qemu, &code, &vars, &disk, "")?;
+        boot(
+            runner,
+            &manifest,
+            &machine,
+            BootSpec {
+                boot_disk: &disk,
+                data_disk: None,
+                readonly: true,
+                mode: "",
+            },
+        )?;
         println!("normal boot {number}/{repetitions}: verified");
     }
     crate::digest(&disk, runner)?;
-    if *action == Action::TestVm {
+    if matches!(action, Action::TestVm | Action::TestStorageVm) {
         let kernel = build::kernel(context, runner, true, true, true)?;
         for fault in [
             "unsupported-protocol",
@@ -66,22 +93,42 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             "t03-bad-capability",
             "t03-dma-timeout",
         ] {
+            if *action == Action::TestStorageVm {
+                break;
+            }
             let disk = boot_image::create(&context.root, runner, &manifest, &kernel, fault)?;
-            boot(runner, &manifest, &qemu, &code, &vars, &disk, fault)?;
+            boot(
+                runner,
+                &manifest,
+                &machine,
+                BootSpec {
+                    boot_disk: &disk,
+                    data_disk: None,
+                    readonly: true,
+                    mode: fault,
+                },
+            )?;
             println!("fault {fault}: verified stop");
         }
+        crate::vm_storage::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
     }
-    runner.record("T02/T03 complete: terminal serial observation followed by host termination; no guest shutdown claim")
+    runner.record(if *action == Action::TestStorageVm {
+        "T04 storage cases complete; T02/T03 standalone regressions not run; host termination is not guest shutdown"
+    } else {
+        "T02/T03/T04 complete: terminal serial observation followed by host termination; no guest shutdown claim"
+    })
 }
-fn boot(
+pub(super) fn boot(
     runner: &mut Runner,
     manifest: &Manifest,
-    qemu: &Path,
-    code: &Path,
-    vars: &Path,
-    disk: &Path,
-    fault: &str,
-) -> Result<()> {
+    machine: &Machine,
+    spec: BootSpec<'_>,
+) -> Result<String> {
+    let fault = spec.mode;
+    let disk = spec.data_disk.unwrap_or(spec.boot_disk);
+    let qemu = &machine.qemu;
+    let code = &machine.code;
+    let vars = &machine.vars;
     let directory = process::unique_directory(&runner.dir, "boot")?;
     let writable_vars = directory.join("vars.fd");
     fs::copy(vars, &writable_vars)?;
@@ -126,7 +173,8 @@ fn boot(
         ))
         .arg("-drive")
         .arg(format!(
-            "if=none,id=os,format=raw,readonly=on,file={}",
+            "if=none,id=os,format=raw,cache=writeback,aio=threads,readonly={},file={}",
+            if spec.readonly { "on" } else { "off" },
             disk.display()
         ))
         .args([
@@ -135,6 +183,26 @@ fn boot(
             "-boot",
             "strict=on",
         ]);
+    if spec.data_disk.is_some() {
+        command
+            .arg("-drive")
+            .arg(format!(
+                "if=none,id=boot,format=raw,readonly=on,file={}",
+                spec.boot_disk.display()
+            ))
+            .args([
+                "-device",
+                "virtio-scsi-pci,id=bootctl,disable-legacy=on",
+                "-device",
+                "scsi-hd,drive=boot,bus=bootctl.0,bootindex=1",
+            ]);
+    }
+    runner.record(&format!(
+        "storage_boot={} data={} readonly={} cache=writeback snapshot=off",
+        spec.boot_disk.display(),
+        disk.display(),
+        spec.readonly
+    ))?;
     let previous = runner.timeout;
     runner.timeout = previous.min(Duration::from_secs(
         manifest.number("boot_timeout_seconds")?,
@@ -142,14 +210,25 @@ fn boot(
     let output = runner.boot(&mut command, &serial);
     runner.timeout = previous;
     let output = output?;
-    validate(&output, if fault.starts_with("t03-") { "" } else { fault })?;
-    if fault.is_empty() || fault.starts_with("t03-") {
-        crate::vm_platform::validate(&output, fault)?;
+    validate(
+        &output,
+        if fault.starts_with("t03-") || fault.starts_with("t04-") {
+            ""
+        } else {
+            fault
+        },
+    )?;
+    if fault.is_empty() || fault.starts_with("t03-") || fault.starts_with("t04-") {
+        crate::vm_platform::validate(&output, if fault.starts_with("t04-") { "" } else { fault })?;
+    }
+    if fault.is_empty() || fault.starts_with("t04-") {
+        crate::vm_storage::validate(&output, fault)?;
     }
     runner.record(&format!(
         "boot={} case={fault:?} validation=pass",
         directory.display()
-    ))
+    ))?;
+    Ok(output)
 }
 pub(super) fn fields(line: &str) -> Result<BTreeMap<&str, &str>> {
     let mut result = BTreeMap::new();

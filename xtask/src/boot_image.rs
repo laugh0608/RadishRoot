@@ -102,6 +102,13 @@ pub fn create(
         "t03-invalid-range",
         "t03-bad-capability",
         "t03-dma-timeout",
+        "t04-write",
+        "t04-reopen",
+        "t04-primary-gpt",
+        "t04-both-gpt",
+        "t04-conflict-gpt",
+        "t04-timeout",
+        "t04-no-flush",
     ]
     .contains(&fault)
     {

@@ -9,6 +9,7 @@ pub enum Action {
     Image,
     Run,
     TestVm,
+    TestStorageVm,
 }
 #[derive(Debug)]
 pub struct Options {
@@ -34,6 +35,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["image"] => Action::Image,
         ["run", "--serial"] => Action::Run,
         ["test", "--vm"] => Action::TestVm,
+        ["test", "--vm", "--storage-only"] => Action::TestStorageVm,
         ["build", "--profile", profile] | ["build", "--profile", profile, "--fresh"]
             if ["dev", "release"].contains(profile) =>
         {
@@ -59,6 +61,10 @@ mod tests {
     }
     #[test]
     fn arguments_are_explicit() {
+        assert_eq!(
+            parse(&args("test --vm --storage-only")).unwrap().action,
+            Action::TestStorageVm
+        );
         assert_eq!(
             parse(&args("build --profile release --fresh"))
                 .unwrap()

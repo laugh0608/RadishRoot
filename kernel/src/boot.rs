@@ -83,7 +83,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
     } else {
         ""
     };
-    if !mode.is_empty() && !mode.starts_with("t03-") {
+    if !mode.is_empty() && !mode.starts_with("t03-") && !mode.starts_with("t04-") {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
     boot_contract::protocol(
@@ -188,6 +188,13 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t03-invalid-range",
         "t03-bad-capability",
         "t03-dma-timeout",
+        "t04-write",
+        "t04-reopen",
+        "t04-primary-gpt",
+        "t04-both-gpt",
+        "t04-conflict-gpt",
+        "t04-timeout",
+        "t04-no-flush",
     ]
     .contains(&mode)
     {

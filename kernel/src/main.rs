@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod block_driver;
 mod boot;
 mod exclusive;
 mod heap;
@@ -8,6 +9,7 @@ mod pci;
 mod platform_memory;
 mod serial;
 mod t03;
+mod t04;
 use core::{
     fmt::Write,
     panic::PanicInfo,
@@ -26,11 +28,17 @@ pub extern "C" fn _start() -> ! {
         halt();
     };
     match boot::run(&mut serial) {
-        Ok(facts) => {
-            if let Err(code) = t03::run(&mut serial, &facts) {
+        Ok(facts) => match t03::run(&mut serial, &facts) {
+            Ok(device) => {
+                if let Err(error) = t04::run(&mut serial, device, facts.mode) {
+                    let _ = writeln!(serial, "RR:T04:DETAIL error={error:?}");
+                    let _ = writeln!(serial, "RR:T04:FAIL code={} stage=storage", error.code());
+                }
+            }
+            Err(code) => {
                 let _ = writeln!(serial, "RR:T03:FAIL code={code} stage=platform");
             }
-        }
+        },
         Err(error) => {
             let _ = writeln!(
                 serial,

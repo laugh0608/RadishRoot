@@ -13,6 +13,7 @@ bench = false
 [dependencies]
 limine = { version = "=0.6.5", default-features = false }
 uart_16550 = { version = "=0.9.0", default-features = false }
+gpt_disk_io = { version = "=0.17.0", default-features = false }
 
 [features]
 boot-test = []

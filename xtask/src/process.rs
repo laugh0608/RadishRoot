@@ -143,7 +143,8 @@ impl Runner {
                             }
                         };
                         let terminal = output.lines().any(|line| {
-                            line.starts_with("RR:T03:READY ")
+                            line.starts_with("RR:T04:READY ")
+                                || line.starts_with("RR:T04:FAIL ")
                                 || line.starts_with("RR:T03:FAIL ")
                                 || line.starts_with("RR:T02:FAIL ")
                         });
@@ -297,7 +298,7 @@ mod tests {
                 Command::new("/bin/sh")
                     .args([
                         "-c",
-                        "echo 'RR:T03:READY storage_io=none' > \"$1\"; sleep 5",
+                        "echo 'RR:T04:READY mode=probe' > \"$1\"; sleep 5",
                         "test",
                     ])
                     .arg(&serial),

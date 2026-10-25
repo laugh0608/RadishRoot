@@ -13,7 +13,7 @@ use virtio_drivers::{BufferDirection, Hal};
 fn emit(serial: &mut Serial, args: core::fmt::Arguments<'_>) -> Result<(), &'static str> {
     serial.write_fmt(args).map_err(|_| "SERIAL_UNAVAILABLE")
 }
-pub fn run(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str> {
+pub fn run(serial: &mut Serial, facts: &Facts) -> Result<pci::Device, &'static str> {
     emit(serial, format_args!("RR:T03:ENTER\n"))?;
     let mode = facts.mode;
     if mode.starts_with("t03-") {
@@ -46,7 +46,7 @@ pub fn run(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str> {
         ),
     )?;
     if mode == "t03-invalid-range" {
-        return platform_memory::reject_invalid_allocation();
+        return Err(platform_memory::reject_invalid_allocation().unwrap_err());
     }
     let device = pci::discover(&facts.regions[..facts.count], mode == "t03-bad-capability")?;
     for (i, bar) in device
@@ -132,5 +132,5 @@ pub fn run(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str> {
         ),
     )?;
     emit(serial, format_args!("RR:T03:READY storage_io=none\n"))?;
-    Ok(())
+    Ok(device)
 }

@@ -27,6 +27,14 @@ struct Shared {
     length: usize,
     direction: Direction,
 }
+#[derive(Clone, Copy, PartialEq)]
+enum RequestState {
+    Idle,
+    Building,
+    InFlight,
+    Completing,
+    Quarantined,
+}
 struct Memory {
     frames: Frames,
     hhdm: u64,
@@ -35,6 +43,8 @@ struct Memory {
     blocks: [Option<Block>; 64],
     shared: [Option<Shared>; 64],
     ledger: Ledger,
+    device_enabled: bool,
+    request: RequestState,
 }
 static MEMORY: Exclusive<Memory> = Exclusive::new(Memory {
     frames: Frames::new(),
@@ -44,6 +54,8 @@ static MEMORY: Exclusive<Memory> = Exclusive::new(Memory {
     blocks: [None; 64],
     shared: [None; 64],
     ledger: Ledger::new(),
+    device_enabled: false,
+    request: RequestState::Idle,
 });
 fn pointer(offset: u64, base: u64, length: usize) -> Result<NonNull<u8>, &'static str> {
     if length == 0 {
@@ -244,6 +256,10 @@ unsafe impl Hal for VirtioHal {
     }
     unsafe fn dma_dealloc(physical: PhysAddr, virtual_address: NonNull<u8>, pages: usize) -> i32 {
         let mut m = MEMORY.lock();
+        // queue 页也可能仍被设备访问；只有显式确认复位完成后才解除整个设备的释放门禁。
+        if m.device_enabled {
+            return -2;
+        }
         let Some(slot) = m
             .blocks
             .iter()
@@ -317,6 +333,14 @@ unsafe impl Hal for VirtioHal {
             .ledger
             .share(block.base, original, length, dir)
             .expect("T03 overlapping share");
+        if m.device_enabled {
+            assert!(
+                m.request == RequestState::Building,
+                "DMA share outside request construction"
+            );
+            // 先转移所有权，再把地址返回给 queue；avail 发布前资源已经受设备访问保护。
+            m.ledger.submit(token).expect("DMA submit state");
+        }
         // SAFETY: trait 调用者给出非空有效源；bounce 是新独占页，不与源重叠；本阶段无设备访问。
         unsafe {
             p.as_ptr().write_bytes(0, block.pages * 4096);
@@ -395,4 +419,124 @@ pub fn reject_invalid_allocation() -> Result<(), &'static str> {
         Err(radishroot_kernel::memory::frames::Error::Range) => Err("MEM_RANGE"),
         _ => Err("TEST_UNEXPECTED_SUCCESS"),
     }
+}
+
+pub fn device_enabled() -> Result<(), &'static str> {
+    let mut m = MEMORY.lock();
+    if m.device_enabled || m.request != RequestState::Idle || m.shared.iter().any(Option::is_some) {
+        return Err("DMA_DEVICE_STATE");
+    }
+    m.device_enabled = true;
+    Ok(())
+}
+/// 调用者必须已经读回 device_status=0，且关闭 PCI bus master；这里只更新所有权记录。
+pub fn device_stopped() -> Result<(), &'static str> {
+    let mut m = MEMORY.lock();
+    if !m.device_enabled || m.request != RequestState::Idle || m.shared.iter().any(Option::is_some)
+    {
+        return Err("DMA_DEVICE_STATE");
+    }
+    m.device_enabled = false;
+    Ok(())
+}
+pub fn begin_request() -> Result<(), &'static str> {
+    let mut m = MEMORY.lock();
+    if !m.device_enabled || m.request != RequestState::Idle || m.shared.iter().any(Option::is_some)
+    {
+        return Err("DMA_REQUEST_BUSY");
+    }
+    m.request = RequestState::Building;
+    Ok(())
+}
+pub fn publish_request() -> Result<(), &'static str> {
+    let mut m = MEMORY.lock();
+    if m.request != RequestState::Building || m.shared.iter().all(Option::is_none) {
+        return Err("DMA_REQUEST_STATE");
+    }
+    m.request = RequestState::InFlight;
+    Ok(())
+}
+/// 唯一 outstanding 请求的匹配 used token 已经由设备适配层确认。
+pub fn complete_request() -> Result<(), &'static str> {
+    let mut m = MEMORY.lock();
+    if m.request != RequestState::InFlight {
+        return Err("DMA_REQUEST_STATE");
+    }
+    for index in 0..m.shared.len() {
+        if let Some(s) = m.shared[index] {
+            m.ledger.complete(s.token).map_err(|_| "DMA_COMPLETION")?;
+        }
+    }
+    m.request = RequestState::Completing;
+    Ok(())
+}
+pub fn finish_request() -> Result<(), &'static str> {
+    let mut m = MEMORY.lock();
+    if m.request != RequestState::Completing || m.shared.iter().any(Option::is_some) {
+        return Err("DMA_REQUEST_STATE");
+    }
+    m.request = RequestState::Idle;
+    Ok(())
+}
+pub fn cancel_empty_request() -> Result<(), &'static str> {
+    let mut m = MEMORY.lock();
+    if m.request != RequestState::Building || m.shared.iter().any(Option::is_some) {
+        return Err("DMA_REQUEST_STATE");
+    }
+    m.request = RequestState::Idle;
+    Ok(())
+}
+pub struct Quarantine {
+    pub shares: usize,
+    pub allocations: usize,
+    pub release_rejected: bool,
+    pub allocation_rejected: bool,
+}
+pub fn quarantine_request() -> Result<Quarantine, &'static str> {
+    let (shares, allocations, release_rejected, physical, pointer, pages) = {
+        let mut m = MEMORY.lock();
+        if !matches!(m.request, RequestState::InFlight | RequestState::Building) {
+            return Err("DMA_REQUEST_STATE");
+        }
+        let mut rejected = true;
+        let mut shares = 0;
+        for index in 0..m.shared.len() {
+            if let Some(s) = m.shared[index] {
+                m.ledger.timeout(s.token).map_err(|_| "DMA_QUARANTINE")?;
+                rejected &= m.ledger.release(s.token).is_err();
+                shares += 1;
+            }
+        }
+        m.request = RequestState::Quarantined;
+        let b = m
+            .blocks
+            .iter()
+            .flatten()
+            .next()
+            .copied()
+            .ok_or("DMA_QUEUE_MISSING")?;
+        (
+            shares,
+            m.blocks.iter().flatten().count(),
+            rejected,
+            b.base,
+            pointer(m.hhdm, b.base, b.pages * 4096)?,
+            b.pages,
+        )
+    };
+    // SAFETY: 用已登记的真实 queue 分配参数作拒绝验证；device_enabled 必须阻止释放。
+    let allocation_rejected = unsafe { VirtioHal::dma_dealloc(physical, pointer, pages) } != 0;
+    Ok(Quarantine {
+        shares,
+        allocations,
+        release_rejected,
+        allocation_rejected,
+    })
+}
+pub fn allocations() -> (usize, usize) {
+    let m = MEMORY.lock();
+    (
+        m.blocks.iter().flatten().count(),
+        m.shared.iter().flatten().count(),
+    )
 }

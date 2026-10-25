@@ -63,7 +63,7 @@ env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile dev --
 env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile release --fresh
 ```
 
-`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试和 kernel lib 的纯引导、内存、PCI 与 DMA 契约测试（不运行硬件入口）。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
+`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试和 kernel lib 的纯引导、内存、PCI、DMA、块接口与 GPT 契约测试（不运行硬件入口）。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
 
 首次进入 Cargo 的编译发生在 xtask 启动前，应先按上述方式选择工具链；xtask 随后验证自身编译器身份、项目工具链来源与外部配置，不修改 shell、rustup override 或全局默认。当前宿主进程管理使用 Unix 进程组，目标宿主为 macOS / Linux，Windows 不在 T01 支持范围。系统需有 git、shasum 和 /bin/kill；Python 独立复核及 CI 辅助使用标准库，CI 辅助脚本需 Python 3.11+。
 
@@ -83,11 +83,15 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `image` 在新目录构建 release ELF，调用锁定的既有 Debian 工具镜像产生 1 GiB GPT / FAT32 开发盘，输出真实路径。容器禁用网络、只读根、无新增 capabilities，仅挂本次输入 / 输出普通目录，`--pull=never`；工具镜像缺失即失败。工具脚本只由 xtask 编排，参数来自 manifest，不提供第二套独立制盘入口。
 
-`run --serial` 创建镜像并完成一次无窗口 UEFI 启动，串口保存到本次 boot-*/serial.log；`test --vm` 对同一正常镜像启动 10 次，然后使用独立 boot-test 构建 / 7 张隔离镜像校验协议不支持、缺响应、无效 framebuffer、panic、非法页分配、坏 PCI capability 和 DMA 超时隔离。每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，只读开发盘，无网络、无 GUI、禁止自动重启。固件从 PATH 中 QEMU 实体所在 prefix/share/qemu 派生并验证哈希；当前实际 VM 环境为 Homebrew macOS，其他安装布局未经验证。
+`run --serial` 创建镜像并完成一次无窗口 UEFI 启动及只读 GPT / DATA 探测，串口保存到本次 boot-*/serial.log。`test --vm` 对正常镜像启动 10 次，再使用独立 boot-test 构建校验 4 个 T02、3 个 T03 和 7 个 T04 用例；共 24 次启动、15 张引导盘及 4 张数据副本，逻辑容量均为 1 GiB，实际稀疏占用另记。T04 覆盖写入 / flush、同盘重新启动读回、单 GPT 损坏降级、双损坏拒绝、有效副本冲突拒绝、请求超时隔离及缺少 flush 能力拒绝。`test --vm --storage-only` 复用同一存储用例实现，只运行 7 个 T04 用例，生成 8 张引导 / 源盘与 4 张数据副本；日志明确未执行 T02 / T03 独立回归，不能冒充完整套件。完整套件按资源授权运行，普通 CI 不自动执行 VM。
 
-单次 QEMU 限时为 `min(--timeout-secs, 60)` 秒。宿主观察到 T03 READY / FAIL 或 T02 FAIL 且串口稳定 250 ms 后停止自己的进程组并回收，随后严格校验序列；T02 READY 只作中间阶段；这是内核 halt 后的宿主终止，不是 guest 正常关机。提前退出、无终态、非预期错误或事实不符均失败；超时仍返回 124。没有 UART 时内核也不能保证可见串口原因，由宿主超时明确报告失败；不承诺未建立的 CPU 异常处理。T03 只验证 RAM / MMIO 与 HAL CPU 拷贝，设备 bus master 禁用；无真实设备 DMA 完成、磁盘写回或图形交互证据。
+每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，无网络、无 GUI、禁止自动重启。普通盘只读；T04 双盘用例由固件从只读 virtio-scsi / scsi-hd 引导，内核仅操作唯一 VirtIO-blk 数据盘。仅 t04-write 打开数据盘写权限，使用 cache=writeback、aio=threads、无 snapshot；其他数据盘只读。所有盘均为任务普通文件，不挂宿主物理盘。固件路径从 QEMU 实体 prefix/share/qemu 派生并核对哈希；实际 VM 环境是 Homebrew macOS，其他安装布局未验证。
 
-完整启动套件需创建 8 张逻辑容量各 1 GiB 的稀疏盘；T03 本机实际用时约 95 秒，未来不能据此承诺固定时长。各次构建、工具身份、命令、PID、镜像摘要、串口、VARS 与失败材料留在 target/xtask-*，后台子进程及容器结束即回收；复制证据时不复制大盘。普通 CI 只运行宿主 / 静态入口，VM 验收按授权独立运行。
+单次 QEMU 限时为 `min(--timeout-secs, 60)` 秒。宿主观察到 T04 READY / FAIL、T03 FAIL 或 T02 FAIL 且串口稳定 250 ms 后停止自己的进程组并回收，再严格校验序列；T02 / T03 READY 只是中间阶段。提前退出、无终态、非预期错误或事实不符均失败；超时返回 124。这是内核 halt 后宿主终止，重新打开同盘验证不代表正常重启 / 关机验收。没有 UART 时由宿主超时报告，尚未建立通用 CPU 异常处理。
+
+正常请求需真实 used token 与响应状态成功，flush 单独确认；停止时确认设备 status=0、关闭 bus master 后释放 queue。轮询预算为请求 2000000 次、复位 100000 次、配置一致性 64 次，属于次数上限而非实时时钟保证。超时用例实际发布请求再隐藏完成观察，保留全部 DMA 与原始缓冲、拒绝释放 / 复用后 halt；不声称制造了设备物理延迟。缺 flush 用例是明确标记的能力拒绝注入；不声称 QEMU 实际未提供该能力。
+
+写入用例在 DATA 尾部 4096 字节合成区域执行对齐与跨扇区写入并 flush；guest 退出后宿主按独立期望比较整盘，确认 ESP / GPT 及所有非目标字节不变，然后重新启动同一盘只读复核。各次构建、工具身份、命令、PID、镜像摘要、串口、VARS 与失败材料留在 target/xtask-*；后台子进程及容器结束即回收，复制证据不复制大盘。T04 不提供 FAT 文件语义、正常电源流程、GUI 或安装。
 
 ## 5. 视觉与数据材料
 

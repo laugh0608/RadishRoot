@@ -60,6 +60,7 @@ impl ConfigurationAccess for Config {
     }
 }
 pub struct Device {
+    pub transport: ManuallyDrop<PciTransport>,
     pub bdf: DeviceFunction,
     pub bars: [Bar; 6],
     pub capabilities: usize,
@@ -173,6 +174,7 @@ pub fn discover(regions: &[Region], bad_capability: bool) -> Result<Device, &'st
         return Err("PCI_RESET_TIMEOUT");
     }
     Ok(Device {
+        transport,
         bdf,
         bars,
         capabilities,
@@ -180,4 +182,17 @@ pub fn discover(regions: &[Region], bad_capability: bool) -> Result<Device, &'st
         queue_size,
         bus_master,
     })
+}
+
+pub fn bus_master(bdf: DeviceFunction, enabled: bool) -> Result<(), &'static str> {
+    if read(bdf, 0) != 0x10421af4 {
+        return Err("PCI_IDENTITY_CHANGED");
+    }
+    let command = read(bdf, 4) as u16;
+    let value = if enabled { command | 4 } else { command & !4 };
+    write(bdf, 4, u32::from(value));
+    if (read(bdf, 4) & 4 != 0) != enabled {
+        return Err("PCI_BUS_MASTER");
+    }
+    Ok(())
 }

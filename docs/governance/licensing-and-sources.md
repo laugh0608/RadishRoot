@@ -102,3 +102,22 @@ CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1
 包体来自 crates.io 官方 registry，checksum 由 Cargo.lock 固定；精确包索引、原始 / 复制许可摘要保存在 evidence/t03-preflight-20261025-63e2193/。保留全部 22 包的 MIT 文本及 unicode-ident 的 Unicode 声明，共 23 份；为保守保留归属，构建阶段宏包的许可也随本地 ESP 的 /licenses/ 保存，不声称这些包全部链接进 guest。virtio-drivers 上游 LICENSE 缺末尾换行，本地仅补 LF；limine 沿用 T02 的相同处理，其余复制字节不变。完整 8 盘复核确认这些文件与正式源逐字相同。
 
 本次未分发第三方源码、工具或镜像。原始许可文件不由摘要代替，未来发行仍需按最终链接 / 打包组成复核并确定原创许可。
+
+T03 提交复核时，`git diff --cached --check` 对 zerocopy 与 zerocopy-derive 的原始 MIT 文本末尾空行给出提示；两份与 registry 包原文逐字相同，保留上游格式，不修改许可材料以消除该提示。此前工作树空白检查不包含尚未跟踪的新文件；代码与其余文本没有空白错误。
+
+## T04 已引入的 GPT 组件
+
+2026-10-25 按授权新增下列 8 个精确 registry 包，保留既有 22 个包版本与摘要。gpt_disk_io 关闭默认 feature，不启用 std / alloc；纯存储契约可在宿主测试，硬件依赖仍仅用于裸机。Cargo.lock 固定包体 checksum，xtask 仍仅使用 std。
+
+| 包 / 精确版本 | 官方来源 | 上游许可与本次保留 |
+| --- | --- | --- |
+| gpt_disk_io 0.17.0 | [gpt_disk_io](https://github.com/google/gpt-disk-rs)；[crate](https://crates.io/crates/gpt_disk_io/0.17.0) | MIT OR Apache-2.0；保留 MIT；[完整文本](../../tools/boot/licenses/gpt_disk_io-0.17.0.txt) |
+| gpt_disk_types 0.16.1 | [gpt_disk_types](https://github.com/google/gpt-disk-rs)；[crate](https://crates.io/crates/gpt_disk_types/0.16.1) | MIT OR Apache-2.0；保留 MIT；[完整文本](../../tools/boot/licenses/gpt_disk_types-0.16.1.txt) |
+| bytemuck 1.25.2 | [bytemuck](https://github.com/Lokathor/bytemuck)；[crate](https://crates.io/crates/bytemuck/1.25.2) | Zlib OR Apache-2.0 OR MIT；保留 MIT；[完整文本](../../tools/boot/licenses/bytemuck-1.25.2.txt) |
+| bytemuck_derive 1.12.1 | [bytemuck_derive](https://github.com/Lokathor/bytemuck)；[crate](https://crates.io/crates/bytemuck_derive/1.12.1) | Zlib OR Apache-2.0 OR MIT；保留 MIT；[完整文本](../../tools/boot/licenses/bytemuck_derive-1.12.1.txt) |
+| crc 3.4.0 | [crc](https://github.com/mrhooray/crc-rs.git)；[crate](https://crates.io/crates/crc/3.4.0) | MIT OR Apache-2.0；保留 MIT；[完整文本](../../tools/boot/licenses/crc-3.4.0.txt) |
+| crc-catalog 2.5.0 | [crc-catalog](https://github.com/akhilles/crc-catalog.git)；[crate](https://crates.io/crates/crc-catalog/2.5.0) | MIT OR Apache-2.0；保留 MIT；[完整文本](../../tools/boot/licenses/crc-catalog-2.5.0.txt) |
+| ucs2 0.3.3 | [ucs2](https://github.com/rust-osdev/ucs2-rs)；[crate](https://crates.io/crates/ucs2/0.3.3) | MPL-2.0；保留 MPL-2.0；[完整文本](../../tools/boot/licenses/ucs2-0.3.3.txt) |
+| uguid 2.2.1 | [uguid](https://github.com/google/gpt-disk-rs)；[crate](https://crates.io/crates/uguid/2.2.1) | MIT OR Apache-2.0；保留 MIT；[完整文本](../../tools/boot/licenses/uguid-2.2.1.txt) |
+
+上游源文件未修改、未整包复制入仓库；许可从经 Cargo 校验的原包复制，仅对缺末尾换行的文本补 LF，原始与复制摘要见 evidence/t04-preflight-20261025-a37b3ef/license-copies.json。全部 30 个外部包对应 31 份许可文本（含 Unicode 声明），随本地 ESP 保存。ucs2 是 MPL-2.0，不将其归为 MIT；未来对外分发需按实际制品履行其源码提供和告知义务。当前仍无对外分发，原创许可未定。
