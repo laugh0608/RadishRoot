@@ -109,6 +109,9 @@ fn compare(source: &Path, target: &Path, patches: &[Patch]) -> Result<()> {
     }
     Ok(())
 }
+pub(super) fn compare_unchanged(source: &Path, target: &Path) -> Result<()> {
+    compare(source, target, &[])
+}
 fn crc(bytes: &[u8]) -> u32 {
     let mut n = !0u32;
     for b in bytes {
@@ -279,7 +282,20 @@ pub fn validate(output: &str, mode: &str) -> Result<()> {
     let fault = match mode {
         "t04-both-gpt" => Some("GPT_INVALID"),
         "t04-conflict-gpt" => Some("GPT_CONFLICT"),
-        "t04-timeout" => Some("BLOCK_TIMEOUT"),
+        "t04-timeout" => {
+            let wait = output
+                .lines()
+                .find(|l| l.starts_with("RR:T06:WAIT "))
+                .ok_or_else(|| Error::new("storage-timeout", "missing wait cause"))?;
+            let f = fields(wait)?;
+            let code = match f.get("reason") {
+                Some(&"DEADLINE") => "BLOCK_TIMEOUT",
+                Some(&"POLL_BUDGET_EXHAUSTED") => "BLOCK_POLL_BUDGET",
+                _ => return Err(Error::new("storage-timeout", "unexpected wait cause")),
+            };
+            crate::vm_runtime::validate_wait(output, code)?;
+            Some(code)
+        }
         "t04-no-flush" => Some("BLOCK_FLUSH_UNSUPPORTED"),
         _ => None,
     };
@@ -436,7 +452,7 @@ RR:T04:READY mode=t04-primary-gpt
     }
     #[test]
     fn timeout_rejects_premature_release() {
-        let text = "RR:T04:ENTER\nRR:T04:CASE name=t04-timeout\nRR:T04:QUARANTINE shares=3 allocations=3 release_rejected=1 allocation_rejected=1 reused=0\nRR:T04:FAIL code=BLOCK_TIMEOUT stage=Read\n";
+        let text = "RR:T06:WAIT reason=DEADLINE elapsed_ns=2000000000 stage=request\nRR:T04:ENTER\nRR:T04:CASE name=t04-timeout\nRR:T04:QUARANTINE shares=3 allocations=3 release_rejected=1 allocation_rejected=1 reused=0\nRR:T04:FAIL code=BLOCK_TIMEOUT stage=Read\n";
         assert!(validate(text, "t04-timeout").is_ok());
         assert!(
             validate(

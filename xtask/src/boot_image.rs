@@ -116,6 +116,14 @@ pub fn create(
         "t05-volume-sync",
         "t05-device-flush",
         "t05-bad-fat",
+        "t06-page-fault",
+        "t06-double-fault",
+        "t06-alloc-failure",
+        "t06-overflow",
+        "t06-clock-stalled",
+        "t06-invalid-input",
+        "t06-timeout",
+        "t06-no-hpet",
     ]
     .contains(&fault)
     {

@@ -4,8 +4,8 @@ use uart_16550::{Config, Uart16550, backend::PioBackend};
 pub struct Serial(Uart16550<PioBackend>);
 impl Serial {
     pub fn new() -> Result<Self, ()> {
-        // SAFETY: 固定 q35 的 COM1 端口 0x3f8..0x3ff；唯一 BSP、IF=0。
-        // 正常路径只持有一个实例。panic 路径永不返回，接管已暂停上下文的设备。
+        // SAFETY: 固定 q35 的 COM1 端口 0x3f8..0x3ff；单 BSP，IRQ 从不访问串口。
+        // 主流程的诊断实例顺序访问同一设备；致命路径禁中断且永不返回，接管暂停的上下文。
         let mut uart = unsafe { Uart16550::new_port(0x3f8) }.map_err(|_| ())?;
         uart.init(Config::default()).map_err(|_| ())?;
         Ok(Self(uart))

@@ -19,6 +19,7 @@ macro_rules! request {
 request!(MAP, MemmapRequest, MemmapRequest::new());
 request!(FB, FramebufferRequest, FramebufferRequest::new());
 request!(HHDM, HhdmRequest, HhdmRequest::new());
+request!(RSDP, RsdpRequest, RsdpRequest::new());
 request!(
     ADDRESS,
     ExecutableAddressRequest,
@@ -75,6 +76,7 @@ pub struct Facts {
     pub count: usize,
     pub hhdm: u64,
     pub mode: &'static str,
+    pub rsdp: Option<u64>,
 }
 pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
     emit(serial, format_args!("\nRR:T02:ENTER\n"));
@@ -87,6 +89,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         && !mode.starts_with("t03-")
         && !mode.starts_with("t04-")
         && !mode.starts_with("t05-")
+        && !mode.starts_with("t06-")
     {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
@@ -206,6 +209,14 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t05-volume-sync",
         "t05-device-flush",
         "t05-bad-fat",
+        "t06-page-fault",
+        "t06-double-fault",
+        "t06-alloc-failure",
+        "t06-overflow",
+        "t06-clock-stalled",
+        "t06-invalid-input",
+        "t06-timeout",
+        "t06-no-hpet",
     ]
     .contains(&mode)
     {
@@ -217,5 +228,6 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         count: entries.len(),
         hhdm: hhdm.offset,
         mode,
+        rsdp: RSDP.response().map(|r| r.address as u64),
     })
 }

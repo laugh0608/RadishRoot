@@ -8,6 +8,7 @@ mod process;
 mod vm;
 mod vm_fat;
 mod vm_platform;
+mod vm_runtime;
 mod vm_storage;
 
 use cli::{Action, Options};
@@ -26,7 +27,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only] (headless UEFI; storage-only runs T04; fat-only runs T05)."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--runtime-only] (headless UEFI; storage-only runs T04; fat-only runs T05)."
         );
         return Ok(());
     }
@@ -158,7 +159,8 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
         | Action::Run
         | Action::TestVm
         | Action::TestStorageVm
-        | Action::TestFatVm => vm::execute(&context, runner, &options.action)?,
+        | Action::TestFatVm
+        | Action::TestRuntimeVm => vm::execute(&context, runner, &options.action)?,
         Action::Help => unreachable!(),
     }
     Ok(())

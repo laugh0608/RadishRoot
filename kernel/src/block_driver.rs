@@ -5,6 +5,9 @@ use crate::{
     serial::Serial,
 };
 use core::{fmt::Write, mem::ManuallyDrop};
+use radishroot_kernel::runtime_contract::{
+    REQUEST_NS, REQUEST_POLLS, RESET_NS, RESET_POLLS, Wait, WaitError,
+};
 use radishroot_kernel::storage::block::{self, BlockDevice, Error, Info, Kind, Stage};
 use virtio_drivers::{
     queue::VirtQueue,
@@ -17,8 +20,6 @@ use virtio_drivers::{
 const VERSION_1: u64 = 1 << 32;
 const RO: u64 = 1 << 5;
 const FLUSH: u64 = 1 << 9;
-const POLL_BUDGET: usize = 2_000_000;
-const RESET_BUDGET: usize = 100_000;
 const QUEUE_SIZE: usize = 16;
 
 pub struct Driver {
@@ -28,6 +29,7 @@ pub struct Driver {
     info: Info,
     stopped: bool,
     timeout_next: bool,
+    deadline_test: bool,
     unsupported_next: bool,
     pub requests: u64,
     pub flushes: u64,
@@ -94,6 +96,7 @@ impl Driver {
             },
             stopped: false,
             timeout_next: false,
+            deadline_test: false,
             unsupported_next: false,
             requests: 0,
             flushes: 0,
@@ -101,6 +104,13 @@ impl Driver {
     }
     pub fn inject_timeout(&mut self) {
         self.timeout_next = true;
+    }
+    pub fn inject_deadline_timeout(&mut self) {
+        if !cfg!(feature = "boot-test") {
+            panic!("fault injection requires boot-test");
+        }
+        self.timeout_next = true;
+        self.deadline_test = true;
     }
     pub fn inject_unsupported(&mut self) {
         self.unsupported_next = true;
@@ -127,6 +137,17 @@ impl Driver {
         if self.stopped {
             return Err(Error::new(Kind::Offline, stage, lba));
         }
+        let start = crate::clock::now().map_err(|_| Error::new(Kind::Clock, stage, lba))?;
+        let mut wait = Wait::new(
+            start,
+            REQUEST_NS,
+            if self.deadline_test {
+                u64::MAX
+            } else {
+                REQUEST_POLLS
+            },
+        )
+        .map_err(|_| Error::new(Kind::Clock, stage, lba))?;
         platform_memory::begin_request().map_err(|_| protocol(stage))?;
         // SAFETY: header / data / status 保持在本次调用栈，唯一请求；所有地址由 HAL bounce 管理。
         // 正常路径直到匹配 used token 才 pop / copy-back；异常未完成路径在本栈帧内 halt，绝不返回。
@@ -145,15 +166,17 @@ impl Driver {
         }
         self.requests += 1;
         self.transport.notify(0);
-        let mut completed = false;
-        for _ in 0..POLL_BUDGET {
+        loop {
+            if let Err(reason) = wait.poll(crate::clock::now()) {
+                crate::runtime::wait_error(reason, wait.elapsed(), "request");
+                self.quarantine(Error::new(wait_kind(reason), stage, lba));
+            }
             // 注入只隐藏完成观察；真实请求已经发布 / notify，设备可能仍会写 DMA。
             if !self.timeout_next {
                 if let Some(used) = self.queue.peek_used() {
                     if used != token {
                         self.quarantine(Error::new(Kind::Protocol, Stage::Complete, lba));
                     }
-                    completed = true;
                     break;
                 }
                 if self
@@ -165,9 +188,6 @@ impl Driver {
                 }
             }
             core::hint::spin_loop();
-        }
-        if !completed {
-            self.quarantine(Error::new(Kind::Timeout, stage, lba));
         }
         if platform_memory::complete_request().is_err() {
             self.quarantine(protocol(Stage::Complete));
@@ -225,6 +245,13 @@ impl Driver {
                 error.sector,
                 error.completed_bytes
             );
+            if self.deadline_test {
+                let _ = writeln!(
+                    serial,
+                    "RR:T06:FAIL code={} stage=request",
+                    error.kind.code()
+                );
+            }
         }
         crate::halt()
     }
@@ -232,8 +259,17 @@ impl Driver {
         if self.stopped {
             return Err(Error::new(Kind::Offline, Stage::Reset, 0));
         }
+        let start = crate::clock::now().map_err(|_| Error::new(Kind::Clock, Stage::Reset, 0))?;
+        let mut wait = Wait::new(start, RESET_NS, RESET_POLLS)
+            .map_err(|_| Error::new(Kind::Clock, Stage::Reset, 0))?;
         self.transport.set_status(DeviceStatus::empty());
-        for _ in 0..RESET_BUDGET {
+        loop {
+            if let Err(reason) = wait.poll(crate::clock::now()) {
+                crate::runtime::wait_error(reason, wait.elapsed(), "reset");
+                // 无未完成借用请求，但 queue 仍可能被访问；ManuallyDrop 保留到调用方立即停止。
+                self.stopped = true;
+                return Err(Error::new(wait_kind(reason), Stage::Reset, 0));
+            }
             if self.transport.get_status().is_empty() {
                 pci::bus_master(self.bdf, false).map_err(|_| protocol(Stage::Reset))?;
                 platform_memory::device_stopped().map_err(|_| protocol(Stage::Reset))?;
@@ -250,9 +286,13 @@ impl Driver {
             }
             core::hint::spin_loop();
         }
-        // queue 与 transport 是 ManuallyDrop；超时返回只供立即 halt，资源不会被析构释放。
-        self.stopped = true;
-        Err(Error::new(Kind::Timeout, Stage::Reset, 0))
+    }
+}
+fn wait_kind(reason: WaitError) -> Kind {
+    match reason {
+        WaitError::Deadline => Kind::Timeout,
+        WaitError::PollBudgetExhausted => Kind::PollBudgetExhausted,
+        WaitError::Clock(_) => Kind::Clock,
     }
 }
 impl BlockDevice for Driver {

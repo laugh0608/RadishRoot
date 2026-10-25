@@ -113,10 +113,14 @@ impl Runner {
     pub fn run(&mut self, command: &mut Command) -> Result<String> {
         self.run_inner(command, None)
     }
-    pub fn boot(&mut self, command: &mut Command, serial: &Path) -> Result<String> {
-        self.run_inner(command, Some(serial))
+    pub fn boot(&mut self, command: &mut Command, serial: &Path, runtime: bool) -> Result<String> {
+        self.run_inner(command, Some((serial, runtime)))
     }
-    fn run_inner(&mut self, command: &mut Command, serial: Option<&Path>) -> Result<String> {
+    fn run_inner(
+        &mut self,
+        command: &mut Command,
+        serial: Option<(&Path, bool)>,
+    ) -> Result<String> {
         self.sequence += 1;
         let prefix = format!("{:03}", self.sequence);
         let stdout = self.dir.join(format!("{prefix}.stdout"));
@@ -146,7 +150,7 @@ impl Runner {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
                 Ok(None) if started.elapsed() < self.timeout => {
-                    if let Some(path) = serial {
+                    if let Some((path, runtime)) = serial {
                         let output = match read_output(path) {
                             Ok(output) => output,
                             Err(error) => {
@@ -155,9 +159,11 @@ impl Runner {
                             }
                         };
                         let terminal = output.lines().any(|line| {
-                            line.starts_with("RR:T05:READY ")
+                            (runtime && line.starts_with("RR:T06:READY "))
+                                || (!runtime && line.starts_with("RR:T05:READY "))
                                 || line.starts_with("RR:T05:FAIL ")
-                                || line.starts_with("RR:T04:READY ")
+                                || (!runtime && line.starts_with("RR:T04:READY "))
+                                || line.starts_with("RR:T06:FAIL ")
                                 || line.starts_with("RR:T04:FAIL ")
                                 || line.starts_with("RR:T03:FAIL ")
                                 || line.starts_with("RR:T02:FAIL ")
@@ -199,7 +205,7 @@ impl Runner {
                 exit: 124,
             });
         }
-        if let Some(path) = serial {
+        if let Some((path, _)) = serial {
             if !observed {
                 return Err(Error::new(
                     "vm-exited",
@@ -334,23 +340,42 @@ mod tests {
                     ])
                     .arg(&serial),
                 &serial,
+                false,
             )
             .unwrap();
         assert!(output.contains("READY"));
         fs::write(&serial, "").unwrap();
         assert_eq!(
-            r.boot(Command::new("/bin/sh").args(["-c", "exit 0"]), &serial)
-                .unwrap_err()
-                .kind,
+            r.boot(
+                Command::new("/bin/sh").args(["-c", "exit 0"]),
+                &serial,
+                false
+            )
+            .unwrap_err()
+            .kind,
             "vm-exited"
         );
         r.timeout = Duration::from_millis(100);
         assert_eq!(
-            r.boot(Command::new("/bin/sh").args(["-c", "sleep 5"]), &serial)
-                .unwrap_err()
-                .exit,
+            r.boot(
+                Command::new("/bin/sh").args(["-c", "sleep 5"]),
+                &serial,
+                false
+            )
+            .unwrap_err()
+            .exit,
             124
         );
+        fs::remove_dir_all(&r.dir).unwrap();
+    }
+    #[test]
+    fn runtime_monitor_does_not_stop_at_storage_ready() {
+        let mut r = runner();
+        r.timeout = Duration::from_secs(3);
+        let serial = r.dir.join("serial.log");
+        fs::write(&serial, "").unwrap();
+        let output = r.boot(Command::new("/bin/sh").args(["-c", "echo 'RR:T04:READY mode=probe' > \"$1\"; sleep 0.5; echo 'RR:T06:READY mode=normal' >> \"$1\"; sleep 5", "test"]).arg(&serial),&serial,true).unwrap();
+        assert!(output.contains("RR:T06:READY mode=normal"));
         fs::remove_dir_all(&r.dir).unwrap();
     }
     #[test]

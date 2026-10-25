@@ -43,6 +43,8 @@ struct Memory {
     blocks: [Option<Block>; 64],
     shared: [Option<Shared>; 64],
     ledger: Ledger,
+    hpet: Bar,
+    tables_checked: bool,
     device_enabled: bool,
     request: RequestState,
 }
@@ -54,6 +56,8 @@ static MEMORY: Exclusive<Memory> = Exclusive::new(Memory {
     blocks: [None; 64],
     shared: [None; 64],
     ledger: Ledger::new(),
+    hpet: Bar { base: 0, length: 0 },
+    tables_checked: false,
     device_enabled: false,
     request: RequestState::Idle,
 });
@@ -167,9 +171,29 @@ pub fn map_bars(bars: [Bar; 6], regions: &[Region]) -> Result<(), &'static str> 
     if m.mmio.iter().any(|b| b.length != 0) {
         return Err("MMIO_REINITIALIZE");
     }
+    if m.hpet.length != 0
+        && bars.iter().any(|b| {
+            b.length != 0 && b.base < m.hpet.base + m.hpet.length && m.hpet.base < b.base + b.length
+        })
+    {
+        return Err("MMIO_CONFLICT");
+    }
+    map_mmio(&mut m, &bars, 0, regions)?;
+    m.mmio = bars;
+    Ok(())
+}
+fn map_mmio(
+    m: &mut Memory,
+    ranges: &[Bar],
+    first_slot: usize,
+    regions: &[Region],
+) -> Result<(), &'static str> {
     let hhdm = m.hhdm;
     let physical = Cr3::read().0.start_address().as_u64();
-    check_tables(physical, 4, hhdm, regions, &mut 4096)?;
+    if !m.tables_checked {
+        check_tables(physical, 4, hhdm, regions, &mut 4096)?;
+        m.tables_checked = true;
+    }
     if !Efer::read().contains(EferFlags::NO_EXECUTE_ENABLE) {
         return Err("MMIO_NX_DISABLED");
     }
@@ -187,8 +211,8 @@ pub fn map_bars(bars: [Bar; 6], regions: &[Region]) -> Result<(), &'static str> 
         frames: &mut m.frames,
         hhdm,
     };
-    for (index, b) in bars.iter().enumerate().filter(|(_, b)| b.length != 0) {
-        let virtual_base = MMIO_BASE + index as u64 * 16 * 1024 * 1024;
+    for (index, b) in ranges.iter().enumerate().filter(|(_, b)| b.length != 0) {
+        let virtual_base = MMIO_BASE + (index + first_slot) as u64 * 16 * 1024 * 1024;
         for offset in (0..b.length).step_by(4096) {
             if let Some(alias) = hhdm
                 .checked_add(b.base + offset)
@@ -220,8 +244,68 @@ pub fn map_bars(bars: [Bar; 6], regions: &[Region]) -> Result<(), &'static str> 
             }
         }
     }
-    m.mmio = bars;
     Ok(())
+}
+pub fn map_hpet(base: u64, regions: &[Region]) -> Result<usize, &'static str> {
+    let mut m = MEMORY.lock();
+    let end = base.checked_add(4096).ok_or("HPET_RANGE")?;
+    if base < 512 * 1024 * 1024 || !base.is_multiple_of(4096) || end > 1 << 52 || m.hpet.length != 0
+    {
+        return Err("HPET_RANGE");
+    }
+    if regions
+        .iter()
+        .any(|r| r.kind != 1 && base < r.base + r.length && r.base < end)
+        || m.mmio
+            .iter()
+            .any(|b| b.length != 0 && base < b.base + b.length && b.base < end)
+    {
+        return Err("HPET_OVERLAP");
+    }
+    let range = Bar { base, length: 4096 };
+    map_mmio(&mut m, &[range], 6, regions)?;
+    m.hpet = range;
+    Ok((MMIO_BASE + 6 * 16 * 1024 * 1024) as usize)
+}
+pub fn stats() -> radishroot_kernel::runtime_contract::MemoryStats {
+    MEMORY.lock().frames.stats()
+}
+/// 本内核静态 IST 的首个独占页改成 guard。不能传任意地址或解除 HHDM / 页表映射。
+pub unsafe fn guard_stack(address: u64) -> Result<(), &'static str> {
+    let m = MEMORY.lock();
+    if !m.tables_checked || !address.is_multiple_of(4096) {
+        return Err("STACK_GUARD_RANGE");
+    }
+    let p = pointer(m.hhdm, Cr3::read().0.start_address().as_u64(), 4096)?;
+    // SAFETY: 已校验页表，单 BSP 持锁 / IF=0，调用方保证此页仅是静态栈 guard，无引用或执行。
+    let mut mapper = unsafe {
+        OffsetPageTable::new(&mut *p.as_ptr().cast::<PageTable>(), VirtAddr::new(m.hhdm))
+    };
+    let page = Page::<Size4KiB>::from_start_address(VirtAddr::new(address))
+        .map_err(|_| "STACK_GUARD_RANGE")?;
+    mapper.unmap(page).map_err(|_| "STACK_GUARD_MAP")?.1.flush();
+    if mapper.translate_addr(VirtAddr::new(address)).is_some()
+        || mapper
+            .translate_addr(VirtAddr::new(address + 4096))
+            .is_none()
+    {
+        return Err("STACK_GUARD_READBACK");
+    }
+    Ok(())
+}
+pub fn unmapped(address: u64) -> bool {
+    let m = MEMORY.lock();
+    if !m.tables_checked {
+        return false;
+    }
+    let Ok(p) = pointer(m.hhdm, Cr3::read().0.start_address().as_u64(), 4096) else {
+        return false;
+    };
+    // SAFETY: 页表已验证，锁保证没有并行修改，此处只调用只读翻译，不保留页表引用。
+    let mapper = unsafe {
+        OffsetPageTable::new(&mut *p.as_ptr().cast::<PageTable>(), VirtAddr::new(m.hhdm))
+    };
+    mapper.translate_addr(VirtAddr::new(address)).is_none()
 }
 fn direction(d: BufferDirection) -> Direction {
     match d {

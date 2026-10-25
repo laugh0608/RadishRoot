@@ -13,6 +13,8 @@ pub enum Kind {
     Unsupported,
     Protocol,
     Timeout,
+    PollBudgetExhausted,
+    Clock,
     Offline,
 }
 impl Kind {
@@ -27,6 +29,8 @@ impl Kind {
             Self::Unsupported => "BLOCK_UNSUPPORTED",
             Self::Protocol => "BLOCK_PROTOCOL",
             Self::Timeout => "BLOCK_TIMEOUT",
+            Self::PollBudgetExhausted => "BLOCK_POLL_BUDGET",
+            Self::Clock => "BLOCK_CLOCK",
             Self::Offline => "BLOCK_OFFLINE",
         }
     }

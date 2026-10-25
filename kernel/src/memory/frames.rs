@@ -33,6 +33,8 @@ pub struct Frames {
     records: [Option<Block>; RECORDS],
     next_id: u64,
     available: usize,
+    tracked: usize,
+    total_usable: u64,
     initialized: bool,
 }
 impl Default for Frames {
@@ -47,6 +49,8 @@ impl Frames {
             records: [None; RECORDS],
             next_id: 1,
             available: 0,
+            tracked: 0,
+            total_usable: 0,
             initialized: false,
         }
     }
@@ -55,6 +59,11 @@ impl Frames {
             return Err(Error::Busy);
         }
         boot_contract::memory(regions).map_err(|_| Error::Map)?;
+        self.total_usable = regions
+            .iter()
+            .filter(|r| r.kind == 0)
+            .try_fold(0u64, |n, r| n.checked_add(r.length))
+            .ok_or(Error::Range)?;
         for r in regions.iter().filter(|r| r.kind == 0 && r.base < LIMIT) {
             let start = r
                 .base
@@ -72,7 +81,17 @@ impl Frames {
             return Err(Error::Exhausted);
         }
         self.initialized = true;
+        self.tracked = self.available;
         Ok(())
+    }
+    pub fn stats(&self) -> crate::runtime_contract::MemoryStats {
+        crate::runtime_contract::MemoryStats::new(
+            self.total_usable,
+            self.tracked as u64 * PAGE,
+            (self.tracked - self.available) as u64 * PAGE,
+            crate::runtime_contract::MemoryScope::UsableFrames,
+        )
+        .expect("frame accounting")
     }
     pub fn available(&self) -> usize {
         self.available
@@ -157,6 +176,21 @@ impl Frames {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stats_track_success_and_keep_failure_unchanged() {
+        let mut f = frames();
+        let before = f.stats();
+        assert_eq!(before.total_bytes, 0x100001 + 0xbfff);
+        assert_eq!(before.tracked_bytes, 11 * PAGE);
+        assert_eq!(before.allocated_bytes, 0);
+        let block = f.allocate(2, 1, Purpose::Test).unwrap();
+        assert_eq!(f.stats().allocated_bytes, 2 * PAGE);
+        let allocated = f.stats();
+        assert!(f.allocate(12, 1, Purpose::Test).is_err());
+        assert_eq!(f.stats(), allocated);
+        f.release(block).unwrap();
+        assert_eq!(f.stats(), before);
+    }
     fn frames() -> Frames {
         let mut f = Frames::new();
         f.init(&[

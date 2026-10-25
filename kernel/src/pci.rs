@@ -21,18 +21,18 @@ fn address(bdf: DeviceFunction, offset: u8) -> u32 {
         | u32::from(offset)
 }
 fn read(bdf: DeviceFunction, offset: u8) -> u32 {
-    // SAFETY: q35 配置机制 1 的 CF8/CFC，唯一 BSP / IF=0，无并发 PCI 访问；offset 已对齐。
-    unsafe {
+    // SAFETY: q35 配置机制 1 的 CF8/CFC，单 BSP；短临界区保持地址 / 数据成对，offset 已对齐。
+    x86_64::instructions::interrupts::without_interrupts(|| unsafe {
         Port::<u32>::new(0xcf8).write(address(bdf, offset));
         Port::<u32>::new(0xcfc).read()
-    }
+    })
 }
 fn write(bdf: DeviceFunction, offset: u8, value: u32) {
     // SAFETY: 同上，调用点仅访问已选定设备的 command / BAR，不访问其他设备。
-    unsafe {
+    x86_64::instructions::interrupts::without_interrupts(|| unsafe {
         Port::<u32>::new(0xcf8).write(address(bdf, offset));
         Port::<u32>::new(0xcfc).write(value);
-    }
+    })
 }
 struct Config {
     device: DeviceFunction,
