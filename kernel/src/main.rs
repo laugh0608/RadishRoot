@@ -2,7 +2,12 @@
 #![no_main]
 
 mod boot;
+mod exclusive;
+mod heap;
+mod pci;
+mod platform_memory;
 mod serial;
+mod t03;
 use core::{
     fmt::Write,
     panic::PanicInfo,
@@ -20,12 +25,19 @@ pub extern "C" fn _start() -> ! {
     let Ok(mut serial) = serial::Serial::new() else {
         halt();
     };
-    if let Err(error) = boot::run(&mut serial) {
-        let _ = writeln!(
-            serial,
-            "RR:T02:FAIL code={} stage=boot-validation",
-            error.code()
-        );
+    match boot::run(&mut serial) {
+        Ok(facts) => {
+            if let Err(code) = t03::run(&mut serial, &facts) {
+                let _ = writeln!(serial, "RR:T03:FAIL code={code} stage=platform");
+            }
+        }
+        Err(error) => {
+            let _ = writeln!(
+                serial,
+                "RR:T02:FAIL code={} stage=boot-validation",
+                error.code()
+            );
+        }
     }
     halt()
 }

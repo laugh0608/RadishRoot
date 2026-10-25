@@ -99,6 +99,9 @@ pub fn create(
         "missing-response",
         "invalid-framebuffer",
         "panic",
+        "t03-invalid-range",
+        "t03-bad-capability",
+        "t03-dma-timeout",
     ]
     .contains(&fault)
     {
@@ -119,14 +122,22 @@ pub fn create(
         fs::copy(source, inputs.join(name))?;
     }
     process::directory(&inputs.join("crate-licenses"))?;
-    for name in [
-        "limine-0.6.5.txt",
-        "uart_16550-0.9.0.txt",
-        "bitflags-2.13.2.txt",
-    ] {
+    let mut licenses =
+        fs::read_dir(root.join("tools/boot/licenses"))?.collect::<std::io::Result<Vec<_>>>()?;
+    licenses.sort_by_key(|entry| entry.file_name());
+    if licenses.is_empty() || licenses.len() > 32 {
+        return Err(Error::new("licenses", "invalid license count"));
+    }
+    for entry in licenses {
+        if !entry.file_type()?.is_file()
+            || entry.path().extension().is_none_or(|s| s != "txt")
+            || entry.metadata()?.len() > 128 * 1024
+        {
+            return Err(Error::new("licenses", "expected bounded text license"));
+        }
         fs::copy(
-            root.join("tools/boot/licenses").join(name),
-            inputs.join("crate-licenses").join(name),
+            entry.path(),
+            inputs.join("crate-licenses").join(entry.file_name()),
         )?;
     }
     fs::copy(kernel, inputs.join("kernel.elf"))?;

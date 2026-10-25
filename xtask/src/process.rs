@@ -143,7 +143,9 @@ impl Runner {
                             }
                         };
                         let terminal = output.lines().any(|line| {
-                            line.starts_with("RR:T02:READY ") || line.starts_with("RR:T02:FAIL ")
+                            line.starts_with("RR:T03:READY ")
+                                || line.starts_with("RR:T03:FAIL ")
+                                || line.starts_with("RR:T02:FAIL ")
                         });
                         if terminal && (terminal_since.is_none() || output.len() != prior_length) {
                             terminal_since = Some(Instant::now());
@@ -295,7 +297,7 @@ mod tests {
                 Command::new("/bin/sh")
                     .args([
                         "-c",
-                        "echo 'RR:T02:READY revision=6' > \"$1\"; sleep 5",
+                        "echo 'RR:T03:READY storage_io=none' > \"$1\"; sleep 5",
                         "test",
                     ])
                     .arg(&serial),

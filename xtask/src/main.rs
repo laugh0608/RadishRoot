@@ -6,6 +6,7 @@ mod elf;
 mod error;
 mod process;
 mod vm;
+mod vm_platform;
 
 use cli::{Action, Options};
 use config::{Context, TARGET};

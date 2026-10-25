@@ -70,14 +70,20 @@ fn emit(serial: &mut Serial, args: core::fmt::Arguments<'_>) {
         crate::halt();
     }
 }
-pub fn run(serial: &mut Serial) -> Result<(), BootError> {
+pub struct Facts {
+    pub regions: [Region; MAX_REGIONS],
+    pub count: usize,
+    pub hhdm: u64,
+    pub mode: &'static str,
+}
+pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
     emit(serial, format_args!("\nRR:T02:ENTER\n"));
     let mode = if cfg!(feature = "boot-test") {
         CMDLINE.response().map(|r| r.cmdline()).unwrap_or("")
     } else {
         ""
     };
-    if !mode.is_empty() {
+    if !mode.is_empty() && !mode.starts_with("t03-") {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
     boot_contract::protocol(
@@ -179,11 +185,19 @@ pub fn run(serial: &mut Serial) -> Result<(), BootError> {
         "unsupported-protocol",
         "missing-response",
         "invalid-framebuffer",
+        "t03-invalid-range",
+        "t03-bad-capability",
+        "t03-dma-timeout",
     ]
     .contains(&mode)
     {
         return Err(BootError::Protocol);
     }
     emit(serial, format_args!("RR:T02:READY revision=6\n"));
-    Ok(())
+    Ok(Facts {
+        regions,
+        count: entries.len(),
+        hhdm: hhdm.offset,
+        mode,
+    })
 }

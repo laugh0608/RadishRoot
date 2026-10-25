@@ -72,3 +72,33 @@ CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1
 三份 crate MIT 文本来自已按 Cargo.lock 校验的包内 LICENSE-MIT，仅为原 limine 文本补齐缺失的末尾 LF，其余字节不变；作为署名材料保存并放入 ESP `/licenses/`；没有整包源码进入仓库。Limine 原始文件保留在忽略的 work/t02-assets，归档内容使用固定成员白名单与尺寸 / 哈希校验，不使用不受约束的 tar 解包。EFI 及 crate 制品未对外分发。
 
 既有 QEMU / EDK II 固件与 Debian 容器工具仍仅为本地验证工具；固件不进入开发盘，完整声明保留在既有安装环境。Rust core / compiler_builtins 等工具链组成仍按前节来源记录；本批本地验证不替代未来发行的完整材料清单、原创许可选择及分发审查。
+
+## T03 已引入的内存与设备组件
+
+2026-10-25 按用户授权增加 19 个 registry 包，保留 T02 既有包版本；Cargo.lock 现在包含 2 个本地包及 22 个外部包。上游源码未修改；本地仅实现平台适配。直接依赖固定 x86_64=0.15.5（仅 instructions）、linked_list_allocator=0.10.6（无 use_spin）、virtio-drivers=0.13.0（无默认 feature），限定 target_os=none。宏 / 构建依赖在宿主执行，不作为 guest 的 std 运行库；具体传递 features 与 checksum 由本次 metadata / tree / lockfile 共同记录。
+
+| 包 / 精确版本 | 官方仓库 | 上游许可与本次保留 |
+| --- | --- | --- |
+| bit_field 0.10.3 | [bit_field](https://github.com/phil-opp/rust-bit-field) | Apache-2.0/MIT；选择 MIT；[完整文本](../../tools/boot/licenses/bit_field-0.10.3.txt) |
+| const_fn 0.4.12 | [const_fn](https://github.com/taiki-e/const_fn) | Apache-2.0 OR MIT；选择 MIT；[完整文本](../../tools/boot/licenses/const_fn-0.4.12.txt) |
+| enumn 0.1.14 | [enumn](https://github.com/dtolnay/enumn) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/enumn-0.1.14.txt) |
+| linked_list_allocator 0.10.6 | [linked_list_allocator](https://github.com/phil-opp/linked-list-allocator) | Apache-2.0/MIT；选择 MIT；[完整文本](../../tools/boot/licenses/linked_list_allocator-0.10.6.txt) |
+| log 0.4.34 | [log](https://github.com/rust-lang/log) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/log-0.4.34.txt) |
+| proc-macro2 1.0.107 | [proc-macro2](https://github.com/dtolnay/proc-macro2) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/proc-macro2-1.0.107.txt) |
+| quote 1.0.47 | [quote](https://github.com/dtolnay/quote) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/quote-1.0.47.txt) |
+| rustversion 1.0.23 | [rustversion](https://github.com/dtolnay/rustversion) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/rustversion-1.0.23.txt) |
+| safe-mmio 0.3.2 | [safe-mmio](https://github.com/google/safe-mmio) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/safe-mmio-0.3.2.txt) |
+| syn 2.0.119 | [syn](https://github.com/dtolnay/syn) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/syn-2.0.119.txt) |
+| syn 3.0.9 | [syn](https://github.com/dtolnay/syn) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/syn-3.0.9.txt) |
+| thiserror 2.0.21 | [thiserror](https://github.com/dtolnay/thiserror) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/thiserror-2.0.21.txt) |
+| thiserror-impl 2.0.21 | [thiserror-impl](https://github.com/dtolnay/thiserror) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/thiserror-impl-2.0.21.txt) |
+| unicode-ident 1.0.27 | [unicode-ident](https://github.com/dtolnay/unicode-ident) | (MIT OR Apache-2.0) AND Unicode-3.0；选择 MIT；[完整文本](../../tools/boot/licenses/unicode-ident-1.0.27.txt)，另保留 [Unicode 声明](../../tools/boot/licenses/unicode-ident-1.0.27-unicode.txt) |
+| virtio-drivers 0.13.0 | [virtio-drivers](https://github.com/rcore-os/virtio-drivers) | MIT；选择 MIT；[完整文本](../../tools/boot/licenses/virtio-drivers-0.13.0.txt) |
+| volatile 0.4.6 | [volatile](https://github.com/rust-osdev/volatile) | MIT OR Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/volatile-0.4.6.txt) |
+| x86_64 0.15.5 | [x86_64](https://github.com/rust-osdev/x86_64) | MIT/Apache-2.0；选择 MIT；[完整文本](../../tools/boot/licenses/x86_64-0.15.5.txt) |
+| zerocopy 0.8.63 | [zerocopy](https://github.com/google/zerocopy) | BSD-2-Clause OR Apache-2.0 OR MIT；选择 MIT；[完整文本](../../tools/boot/licenses/zerocopy-0.8.63.txt) |
+| zerocopy-derive 0.8.63 | [zerocopy-derive](https://github.com/google/zerocopy) | BSD-2-Clause OR Apache-2.0 OR MIT；选择 MIT；[完整文本](../../tools/boot/licenses/zerocopy-derive-0.8.63.txt) |
+
+包体来自 crates.io 官方 registry，checksum 由 Cargo.lock 固定；精确包索引、原始 / 复制许可摘要保存在 evidence/t03-preflight-20261025-63e2193/。保留全部 22 包的 MIT 文本及 unicode-ident 的 Unicode 声明，共 23 份；为保守保留归属，构建阶段宏包的许可也随本地 ESP 的 /licenses/ 保存，不声称这些包全部链接进 guest。virtio-drivers 上游 LICENSE 缺末尾换行，本地仅补 LF；limine 沿用 T02 的相同处理，其余复制字节不变。完整 8 盘复核确认这些文件与正式源逐字相同。
+
+本次未分发第三方源码、工具或镜像。原始许可文件不由摘要代替，未来发行仍需按最终链接 / 打包组成复核并确定原创许可。

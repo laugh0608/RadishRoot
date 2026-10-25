@@ -62,13 +62,16 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             "missing-response",
             "invalid-framebuffer",
             "panic",
+            "t03-invalid-range",
+            "t03-bad-capability",
+            "t03-dma-timeout",
         ] {
             let disk = boot_image::create(&context.root, runner, &manifest, &kernel, fault)?;
             boot(runner, &manifest, &qemu, &code, &vars, &disk, fault)?;
             println!("fault {fault}: verified stop");
         }
     }
-    runner.record("T02 complete: terminal serial observation followed by host termination; no guest shutdown claim")
+    runner.record("T02/T03 complete: terminal serial observation followed by host termination; no guest shutdown claim")
 }
 fn boot(
     runner: &mut Runner,
@@ -138,13 +141,17 @@ fn boot(
     ));
     let output = runner.boot(&mut command, &serial);
     runner.timeout = previous;
-    validate(&output?, fault)?;
+    let output = output?;
+    validate(&output, if fault.starts_with("t03-") { "" } else { fault })?;
+    if fault.is_empty() || fault.starts_with("t03-") {
+        crate::vm_platform::validate(&output, fault)?;
+    }
     runner.record(&format!(
         "boot={} case={fault:?} validation=pass",
         directory.display()
     ))
 }
-fn fields(line: &str) -> Result<BTreeMap<&str, &str>> {
+pub(super) fn fields(line: &str) -> Result<BTreeMap<&str, &str>> {
     let mut result = BTreeMap::new();
     for field in line.split_whitespace().skip(1) {
         let (key, value) = field
@@ -156,7 +163,7 @@ fn fields(line: &str) -> Result<BTreeMap<&str, &str>> {
     }
     Ok(result)
 }
-fn number(fields: &BTreeMap<&str, &str>, key: &str) -> Result<u64> {
+pub(super) fn number(fields: &BTreeMap<&str, &str>, key: &str) -> Result<u64> {
     let text = fields
         .get(key)
         .ok_or_else(|| Error::new("serial-fields", format!("missing {key}")))?;

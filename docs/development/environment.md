@@ -1,6 +1,6 @@
 # 开发环境清单与安装候选
 
-盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19；T01 工程与 T02 引导验证：2026-10-25（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01–T02。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 与指定 Rust nightly 均已由用户安装，实际核验范围见第 2.8–2.11 节。
+盘点日期：2026-10-14；工具文件操作、正常 Homebrew 方案及安装后核验：2026-10-19；T01 工程、T02 引导与 T03 平台验证：2026-10-25（Asia/Shanghai）；对应 MVP 文档 2.0 的 T01–T03。本文维护环境事实、精确候选和验证方法；任务进度、下一步和授权停止线只看[当前状态](../status/current.md)。本机盘点与上游元数据核对不代表安装、编译或运行成功；QEMU 与指定 Rust nightly 均已由用户安装，实际核验范围见第 2.8–2.12 节。
 
 ## 1. 本机实测
 
@@ -446,6 +446,25 @@ workspace 包含 radishroot-kernel 与 xtask，版本继承根 workspace.package
 
 这些证据关闭 T02 本批通过条件，并给 AT01 提供当前候选证据；T03–T05、M0、AT23 以及正常关机 / 写回 / 图形 / 安装仍无通过声明。硬件映射和响应对象生命周期仍依赖受信 Limine 交接，边界检查不声称安全解析恶意 bootloader 任意指针。
 
+### 2.12 T03 内存、PCI 与 DMA 边界验收
+
+2026-10-25，接续已提交的 T02（63e2193），按明确授权完成本地 T03。固定工具、Limine、固件与 QEMU 参数沿用第 2.11 节；仅新增已批准的 19 个 crate 和相应 lockfile / 许可文本，没有更新已有依赖、全局工具链或宿主设置。精确集合与功能开关见 [MVP T03](../mvp-plan.md#t03-本批实施契约)，来源见[许可登记](../governance/licensing-and-sources.md#t03-已引入的内存与设备组件)。隔离缓存仍在 work/cargo-home；xtask 没有新增外部运行依赖。
+
+| 核对项 | 实际结果 |
+| --- | --- |
+| 物理页 / 堆 | 正常候选内存图 34 段、usable=478699520；独立按整页、低 1 MiB 和 512 MiB 上界核算可分配 116710 页。1 MiB 堆物理起点 0x100000；两页测试起点 0x200000、16 KiB 对齐；实际写入 / 读回、释放后计数通过 |
+| PCI / MMIO | 固定 00:02.0、1af4:1042；6 个 capability；BAR1=0x81011000 / 0x1000，BAR4=0xc000000000 / 0x4000。UC / NX 新映射、真实寄存器读取通过，features=0x10130006e74、queue_size=256；bus_master=0，未创建队列 |
+| HAL / 隔离 | 两页清零分配、512 字节 Both bounce、清空原缓冲后 CPU copy-back、未提交取消和精确释放通过。超时状态注入同时拒绝 unshare 和原始 dma_dealloc，保留原缓冲及 bounce 到 halt；不是设备实际 DMA 或超时实验 |
+| 正常 / 失败 | 10 次正常启动均达到 T03 READY；4 类 T02 故障回归通过；t03-invalid-range / t03-bad-capability / t03-dma-timeout 分别得到 MEM_RANGE / PCI_CAPABILITY / DMA_IN_FLIGHT，均无 T03 READY |
+| 本地 Rust | fmt、宿主 / 裸机 check、严格 clippy、17 项 xtask 与 11 项 kernel lib 测试、dev / release 全新链接均通过；本机 ci-rust.py verify 成功，远端 Ubuntu Actions 未运行 |
+| 独立 ELF | dev 4216968 字节，SHA-256 `1e63e1662b2de88689f7f608ca786256c0ff12764ac47193fac19627d56b5b7e`；release 115168 字节，SHA-256 `26b721a90cc01129a7fc28a09854c662ba5b6d4042e3b19122c4072cde20587b`。header、符号、LLD map、file / shasum 一致；静态 RX / R / RW，无 RWX 或动态段；独立构建 release 与 VM 候选相同 |
+| 独立磁盘 | 8 张 1 GiB 稀疏盘，每盘主备 GPT CRC、分区范围、FAT、28 个 ESP 文件与空 DATA 通过；包括 23 份完整 crate 许可文本。正常盘前后 SHA-256 `16564880546ade65958277d223b8e4492510cd9f0783a45c49584155db023e53` 相同 |
+| 资源 | 成功套件实际分配 6422528 字节；每次全新 VARS、只读盘、1 vCPU / 512 MiB、60 秒上限；约 95 秒完成全套。本次记录的 QEMU PID / 容器名无残留，宿主终止与 wait 不代表 guest 正常关机 |
+
+完整 VM 运行在 `target/xtask-4531-1792908412840199000/`；check / host-test / dev / release 分别为 target 下的 xtask-2119-1792907937346940000、xtask-2649-1792907943234116000、xtask-2889-1792907945368498000、xtask-3337-1792907952139744000。初次单次运行及早期编译失败另行保留。独立证据在 `evidence/t03-platform-20261025-63e2193/`，含源码内容清单、日志 / ELF 副本、GPT / FAT / 串口 / ELF 复核脚本、清理记录和 SHA256SUMS；精确包元数据与许可复制摘要在 `evidence/t03-preflight-20261025-63e2193/`。候选仍含未提交源码，HEAD 不能单独代表它。
+
+T03 只在固定四级分页、单 BSP / IF=0、root bus 0 下验收；映射与页表生命周期依赖受信 Limine。上游 PciTransport Drop 有无界复位循环，当前以 ManuallyDrop 和 100000 次状态轮询控制停止，保留映射 / claim 到 halt；真实队列与设备 DMA 的完成、超时、复位和释放仍是 T04 的必要工作。AT03 / AT23 / M0、文件系统、写回、正常电源流程、GUI、安装与真机均未通过。
+
 ## 3. 安装影响与清理边界
 
 | 动作 | 写入与资源影响 | 恢复 / 清理方式 |
@@ -459,13 +478,13 @@ workspace 包含 radishroot-kernel 与 xtask，版本继承根 workspace.package
 
 Rust 与 QEMU 下载安装的 10–30 分钟仍只是未测量预算。此前 Debian 构建由 BuildKit 报告基础元数据阶段 37.2 秒、安装 RUN 阶段 29.2 秒；这些分阶段时间受网络与缓存影响，不是完整构建计时或固定预算。安装前列出包管理器实际解析的新增 / 升级项、总下载量与磁盘需求；不运行全局 upgrade，不改变 shell 配置或现有 Docker 默认 context。
 
-Limine 二进制与 Rust crate 已按第 2.11 节单独授权配对；其他业务 crates / 功能开关、SDL 宿主 runner 依赖仍属后续单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
+Limine 二进制与 Rust crate 已按第 2.11 节单独授权配对；T03 内存 / 设备依赖已按第 2.12 节单独授权引入，其余业务 crates / 功能开关、SDL 宿主 runner 依赖仍属后续单独候选，不包含在以上宿主工具安装集内。T01 最小 no_std 编译不需要先安装所有 T02–T05 依赖；形成引导镜像前必须完成 Limine 协议修订、资产哈希与许可核对。当前 raw / UEFI 方向不预装 xorriso、NASM、完整 LLVM 或 Linux Live 介质，确有实现需要时再补具体版本。
 
 此前仅在本地工具镜像引入 Debian 基础系统与五包，仓库保存构建配方及文本清单，不提交第三方二进制。已按[许可与来源策略](../governance/licensing-and-sources.md)登记；Rust nightly 已安装并记录来源 / 随包许可，见第 2.9 节；QEMU / EDK II 已在本机安装并读取许可，见第 2.8 节。QEMU formula 的 GPL-2.0-only 不覆盖所有附带固件，EDK II 依据其 `edk2-licenses.txt` 单独记录。本表不是分发许可结论，也不承诺打包这些宿主工具。
 
 ## 4. 分层验证方案
 
-以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据；Rust nightly 的版本、组件、target 与链接器核验已有第 2.9 节证据。第 2.10 节补齐 T01 工程编译、宿主检查和独立 ELF 证据，第 2.11 节补齐 T02 真实引导；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
+以下是分层验收要求。Debian 签名 / 快照策略与模拟求解已有第 2.5 节证据，工具镜像安装及 CLI 可运行性已有第 2.6 节证据；工具文件操作、独立读取及五类损坏检测已有第 2.7 节证据；QEMU 安装后的 CLI、链接、OpenSSL 与固件核验已有第 2.8 节证据；Rust nightly 的版本、组件、target 与链接器核验已有第 2.9 节证据。第 2.10 节补齐 T01 工程编译、宿主检查和独立 ELF 证据，第 2.11 节补齐 T02 真实引导，第 2.12 节补齐 T03 内存 / PCI / HAL；其余未执行的项目不能勾为通过。安装完成与业务实现完成分开验收。
 
 | 层次 | 方法与通过条件 | 失败处理 / 证据边界 |
 | --- | --- | --- |

@@ -429,13 +429,35 @@ T01 收口须同时具备真实工作区、工具链 / 配置单一来源、两�
 
 ### T03 最小内存、PCI 与 DMA 所有权
 
-- [ ] 状态：未开始
+- [x] 本地实现与真实 QEMU 验证通过；设备 DMA / 块 IO 的硬件验收留给 T04，AT03 尚未通过，见[环境清单第 2.12 节](development/environment.md#212-t03-内存pci-与-dma-边界验收)。
 
 预计 4 人日 · 前置：T02 · 验收关联：AT03
 
 **交付：**页分配 / 堆、PCI 发现、BAR 映射及 VirtIO HAL；unsafe 和 DMA 资源清单。
 
 **通过条件：**识别固定磁盘；分配对齐且不落保留区；非法范围拒绝；请求未确认结束不能释放缓冲区，M0 即有有界失败停止。
+
+#### T03 本批实施契约
+
+接续 T02 提交 63e2193。本批交付页分配、固定堆、PCI / BAR 映射和实际 virtio-drivers Hal 适配；不提前实现块读写、flush、GPT / FAT 或图形。延续单 BSP、IF=0、TCG / q35 / 512 MiB 和受信 Limine 映射交接。
+
+- **物理内存：**仅从真实内存图的 usable 完整 4 KiB 页分配；低 1 MiB 额外保留，固件 / 引导器 / 内核 / framebuffer / 已有页表不回收。固定 512 MiB 地址上界和有界分配记录；连续页和 2 的幂对齐显式检查，越界 / 零长度 / 未知释放 / 重复释放 / 耗尽返回错误，不能回退到保留区。
+- **映射与堆：**使用已验证 HHDM 访问 usable RAM；检查当前四级页表与物理地址，页表修改只用于已识别 PCI BAR 的独立 MMIO 窗口，使用 device 所需禁缓存属性并 flush TLB，不对任意地址加偏移冒充映射。固定堆从已记账的连续页建立，使用 linked_list_allocator；分配 / 释放与中断边界明确，无动态增长或备用堆。
+- **PCI：**在固定 q35 的 root bus 0 扫描配置空间，识别 modern VirtIO-blk 的 vendor / device / class，拒绝多个候选；在关闭解码 / bus master 时探测 BAR 大小并恢复寄存器，检查 32 / 64 位、溢出、页对齐及与 RAM / 保留对象冲突。能力列表有界且检查循环 / 截断，映射范围限定于已核对 BAR，随后交给实际 PciTransport。该版本上游 Drop 含无界复位循环，适配层用 ManuallyDrop 保有对象并执行有界复位，成功 / 失败都保留 MMIO 映射到停止；不执行无界 Drop。
+- **DMA：**独立记录分配、共享、提交、完成、隔离与释放状态；只有完成或确认设备停止后才可回收。超时只进入隔离，保留页及原缓冲区所有权；未知 token / 方向 / 尺寸不匹配拒绝。Hal 回调无法返回结构化错误的情况进入有串口原因的停止，不返回假地址。share 使用已登记连续 RAM 或专用 bounce 区，不假定任意 slice 物理连续；unshare 只允许未提交的取消、已完成或已确认设备停止。T03 不提交真实块 IO，因此设备 DMA 完成与复位的硬件验收留给 T04，当前通过真实 HAL 分配 / 映射与同一状态机负向用例验证边界。
+- **验证：**宿主验证保留区、对齐、复用、耗尽、溢出、PCI / capability 坏输入及 DMA 不能提前释放；裸机验证页 / 堆读写、固定磁盘识别、BAR 映射、HAL 分配 / 共享往返及注入停止。沿用 xtask，正常启动回归和 T03 故障用例均有串口事实，不以宿主模拟替代真实设备发现。只读 1 GiB 专用开发盘，单次 60 秒，结束回收任务资源。
+
+**已引入的精确依赖：**x86_64 0.15.5（仅 instructions）、linked_list_allocator 0.10.6（关闭 use_spin，以项目单核守卫管理）、virtio-drivers 0.13.0（关闭默认功能）；复用 bitflags 2.13.2。必要传递包为 bit_field 0.10.3、const_fn 0.4.12、rustversion 1.0.23、volatile 0.4.6、enumn 0.1.14、log 0.4.34、safe-mmio 0.3.2、thiserror / thiserror-impl 2.0.21、zerocopy / zerocopy-derive 0.8.63、proc-macro2 1.0.107、quote 1.0.47、syn 2.0.119 / 3.0.9、unicode-ident 1.0.27。版本与 registry 校验值已核对，按明确授权下载 / 更新 lockfile 并完成 T03 VM 验证；实际解析没有超出集合，既有包与全局工具链未升级。
+
+**unsafe 与资源责任清单：**
+
+| 入口 / 资源 | 前提、所有权与释放 |
+| --- | --- |
+| Exclusive / 固定堆 | 单 BSP、IF=0；原子 try-lock 防重入，不无界自旋；1 MiB 堆来自独占 usable 页并永久保留，分配以原 layout 释放 |
+| HHDM / 页表 | Limine 受信映射保持有效；已有页表逐页检查属于 bootloader-reclaimable 且不回收；新页表页独占、清零后发布，永久保留；MMIO 窗口无旧映射或 HHDM alias，PCD/PWT 与 PAT entry 3=UC、NX 明确核对 |
+| PCI 配置 / BAR | 仅操作选定的 00:02.0；BAR 探测前关闭解码 / bus master，恢复 BAR 后仅开 memory decode、禁 INTx；范围 / capability 校验失败立即 halt |
+| MMIO / PciTransport | HAL 仅发放已核对 BAR 的非重叠范围；适配层保留映射和 claim 到 halt；状态复位最多轮询 100,000 次，绕过上游无界 Drop；当前没有 DMA 队列 |
+| DMA RAM / bounce | 分配记录与代次防重复释放；share 期间调用者保留原缓冲独占和生命周期；Prepared 可取消，InFlight / Quarantined 拒绝 unshare 及原分配释放；超时保留全部页到停止，禁止重叠共享；真实完成 / 复位后回收留 T04 验证 |
 
 ### T04 块读写、flush 与 GPT 边界
 
@@ -935,7 +957,7 @@ MVP 完成要求全部 FR / AT 覆盖且没有未解决 P0 / P1；P2 必须不�
 
 ### 开始实施的第一步
 
-T01 已建立真实最小编译入口，T02 已取得引导与注入失败证据；接续实施依 T03–T05 取得内存、设备与存储证据，再按 T06–T13 实现第一条真实图形闭环。实际进度、下一步与授权边界统一见[当前状态](status/current.md)，本规划不构成安装依赖或写内核的授权。
+T01 已建立真实最小编译入口，T02 已取得引导与注入失败证据，T03 已取得内存、PCI / MMIO 与 DMA 生命周期约束证据；接续依 T04–T05 取得真实设备 IO 与存储证据，再按 T06–T13 实现第一条真实图形闭环。实际进度、下一步与授权边界统一见[当前状态](status/current.md)，本规划不构成安装依赖或写内核的授权。
 
 [R1]: https://www.qemu.org/docs/master/system/introduction.html
 [R2]: https://github.com/Limine-Bootloader/Limine
