@@ -115,6 +115,21 @@ extern "x86-interrupt" fn timer(_: InterruptStackFrame) {
         Port::<u8>::new(0x20).write(0x20);
     }
 }
+extern "x86-interrupt" fn keyboard(_: InterruptStackFrame) {
+    crate::ps2::irq(false);
+}
+extern "x86-interrupt" fn mouse(_: InterruptStackFrame) {
+    crate::ps2::irq(true);
+}
+pub fn wake() {
+    PENDING.store(true, Ordering::Release);
+}
+pub fn input_enabled(enabled: bool) {
+    interrupts::without_interrupts(|| {
+        out(0x21, if enabled { 0xf8 } else { 0xfe });
+        out(0xa1, if enabled { 0xef } else { 0xff });
+    });
+}
 fn out(port: u16, value: u8) {
     // SAFETY: 调用点仅 PIC/PIT 初始化，IF=0、固定 q35 端口；0x80 为传统 IO delay。
     unsafe {
@@ -149,6 +164,8 @@ pub fn initialize() -> Result<(u64, u64, u64, u64), &'static str> {
             .set_handler_fn(double_fault)
             .set_stack_index(0);
         idt[32].set_handler_fn(timer);
+        idt[33].set_handler_fn(keyboard);
+        idt[44].set_handler_fn(mouse);
         idt.load_unsafe();
     }
     // 固定单核 PIC 模式不能继承固件的 LAPIC/LINT0 路由；显式关闭本地 APIC。

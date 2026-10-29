@@ -18,6 +18,8 @@ use x86_64::{
         Size4KiB, Translate,
     },
 };
+mod surface;
+pub use surface::Display;
 const MMIO_BASE: u64 = 0xffffc00000000000;
 #[derive(Clone, Copy)]
 struct Shared {

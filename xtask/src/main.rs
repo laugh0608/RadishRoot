@@ -5,8 +5,12 @@ mod config;
 mod elf;
 mod error;
 mod process;
+mod qmp;
+mod screen;
+mod ui;
 mod vm;
 mod vm_fat;
+mod vm_graphics;
 mod vm_platform;
 mod vm_runtime;
 mod vm_storage;
@@ -27,7 +31,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--runtime-only] (headless UEFI; storage-only runs T04; fat-only runs T05)."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\nui --host [--gui] | run --gui (bounded native windows)."
         );
         return Ok(());
     }
@@ -69,6 +73,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
             runner.run(&mut context.cargo(&["fmt", "--all", "--", "--check"]))?;
             for (package, target) in [
                 ("xtask", context.host.as_str()),
+                ("radishroot-host-runner", context.host.as_str()),
                 ("radishroot-kernel", TARGET),
             ] {
                 for command in ["check", "clippy"] {
@@ -82,7 +87,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
                         target,
                     ]);
                     cmd.arg("--target-dir").arg(&checks_dir);
-                    if package == "xtask" {
+                    if package != "radishroot-kernel" {
                         cmd.arg("--all-targets");
                     } else {
                         cmd.arg("--all-features");
@@ -103,6 +108,21 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
                         "--offline",
                         "-p",
                         "xtask",
+                        "--target",
+                        &context.host,
+                    ])
+                    .arg("--target-dir")
+                    .arg(&checks_dir),
+            )?;
+            print!("{output}");
+            let output = runner.run(
+                context
+                    .cargo(&[
+                        "test",
+                        "--locked",
+                        "--offline",
+                        "-p",
+                        "radishroot-host-runner",
                         "--target",
                         &context.host,
                     ])
@@ -157,10 +177,14 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
         }
         Action::Image
         | Action::Run
+        | Action::RunGui
         | Action::TestVm
         | Action::TestStorageVm
         | Action::TestFatVm
-        | Action::TestRuntimeVm => vm::execute(&context, runner, &options.action)?,
+        | Action::TestRuntimeVm
+        | Action::TestGraphicsVm
+        | Action::TestGraphicsCases(_) => vm::execute(&context, runner, &options.action)?,
+        Action::Ui { gui } => ui::execute(&context, runner, gui)?,
         Action::Help => unreachable!(),
     }
     Ok(())

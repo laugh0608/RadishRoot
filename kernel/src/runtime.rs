@@ -15,7 +15,7 @@ pub fn initialize(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str
     writeln!(
         serial,
         "RR:T06:ENTER mode={}",
-        if facts.mode.is_empty() {
+        if facts.mode.is_empty() || facts.mode.starts_with("t07-") {
             "normal"
         } else {
             facts.mode
@@ -97,10 +97,10 @@ pub fn test(serial: &mut Serial, device: pci::Device, mode: &str) -> ! {
                 "RR:T06:FAIL code=TIMEOUT_NOT_TRIGGERED stage=inject\n"
             ));
         }
-        "t06-overflow" => run(serial, mode, None),
+        "t06-overflow" => run(serial, mode, None, None),
         "t06-invalid-input" => {
             let disk = Driver::new(device, false).expect("input control device");
-            run(serial, mode, Some(disk));
+            run(serial, mode, Some(disk), None);
         }
         _ => interrupts::fatal(format_args!("RR:T06:FAIL code=UNKNOWN_TEST stage=inject\n")),
     }
@@ -110,7 +110,8 @@ fn now() -> u64 {
         interrupts::fatal(format_args!("RR:T06:FAIL code={} stage=clock\n", e.code()))
     })
 }
-pub fn run(serial: &mut Serial, mode: &str, mut disk: Option<Driver>) -> ! {
+pub fn run(serial: &mut Serial, mode: &str, mut disk: Option<Driver>, facts: Option<&Facts>) -> ! {
+    let mut graphics = None;
     let mut events = Queue::new();
     if mode == "t06-overflow" {
         for id in 0..65 {
@@ -252,8 +253,22 @@ pub fn run(serial: &mut Serial, mode: &str, mut disk: Option<Driver>) -> ! {
                 if mode.is_empty() { "normal" } else { mode }
             );
             reported = true;
+            if let Some(facts) = facts {
+                graphics = Some(
+                    crate::graphics::Graphics::new(serial, facts).unwrap_or_else(|code| {
+                        interrupts::fatal(format_args!(
+                            "RR:T07:FAIL code={code} stage=initialize\n"
+                        ))
+                    }),
+                );
+            }
         }
-        interrupts::idle(!events.is_empty());
+        let input_pending = graphics.as_mut().is_some_and(|g| {
+            g.turn(serial).unwrap_or_else(|code| {
+                interrupts::fatal(format_args!("RR:T07:FAIL code={code} stage=loop\n"))
+            })
+        });
+        interrupts::idle(!events.is_empty() || input_pending);
     }
 }
 pub fn wait_error(error: WaitError, elapsed: u64, stage: &str) {

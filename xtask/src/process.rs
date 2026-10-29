@@ -111,15 +111,24 @@ impl Runner {
         Ok(())
     }
     pub fn run(&mut self, command: &mut Command) -> Result<String> {
-        self.run_inner(command, None)
+        self.run_inner(command, None, None)
     }
     pub fn boot(&mut self, command: &mut Command, serial: &Path, runtime: bool) -> Result<String> {
-        self.run_inner(command, Some((serial, runtime)))
+        self.run_inner(command, Some((serial, runtime)), None)
+    }
+    pub fn interactive(
+        &mut self,
+        command: &mut Command,
+        serial: &Path,
+        monitor: &mut dyn FnMut() -> Result<bool>,
+    ) -> Result<String> {
+        self.run_inner(command, Some((serial, false)), Some(monitor))
     }
     fn run_inner(
         &mut self,
         command: &mut Command,
         serial: Option<(&Path, bool)>,
+        mut monitor: Option<&mut dyn FnMut() -> Result<bool>>,
     ) -> Result<String> {
         self.sequence += 1;
         let prefix = format!("{:03}", self.sequence);
@@ -141,6 +150,7 @@ impl Runner {
             .spawn()
             .map_err(|e| Error::new("spawn", e.to_string()))?;
         let pid = child.id();
+        self.record(&format!("{prefix} started_pid={pid}"))?;
         // The child creates its own process group before exec. Only this group is signalled.
         let mut timed_out = false;
         let mut observed = false;
@@ -150,7 +160,24 @@ impl Runner {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
                 Ok(None) if started.elapsed() < self.timeout => {
-                    if let Some((path, runtime)) = serial {
+                    if let Some(callback) = monitor.as_mut() {
+                        match callback() {
+                            Ok(true) => {
+                                observed = true;
+                                break stop_and_wait(&mut child, pid)?;
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                stop_and_wait(&mut child, pid)?;
+                                self.record(&format!(
+                                    "{prefix} pid={pid} monitor_error={} elapsed_ms={} reaped=1",
+                                    error.kind,
+                                    started.elapsed().as_millis()
+                                ))?;
+                                return Err(error);
+                            }
+                        }
+                    } else if let Some((path, runtime)) = serial {
                         let output = match read_output(path) {
                             Ok(output) => output,
                             Err(error) => {

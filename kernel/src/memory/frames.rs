@@ -19,6 +19,7 @@ pub enum Purpose {
     Heap,
     PageTable,
     Dma,
+    Surface,
     Test,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -102,6 +103,16 @@ impl Frames {
         align_pages: usize,
         purpose: Purpose,
     ) -> Result<Block, Error> {
+        self.allocate_below(pages, align_pages, purpose, LIMIT)
+    }
+    /// 限定本次分配的可用物理范围；测试和有地址约束的调用共用真实分配器。
+    pub fn allocate_below(
+        &mut self,
+        pages: usize,
+        align_pages: usize,
+        purpose: Purpose,
+        physical_end: u64,
+    ) -> Result<Block, Error> {
         if !self.initialized || pages == 0 || pages > (LIMIT / PAGE) as usize {
             return Err(Error::Range);
         }
@@ -116,7 +127,10 @@ impl Frames {
         if pages > self.available {
             return Err(Error::Exhausted);
         }
-        let upper = (LIMIT / PAGE) as usize;
+        let upper = (physical_end.min(LIMIT) / PAGE) as usize;
+        if upper < 256 || pages > upper - 256 {
+            return Err(Error::Exhausted);
+        }
         let mut start = 256;
         while start <= upper - pages {
             start = start.checked_add(align_pages - 1).ok_or(Error::Range)? & !(align_pages - 1);
@@ -234,6 +248,11 @@ mod tests {
     fn bounded_failure_does_not_consume_pages() {
         let mut f = frames();
         let n = f.available();
+        assert_eq!(
+            f.allocate_below(1, 1, Purpose::Surface, 0x100000),
+            Err(Error::Exhausted)
+        );
+        assert_eq!(f.available(), n);
         for (p, a, e) in [
             (0, 1, Error::Range),
             (1, 3, Error::Alignment),

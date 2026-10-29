@@ -124,6 +124,14 @@ pub fn create(
         "t06-invalid-input",
         "t06-timeout",
         "t06-no-hpet",
+        "t07-resolution",
+        "t07-surface-allocation",
+        "t07-surface-description",
+        "t07-ps2-timeout",
+        "t07-corrupt-input",
+        "t07-input-overflow",
+        "t07-clipping",
+        "t07-redraw",
     ]
     .contains(&fault)
     {
@@ -147,7 +155,7 @@ pub fn create(
     let mut licenses =
         fs::read_dir(root.join("tools/boot/licenses"))?.collect::<std::io::Result<Vec<_>>>()?;
     licenses.sort_by_key(|entry| entry.file_name());
-    if licenses.is_empty() || licenses.len() > 32 {
+    if licenses.is_empty() || licenses.len() > 64 {
         return Err(Error::new("licenses", "invalid license count"));
     }
     for entry in licenses {
@@ -170,7 +178,12 @@ pub fn create(
     fs::write(
         inputs.join("limine.conf"),
         format!(
-            "timeout: 0\nserial: yes\n\n/RadishRoot\n    protocol: limine\n    path: boot():/kernel.elf\n    resolution: 1024x768x32\n    cmdline: {fault}\n"
+            "timeout: 0\nserial: yes\n\n/RadishRoot\n    protocol: limine\n    path: boot():/kernel.elf\n    resolution: {}\n    cmdline: {fault}\n",
+            if fault == "t07-resolution" {
+                "800x600x32"
+            } else {
+                "1024x768x32"
+            }
         ),
     )?;
     let name = format!(

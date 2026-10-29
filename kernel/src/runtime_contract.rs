@@ -113,22 +113,24 @@ impl Wait {
     }
 }
 
-pub struct Queue<T: Copy> {
-    entries: [Option<T>; QUEUE_CAPACITY],
+pub type Queue<T> = BoundedQueue<T, QUEUE_CAPACITY>;
+pub struct BoundedQueue<T: Copy, const N: usize> {
+    entries: [Option<T>; N],
     head: usize,
     length: usize,
     rejected: u64,
     saturated: bool,
 }
-impl<T: Copy> Default for Queue<T> {
+impl<T: Copy, const N: usize> Default for BoundedQueue<T, N> {
     fn default() -> Self {
         Self::new()
     }
 }
-impl<T: Copy> Queue<T> {
+impl<T: Copy, const N: usize> BoundedQueue<T, N> {
     pub const fn new() -> Self {
+        assert!(N > 0);
         Self {
-            entries: [None; QUEUE_CAPACITY],
+            entries: [None; N],
             head: 0,
             length: 0,
             rejected: 0,
@@ -136,7 +138,7 @@ impl<T: Copy> Queue<T> {
         }
     }
     pub fn push(&mut self, item: T) -> Result<(), T> {
-        if self.length == QUEUE_CAPACITY {
+        if self.length == N {
             if let Some(n) = self.rejected.checked_add(1) {
                 self.rejected = n;
             } else {
@@ -144,7 +146,7 @@ impl<T: Copy> Queue<T> {
             }
             return Err(item);
         }
-        self.entries[(self.head + self.length) % QUEUE_CAPACITY] = Some(item);
+        self.entries[(self.head + self.length) % N] = Some(item);
         self.length += 1;
         Ok(())
     }
@@ -153,12 +155,15 @@ impl<T: Copy> Queue<T> {
             return None;
         }
         let item = self.entries[self.head].take();
-        self.head = (self.head + 1) % QUEUE_CAPACITY;
+        self.head = (self.head + 1) % N;
         self.length -= 1;
         item
     }
     pub fn is_empty(&self) -> bool {
         self.length == 0
+    }
+    pub fn clear(&mut self) {
+        while self.pop().is_some() {}
     }
     pub fn rejected(&self) -> (u64, bool) {
         (self.rejected, self.saturated)

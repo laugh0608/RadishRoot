@@ -582,7 +582,7 @@ M0 退出：本阶段全部任务满足各自通过条件，证据记录于当�
 
 ### T07 键盘鼠标与 framebuffer 基础
 
-- [ ] 状态：实施契约与验证方案已整理；实现未开始，AT07 基础子项未执行
+- [x] 状态：共享视图、后台页、PS/2 与宿主 runner 已实现；固定本地平台的自动与窗口基础验收通过，AT07 仅记录基础子项，见[环境清单第 2.18 节](development/environment.md#218-t07-图形输入与窗口验收)
 
 预计 4 人日 · 前置：T06 · 验收关联：AT07
 
@@ -592,7 +592,7 @@ M0 退出：本阶段全部任务满足各自通过条件，证据记录于当�
 
 #### T07 实施契约与验证方案
 
-2026-10-25，接续 `6a6616e feat(t06): 实现异常时钟与单核事件循环`。以下为待实施方案；本轮仅做只读核对与文档设计，未引入依赖、启动 GUI / VM 或执行 T07 验收。T07 交付可操作的输入 / 显示基础校验页及同视图宿主 runner；真实文件列表、完整双面板、shell、模态窗口、滚动条与电源分别留 T08–T13 及后续任务。AT07 只能登记本批基础子项，不能整体勾选。
+2026-10-25 确认方案，2026-10-29 基于 `e1b72f4` 实施并完成本地验证。以下维护实际实施契约；失败尝试、资源与证据见环境清单第 2.18 节。T07 交付可操作的输入 / 显示基础校验页及同视图宿主 runner；真实文件列表、完整双面板、shell、模态窗口、滚动条与电源分别留 T08–T13 及后续任务。AT07 只能登记本批基础子项，不能整体勾选。
 
 **接入、所有权与可见结果**
 
@@ -600,12 +600,12 @@ M0 退出：本阶段全部任务满足各自通过条件，证据记录于当�
 - `boot::Facts` 保留经过 T02 验证的 framebuffer 描述与地址，不能稍后绕过校验重读一个无界像素切片。复用 Limine 的现有 framebuffer 映射，验证物理范围、虚拟地址和可写映射；不把设备内存纳入 Frames，不另建不同缓存属性的别名，也不把任意物理地址直接强转成 RAM 引用。
 - 默认只读存储探测后初始化显示 / 输入并进入同一事件循环；T06 的真实 tick、时钟、计量与异常验证仍成立。旧 T02–T06 独立用例保留原终态；正常路径的 T06 READY 在 T07 建立后只是中间证据。正常 release 不接受测试白名单注入。
 - 基础页使用英文，明确标题为输入与显示校验，显示真实尺寸 / 格式、色块、ASCII 字形、带边框的有限文本输入区、指针位置及左键状态。提供两个可聚焦目标，以点击 / Tab 改变焦点、Enter 激活计数、Esc 清除校验页当前输入；不伪装成已经可用的文件管理器。文本区最多 128 字节，超限拒绝并显示文字状态，已有内容保留；UTF-8 展示遇到缺字用占位，原始值不改写。
-- 样式集中映射第 5 节的 background / surface / text / muted / border / focus / accent / success / warning / error，先使用既有 Workbench 方向。指针、焦点与错误同时有形状 / 文字差异；字体候选为 embedded-graphics 内建 ASCII 字体，实际字号和对比度在 QEMU 上核对后冻结，不下载独立字体或外部图标包。
+- 样式集中映射第 5 节的 background / surface / text / muted / border / focus / accent / success / warning / error，先使用既有 Workbench 方向。指针、焦点与错误同时有形状 / 文字差异；使用 embedded-graphics 内建 ASCII 6×10 字体，800×600 以上为 10×20；已在 QEMU 与 SDL 窗口核对可读性，不下载独立字体或外部图标包。
 
 **framebuffer、DrawTarget 与内存边界**
 
 - 继续要求 RGB、32 bpp、三个互不重叠的 8 位通道；不得默认内存一定是 BGRA 或 pitch=width×4。地址、pitch×height、像素偏移和缓冲区容量都使用 checked 运算；T02 保留既有交接验证，T07 再检查渲染资源上限。后台使用紧密排列的规范 RGB 像素，present 按实际 mask 打包，只写每行可见 width×4 字节，行尾 padding 保持不变；有对齐证明才用宽写，否则逐字节 volatile 写设备映射。
-- 1024×768×4 的后台缓冲区为 3145728 字节，超过当前 1 MiB 堆。拟通过既有 Frames 增加明确的 Surface 分配用途及单一所有者，直接预留、清零并持有页面；堆仍为 1 MiB。渲染上限拟为 4194304 像素 / 16 MiB，外加两页边界哨兵和按页取整；超限或实际分配失败返回明确错误，不缩小尺寸后假装全屏成功。基线后台分配为 768 页，连同前后哨兵共 770 页；哨兵是越界检测，不称硬件 guard。
+- 1024×768×4 的后台缓冲区为 3145728 字节，超过当前 1 MiB 堆。通过既有 Frames 增加明确的 Surface 分配用途及单一所有者，直接预留、清零并持有页面；堆仍为 1 MiB。渲染上限为 4194304 像素 / 16 MiB，外加两页边界哨兵和按页取整；超限或实际分配失败返回明确错误，不缩小尺寸后假装全屏成功。基线后台分配为 768 页，连同前后哨兵共 770 页；哨兵是越界检测，不称硬件 guard。
 - 分配账本更新放在短临界区，数 MiB 清零、渲染、拷贝均在锁外且允许定时 IRQ。Surface 不可复制，slice 不得长于所有者生命周期；所有读写结束才可释放，正常运行期间持有。物理页计量包含后台缓冲区，单独报告可用像素字节 / 实际页占用，不与堆再相加。任一初始化失败仅释放已经证明没有引用的本次 RAM 分配，保持旧 DMA 所有权边界。
 - DrawTarget 的逻辑坐标有符号，负坐标、四边越界及矩形端点溢出先裁剪 / 拒绝，不能先转 usize。背景、文字、光标都画入后台；先完整重画再 present，不做未测量的局部刷新或直接擦写前台光标。只有状态变化置 dirty，静止时不每 tick 重画；每轮最多一次有界整帧，处理完本轮输入后绘制，记录耗时但不据此声称 AT18 达标。
 - 基线请求 1024×768，另验证真实 800×600。实际尺寸从响应读取，布局按可用区域裁剪；小于 320×240、超过渲染上限或不能安全映射时保持串口诊断并受控停止，不继续危险绘制。该停止属于明确的不支持状态，不能计为图形成功。
@@ -614,7 +614,7 @@ M0 退出：本阶段全部任务满足各自通过条件，证据记录于当�
 
 - 固定 q35 的 i8042 双端口，选择键盘 Scan Code Set 2、关闭控制器翻译、US 104 布局；pc-keyboard 只接收 i8042 已组成的字节，不重复执行 GPIO 级 PS/2 位解码。鼠标复位为标准三字节、ID=0、1:1 缩放 / stream 模式，T07 不启用滚轮协商或 USB 输入。
 - HPET / IDT 就绪后，在 PIC 屏蔽键鼠 IRQ 的阶段完成控制器禁用、有限清空输出、配置读写与读回、自检 / 端口检查、设备 reset / ACK / BAT、键盘扫描集设定与查询、鼠标身份确认及启用。ACK / RESEND 按目标端口和事务阶段解释，AUX 状态用于分流；回复不能误当普通输入。只写必要控制位，不使用可能改变 A20 或重置机器的输出端口命令。
-- 普通控制器 / ACK 等待候选上限 100 ms、设备 reset 1 s、整个初始化 3 s；另设每步 100000 次轮询保险。RESEND 最多重发两次；真实超时、次数耗尽、意外回复、parity / timeout 状态分别记录阶段与端口。失败屏蔽输入 IRQ 并保留串口原因；显示已安全建立时显示 Input unavailable，不能打印 T07 READY。没有隐藏的轮询键盘 fallback。
+- 普通控制器 / ACK 等待上限 100 ms、设备 reset 1 s、整个初始化 3 s；另设每步 100000 次轮询保险。RESEND 最多重发两次；真实超时、次数耗尽、意外回复、parity / timeout 状态分别记录阶段与端口。失败屏蔽输入 IRQ 并保留串口原因；显示已安全建立时显示 Input unavailable，不能打印 T07 READY。没有隐藏的轮询键盘 fallback。
 - 最后在现有 PIC 模式开放 IRQ1、IRQ12 及 slave cascade IRQ2，保留 IRQ0；slave IRQ 应答先 slave 再 master。ISR 每次最多读取 32 个现成字节，记录来源 / 错误位到固定 256 项 raw FIFO，然后应答；不等待 ACK、不分配、解码、打印、绘图或调用服务。剩余待收字节由主循环的有限补读处理，避免达到 ISR 批量上限后因缺新边沿而永远搁置。
 - 原始 FIFO 采用单 BSP 中断生产、主循环关中断短批量取出的明确封装，复用已有队列纯规则；不能无保护共享普通 Queue，也不能让 ISR 获取被打断流程的锁。主循环每轮最多解码 64 个 raw 项，再将类型化 Key / Text / PointerMove / PointerButton / InputReset 送入现有 64 项事件队列，每轮最多消费 16 项。容量、每轮限额、计数饱和和最大等待均集中定义。
 - 按键保留按下 / 重复 / 释放与 modifiers；可打印文本只在合适的按下 / 重复时产生，释放不重复输入。Shift / Caps 的文本结果、扩展码、方向键、Backspace / Tab / Enter / Esc 和 Ctrl / Alt 组合独立验证；不把控制组合偷偷转换为普通字符，不承诺 IME / 中文输入。
@@ -623,19 +623,20 @@ M0 退出：本阶段全部任务满足各自通过条件，证据记录于当�
 
 **依赖版本与引入边界**
 
-| 候选 | 放置与特性 | 新增影响及待核验项 |
+| 已引入组件 | 放置与特性 | 影响及核验边界 |
 | --- | --- | --- |
 | embedded-graphics `=0.8.2` | kernel lib / shared view，default-features=false | no_std 绘图、DrawTarget 与内建字形；上游 MIT OR Apache-2.0。新传递依赖包括 graphics-core、az、byteorder、float-cmp、micromath 等，按最终 lock 精确列出 |
-| pc-keyboard `=0.9.0` | 内核输入纯解码，关闭非必要特性 | 上游 MIT OR Apache-2.0；核对该版本 API / 特性与固定 nightly，不能沿用旧版示例接口直接假定可编译 |
-| embedded-graphics-simulator `=0.8.0` | host-runner 默认无 SDL，显式 gui 特性启用 with-sdl | 上游 MIT OR Apache-2.0；新增 image（上游仅启用 PNG）/ base64，GUI 还引入 sdl2 0.38 系列和 ouroboros 等；不得进入裸机依赖图 |
+| pc-keyboard `=0.9.0` | 内核输入纯解码，关闭非必要特性 | 上游 MIT OR Apache-2.0；已按该版本 API 适配并在固定 nightly 验证 |
+| embedded-graphics-simulator `=0.8.0` | host-runner 默认无 SDL，显式 gui 特性启用 with-sdl | 上游 MIT OR Apache-2.0；新增 image（上游仅启用 PNG）/ base64，GUI 引入 sdl2 0.38.0 和 ouroboros 等；不得进入裸机依赖图 |
 | serde_json `=1.0.154` | 仅 xtask QMP 通道，默认 std，不启用 preserve_order 等可选能力 | 用结构化 JSON 校验 QMP，避免手写宽松 JSON parser；新增宿主依赖闭包须登记，不能让 xtask 继续被描述为 std-only |
-| 已安装的原生 SDL 兼容层 | sdl2-compat 2.32.72 → SDL3 3.4.16，仅宿主动态链接 | 本轮只读 sdl2-config / 安装收据 / 库路径确认存在，未证明 GUI 可用。通过单次子进程的精确链接路径复用，不改 shell / 全局库路径，不启用 bundled、静态打包或安装 CMake |
+| sdl2 `=0.38.0` | host-runner 可选直接依赖，仅 gui | 用户另行批准从既有传递闭包显式列入，以原始事件保留 Esc / FocusLost；无额外版本或系统安装 |
+| 已安装的原生 SDL 兼容层 | sdl2-compat 2.32.72 → SDL3 3.4.16，仅宿主动态链接 | 已核对 sdl2-config / 安装收据 / 库摘要，并完成真实 SDL 窗口交互。通过单次子进程的精确链接路径复用，不改 shell / 全局库路径，不启用 bundled、静态打包或安装 CMake |
 
-依赖引入范围包括精确直接版本、功能开关、必要传递闭包、lockfile 增量和许可材料；具体授权及执行状态统一见[当前状态](status/current.md#已确认范围与停止线)。实施时在隔离缓存中解析并登记必要传递包的精确版本、来源和校验值，再核对新增锁项与目标依赖图；已确认范围内直接推进，不重复审批。不得更新现有无关锁项；出现额外直接包、非必要传递包、系统安装或超出预算时先说明差异。字形保留精确 crate 内字体来源与声明，不能只用 crate 总许可代替字体核对；原生兼容层只能先作候选，链接或事件语义失败须报告，不能自动安装 SDL2 Classic 或迁移宿主图形栈。
+依赖引入范围包括精确直接版本、功能开关、必要传递闭包、lockfile 增量和许可材料；具体授权及执行状态统一见[当前状态](status/current.md#已确认范围与停止线)。实施时在隔离缓存中解析并登记必要传递包的精确版本、来源和校验值，再核对新增锁项与目标依赖图；已确认范围内直接推进，不重复审批。不得更新现有无关锁项；出现额外直接包、非必要传递包、系统安装或超出预算时先说明差异。字形保留精确 crate 内字体来源与声明，不能只用 crate 总许可代替字体核对；原生兼容层的本地兼容证据不扩大为其他平台支持，新的链接或事件语义失败须报告，不能自动安装 SDL2 Classic 或迁移宿主图形栈。
 
 **验证入口与判定**
 
-拟增加 `ui --host`（无窗口输出）、`ui --host --gui`（交互窗口）、`run --gui`（QEMU Cocoa）及 `test --vm --graphics-only`；均由 xtask 同一编排管理，当前不存在。host-runner 默认关闭 SDL，普通 check / host 测试与 CI 可验证无窗口共享视图；GUI 构建 / 运行单独明确记录，不能在缺 SDL 时跳过后仍宣称 GUI 通过。宿主包不进入裸机构建，CI 的新增检查随实际入口同步，不预先建立空成功任务。
+已建立 `ui --host`（无窗口输出）、`ui --host --gui`（交互窗口）、`run --gui`（QEMU Cocoa）及 `test --vm --graphics-only`及按同一用例选择的 `--graphics-cases CASE,...`；均由 xtask 同一编排管理。host-runner 默认关闭 SDL，普通 check / host 测试与 CI 可验证无窗口共享视图；GUI 构建 / 运行单独明确记录，不能在缺 SDL 时跳过后仍宣称 GUI 通过。宿主包不进入裸机构建，CI 现有 check / test 分派包含无 SDL 的 host-runner；远端实际 Actions 未在本批运行。
 
 - 宿主先验证纯几何 / 像素转换 / padded pitch、负坐标 / 极限尺寸、前后哨兵、独立计算的色块像素和至少一组字形行；input fixture 覆盖 make / break / repeat / modifiers、ACK 交错、鼠标负值 / 溢出 / 重同步、队列丢失后的 reset 与合法恢复。容量拒绝不增加分配值，重复绘制后计量稳定；共享视图相等不能替代独立像素期望。
 - VM 自动交互走任务私有 Unix QMP socket，不开 TCP / VNC / 网络。xtask 有界解析 greeting / capabilities / reply ID / error / 异步事件，消息上限 64 KiB、单回复 3 s、整个用例 60 s；`input-send-event` 注入键盘、相对鼠标和按钮，经真实 PS/2 链路到内核，不能直接向应用塞“已解码输入”。正常序列按 guest 已处理计数推进，防止测试注入本身制造未声明的设备溢出。
@@ -664,7 +665,7 @@ M0 退出：本阶段全部任务满足各自通过条件，证据记录于当�
 4. 自动单 VM 仍限 60 s；普通宿主子命令 120 s，新图形依赖首次宿主构建可显式限 600 s，不全局放宽旧入口。自动验证含构建总限 60 分钟，预计 20–35 分钟；另宿主 SDL 窗口和 QEMU Cocoa 各最多 10 分钟，总验证上限 80 分钟（不含编码 / 等待用户操作）。达到任一资源上限即停止并保留失败，新增重试需先核对余量。
 5. GUI / VM 按 current 中的明确授权在实施阶段启动，记录 PID、容器、socket 与输出路径；结束仅回收本任务进程和私有 socket，保留新旧盘、VARS、截图及失败材料，不清理旧证据。缺少窗口操作条件时先交付可独立完成部分，窗口证据留未验收项。
 
-候选与接口依据：[embedded-graphics 0.8.2](https://docs.rs/crate/embedded-graphics/0.8.2)、[pc-keyboard 0.9.0](https://docs.rs/pc-keyboard/0.9.0/pc_keyboard/)、[simulator 0.8.0 的 SDL 特性](https://docs.rs/crate/embedded-graphics-simulator/0.8.0/features)、[serde_json 1.0.154](https://docs.rs/crate/serde_json/1.0.154)、[SDL 兼容层说明](https://github.com/libsdl-org/sdl2-compat)、[QEMU 11.1.2 i8042](https://github.com/qemu/qemu/blob/v11.1.2/hw/input/pckbd.c)及[PS/2 实现](https://github.com/qemu/qemu/blob/v11.1.2/hw/input/ps2.c)、[QMP 输入与屏幕导出](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#input)。上游文档和本机库存在性只支持方案，固定版本解析、兼容性、许可归档及实际验收均须在获批实施时完成。
+候选与接口依据：[embedded-graphics 0.8.2](https://docs.rs/crate/embedded-graphics/0.8.2)、[pc-keyboard 0.9.0](https://docs.rs/pc-keyboard/0.9.0/pc_keyboard/)、[simulator 0.8.0 的 SDL 特性](https://docs.rs/crate/embedded-graphics-simulator/0.8.0/features)、[serde_json 1.0.154](https://docs.rs/crate/serde_json/1.0.154)、[SDL 兼容层说明](https://github.com/libsdl-org/sdl2-compat)、[QEMU 11.1.2 i8042](https://github.com/qemu/qemu/blob/v11.1.2/hw/input/pckbd.c)及[PS/2 实现](https://github.com/qemu/qemu/blob/v11.1.2/hw/input/ps2.c)、[QMP 输入与屏幕导出](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#input)。上游文档和本机库存在性只支持方案，固定版本解析、许可归档和本地实际验收见环境清单第 2.18 节，不据此扩大其他宿主或真机支持。
 
 ### T08 明确类型与最小真实文件服务
 

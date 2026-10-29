@@ -14,6 +14,8 @@ bench = false
 limine = { version = "=0.6.5", default-features = false }
 uart_16550 = { version = "=0.9.0", default-features = false }
 gpt_disk_io = { version = "=0.17.0", default-features = false }
+embedded-graphics = { version = "=0.8.2", default-features = false }
+pc-keyboard = { version = "=0.9.0", default-features = false }
 
 fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "38b3a7950bf0e765e34286d1dfe76c519ee347e2", default-features = false, features = ["alloc", "lfn", "unicode"] }
 

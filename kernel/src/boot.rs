@@ -77,6 +77,8 @@ pub struct Facts {
     pub hhdm: u64,
     pub mode: &'static str,
     pub rsdp: Option<u64>,
+    pub framebuffer: Framebuffer,
+    pub framebuffer_address: u64,
 }
 pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
     emit(serial, format_args!("\nRR:T02:ENTER\n"));
@@ -90,6 +92,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         && !mode.starts_with("t04-")
         && !mode.starts_with("t05-")
         && !mode.starts_with("t06-")
+        && !mode.starts_with("t07-")
     {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
@@ -217,6 +220,14 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t06-invalid-input",
         "t06-timeout",
         "t06-no-hpet",
+        "t07-resolution",
+        "t07-surface-allocation",
+        "t07-surface-description",
+        "t07-ps2-timeout",
+        "t07-corrupt-input",
+        "t07-input-overflow",
+        "t07-clipping",
+        "t07-redraw",
     ]
     .contains(&mode)
     {
@@ -229,5 +240,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         hhdm: hhdm.offset,
         mode,
         rsdp: RSDP.response().map(|r| r.address as u64),
+        framebuffer,
+        framebuffer_address: fb.address() as u64,
     })
 }

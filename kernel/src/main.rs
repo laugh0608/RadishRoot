@@ -7,10 +7,12 @@ mod block_driver;
 mod boot;
 mod clock;
 mod exclusive;
+mod graphics;
 mod heap;
 mod interrupts;
 mod pci;
 mod platform_memory;
+mod ps2;
 mod runtime;
 mod serial;
 mod t03;
@@ -44,11 +46,19 @@ pub extern "C" fn _start() -> ! {
                         let _ = writeln!(serial, "RR:T05:DETAIL error={error:?}");
                         let _ = writeln!(serial, "RR:T05:FAIL code={} stage=fat", error.code());
                     }
-                } else if let Err(error) = t04::run(&mut serial, device, facts.mode) {
+                } else if let Err(error) = t04::run(
+                    &mut serial,
+                    device,
+                    if facts.mode.starts_with("t07-") {
+                        ""
+                    } else {
+                        facts.mode
+                    },
+                ) {
                     let _ = writeln!(serial, "RR:T04:DETAIL error={error:?}");
                     let _ = writeln!(serial, "RR:T04:FAIL code={} stage=storage", error.code());
-                } else if facts.mode.is_empty() {
-                    runtime::run(&mut serial, "", None);
+                } else if facts.mode.is_empty() || facts.mode.starts_with("t07-") {
+                    runtime::run(&mut serial, "", None, Some(&facts));
                 }
             }
             Err(code) => {

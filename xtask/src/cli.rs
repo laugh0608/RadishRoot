@@ -8,10 +8,14 @@ pub enum Action {
     TestHost,
     Image,
     Run,
+    RunGui,
     TestVm,
     TestStorageVm,
     TestFatVm,
     TestRuntimeVm,
+    TestGraphicsVm,
+    TestGraphicsCases(Vec<&'static str>),
+    Ui { gui: bool },
 }
 #[derive(Debug)]
 pub struct Options {
@@ -36,10 +40,29 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["test", "--host"] => Action::TestHost,
         ["image"] => Action::Image,
         ["run", "--serial"] => Action::Run,
+        ["run", "--gui"] => Action::RunGui,
         ["test", "--vm"] => Action::TestVm,
         ["test", "--vm", "--storage-only"] => Action::TestStorageVm,
         ["test", "--vm", "--fat-only"] => Action::TestFatVm,
         ["test", "--vm", "--runtime-only"] => Action::TestRuntimeVm,
+        ["test", "--vm", "--graphics-only"] => Action::TestGraphicsVm,
+        ["test", "--vm", "--graphics-cases", selected] => {
+            let mut cases = Vec::new();
+            for value in selected.split(',') {
+                let case = crate::vm_graphics::CASES
+                    .iter()
+                    .copied()
+                    .find(|case| *case == value)
+                    .ok_or_else(|| Error::usage("unknown T07 graphics case"))?;
+                if cases.contains(&case) {
+                    return Err(Error::usage("duplicate T07 graphics case"));
+                }
+                cases.push(case);
+            }
+            Action::TestGraphicsCases(cases)
+        }
+        ["ui", "--host"] => Action::Ui { gui: false },
+        ["ui", "--host", "--gui"] => Action::Ui { gui: true },
         ["build", "--profile", profile] | ["build", "--profile", profile, "--fresh"]
             if ["dev", "release"].contains(profile) =>
         {
@@ -94,6 +117,8 @@ mod tests {
         );
         for s in [
             "run",
+            "test --vm --graphics-cases unknown",
+            "test --vm --graphics-cases t07-redraw,t07-redraw",
             "test --vm --runtime-only --fat-only",
             "test --vm --runtime-only --storage-only",
             "build",

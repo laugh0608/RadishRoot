@@ -129,3 +129,66 @@ T03 提交复核时，`git diff --cached --check` 对 zerocopy 与 zerocopy-deri
 关闭默认 feature，仅启用 alloc / lfn / unicode；不启用 std、chrono 或默认日志等级。复用既有 bitflags 2.13.2 与 log 0.4.34，保留全部 30 个 registry 包版本和 checksum；合计 31 个外部包、32 份许可文本。no_std 使用库内 IO traits，无新增 core_io / byteorder。v0.3.6 的 no_std 路线涉及不同 IO 依赖，因此本批选用精确 commit，不跟随 master，也未宣称已验证 v0.3.6 的工具链兼容性。
 
 来源、commit、feature 及原始 / 复制许可摘要保存于 `evidence/t05-preflight-20261025-4bacb57/fatfs-identity.json`；Cargo.lock 固定 Git 来源，真实编译 / 运行结果与候选冻结状态以 current 指向的 T05 证据为准。Git commit 固定不等于对所有 FAT 用法的安全或兼容承诺；当前仅验证项目 DATA 接口及合成材料。
+
+## T07 图形、输入与宿主依赖
+
+2026-10-29 按已确认方案引入 embedded-graphics =0.8.2、pc-keyboard =0.9.0、embedded-graphics-simulator =0.8.0 和 serde_json =1.0.154。simulator 的事件封装把 Esc 转成 Quit 且不提供 FocusLost，用户另行批准把原闭包内 sdl2 =0.38.0 显式列为 host-runner 的可选直接依赖；使用原始 SDL 事件保留 Esc 清空与失焦 reset，不新增系统库或版本。
+
+新增 46 个 registry 包（9 个内核构建闭包、37 个仅宿主闭包），包体合计 15349696 字节。原有 31 个外部包的版本、来源、checksum 与解析后的依赖关系保持不变。新包摘要由 Cargo.lock 固定，来源为 crates.io registry；精确声明、原始 / 复制许可摘要与闭包记录在 evidence/t07-runtime-20261029-e1b72f4/。没有整包源码迁入正式仓库、修改上游源码或对外分发。
+
+内核两项直接依赖关闭默认 feature，保留 no_std；宿主 runner 默认关闭 SDL，gui 特性启用 simulator/with-sdl 和 sdl2；不启用 bundled 或 static-link。serde_json 只用于 xtask 的 QMP 结构化协议，xtask 自 T07 起不再是仅标准库。下表按最终锁列出新增包；构建辅助包不等同于 guest 运行链接组成。
+
+| 包 / 精确版本 | 官方来源 | 范围 / 上游许可 / 本地文本 |
+| --- | --- | --- |
+| adler2 2.0.1 | [adler2](https://github.com/oyvindln/adler2) | 仅宿主；0BSD OR MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/adler2-2.0.1.txt) |
+| aliasable 0.1.3 | [aliasable](https://github.com/avitex/rust-aliasable) | 仅宿主；MIT；[完整文本](../../tools/host/licenses/aliasable-0.1.3.txt) |
+| autocfg 1.5.1 | [autocfg](https://github.com/cuviper/autocfg) | 内核闭包；Apache-2.0 OR MIT；[完整文本](../../tools/boot/licenses/autocfg-1.5.1.txt) |
+| az 1.2.1 | [az](https://gitlab.com/tspiteri/az) | 内核闭包；MIT/Apache-2.0；[完整文本](../../tools/boot/licenses/az-1.2.1.txt) |
+| base64 0.22.1 | [base64](https://github.com/marshallpierce/rust-base64) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/base64-0.22.1.txt) |
+| bitflags 1.3.2 | [bitflags](https://github.com/bitflags/bitflags) | 仅宿主；MIT/Apache-2.0；[完整文本](../../tools/host/licenses/bitflags-1.3.2.txt) |
+| byteorder 1.5.0 | [byteorder](https://github.com/BurntSushi/byteorder) | 内核闭包；Unlicense OR MIT；[完整文本](../../tools/boot/licenses/byteorder-1.5.0.txt) |
+| byteorder-lite 0.1.0 | [byteorder-lite](https://github.com/image-rs/byteorder-lite) | 仅宿主；Unlicense OR MIT；[完整文本](../../tools/host/licenses/byteorder-lite-0.1.0.txt) |
+| cfg-if 1.0.5 | [cfg-if](https://github.com/rust-lang/cfg-if) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/cfg-if-1.0.5.txt) |
+| crc32fast 1.5.3 | [crc32fast](https://github.com/srijs/rust-crc32fast) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/crc32fast-1.5.3.txt) |
+| embedded-graphics 0.8.2 | [embedded-graphics](https://github.com/embedded-graphics/embedded-graphics) | 内核闭包；MIT OR Apache-2.0；[完整文本](../../tools/boot/licenses/embedded-graphics-0.8.2.txt) |
+| embedded-graphics-core 0.4.1 | [embedded-graphics-core](https://github.com/embedded-graphics/embedded-graphics) | 内核闭包；MIT OR Apache-2.0；[完整文本](../../tools/boot/licenses/embedded-graphics-core-0.4.1.txt) |
+| embedded-graphics-simulator 0.8.0 | [embedded-graphics-simulator](https://github.com/embedded-graphics/simulator) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/embedded-graphics-simulator-0.8.0.txt) |
+| fdeflate 0.3.7 | [fdeflate](https://github.com/image-rs/fdeflate) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/fdeflate-0.3.7.txt) |
+| flate2 1.1.10 | [flate2](https://github.com/rust-lang/flate2-rs) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/flate2-1.1.10.txt) |
+| float-cmp 0.9.0 | [float-cmp](https://github.com/mikedilger/float-cmp) | 内核闭包；MIT；[完整文本](../../tools/boot/licenses/float-cmp-0.9.0.txt) |
+| heck 0.4.1 | [heck](https://github.com/withoutboats/heck) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/heck-0.4.1.txt) |
+| image 0.25.10 | [image](https://github.com/image-rs/image) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/image-0.25.10.txt) |
+| itoa 1.0.18 | [itoa](https://github.com/dtolnay/itoa) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/itoa-1.0.18.txt) |
+| lazy_static 1.5.1 | [lazy_static](https://github.com/rust-lang-nursery/lazy-static.rs) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/lazy_static-1.5.1.txt) |
+| libc 0.2.191 | [libc](https://github.com/rust-lang/libc) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/libc-0.2.191.txt) |
+| memchr 2.8.3 | [memchr](https://github.com/BurntSushi/memchr) | 仅宿主；Unlicense OR MIT；[完整文本](../../tools/host/licenses/memchr-2.8.3.txt) |
+| micromath 2.1.0 | [micromath](https://github.com/tarcieri/micromath) | 内核闭包；Apache-2.0 OR MIT；[完整文本](../../tools/boot/licenses/micromath-2.1.0.txt) |
+| miniz_oxide 0.8.9 | [miniz_oxide](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) | 仅宿主；MIT OR Zlib OR Apache-2.0；[完整文本](../../tools/host/licenses/miniz_oxide-0.8.9.txt) |
+| miniz_oxide 0.9.1 | [miniz_oxide](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) | 仅宿主；MIT OR Zlib OR Apache-2.0；[完整文本](../../tools/host/licenses/miniz_oxide-0.9.1.txt) |
+| moxcms 0.8.1 | [moxcms](https://github.com/awxkee/moxcms.git) | 仅宿主；BSD-3-Clause OR Apache-2.0；[完整文本](../../tools/host/licenses/moxcms-0.8.1.txt) |
+| num-traits 0.2.19 | [num-traits](https://github.com/rust-num/num-traits) | 内核闭包；MIT OR Apache-2.0；[完整文本](../../tools/boot/licenses/num-traits-0.2.19.txt) |
+| ouroboros 0.18.5 | [ouroboros](https://github.com/someguynamedjosh/ouroboros) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/ouroboros-0.18.5.txt) |
+| ouroboros_macro 0.18.5 | [ouroboros_macro](https://github.com/someguynamedjosh/ouroboros) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/ouroboros_macro-0.18.5.txt) |
+| pc-keyboard 0.9.0 | [pc-keyboard](https://github.com/rust-embedded-community/pc-keyboard.git) | 内核闭包；MIT OR Apache-2.0；[完整文本](../../tools/boot/licenses/pc-keyboard-0.9.0.txt) |
+| png 0.18.1 | [png](https://github.com/image-rs/image-png) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/png-0.18.1.txt) |
+| proc-macro2-diagnostics 0.10.1 | [proc-macro2-diagnostics](https://github.com/SergioBenitez/proc-macro2-diagnostics) | 仅宿主；MIT/Apache-2.0；[完整文本](../../tools/host/licenses/proc-macro2-diagnostics-0.10.1.txt) |
+| pxfm 0.1.30 | [pxfm](https://github.com/awxkee/pxfm) | 仅宿主；BSD-3-Clause OR Apache-2.0；[完整文本](../../tools/host/licenses/pxfm-0.1.30.txt) |
+| sdl2 0.38.0 | [sdl2](https://github.com/Rust-SDL2/rust-sdl2) | 仅宿主；MIT；[完整文本](../../tools/host/licenses/sdl2-0.38.0.txt) |
+| sdl2-sys 0.38.0 | [sdl2-sys](https://github.com/rust-sdl2/rust-sdl2) | 仅宿主；MIT AND Zlib；[完整文本](../../tools/host/licenses/sdl2-sys-0.38.0.txt) |
+| serde 1.0.229 | [serde](https://github.com/serde-rs/serde) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/serde-1.0.229.txt) |
+| serde_core 1.0.229 | [serde_core](https://github.com/serde-rs/serde) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/serde_core-1.0.229.txt) |
+| serde_derive 1.0.229 | [serde_derive](https://github.com/serde-rs/serde) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/serde_derive-1.0.229.txt) |
+| serde_json 1.0.154 | [serde_json](https://github.com/serde-rs/json) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/serde_json-1.0.154.txt) |
+| simd-adler32 0.3.10 | [simd-adler32](https://github.com/mcountryman/simd-adler32) | 仅宿主；MIT；[完整文本](../../tools/host/licenses/simd-adler32-0.3.10.txt) |
+| static_assertions 1.1.0 | [static_assertions](https://github.com/nvzqz/static-assertions-rs) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/static_assertions-1.1.0.txt) |
+| version-compare 0.1.1 | [version-compare](https://gitlab.com/timvisee/version-compare) | 仅宿主；MIT；[完整文本](../../tools/host/licenses/version-compare-0.1.1.txt) |
+| version_check 0.9.5 | [version_check](https://github.com/SergioBenitez/version_check) | 仅宿主；MIT/Apache-2.0；[完整文本](../../tools/host/licenses/version_check-0.9.5.txt) |
+| yansi 1.0.1 | [yansi](https://github.com/SergioBenitez/yansi) | 仅宿主；MIT OR Apache-2.0；[完整文本](../../tools/host/licenses/yansi-1.0.1.txt) |
+| zlib-rs 0.6.8 | [zlib-rs](https://github.com/trifectatechfoundation/zlib-rs) | 仅宿主；Zlib；[完整文本](../../tools/host/licenses/zlib-rs-0.6.8.txt) |
+| zmij 1.0.23 | [zmij](https://github.com/dtolnay/zmij) | 仅宿主；MIT；[完整文本](../../tools/host/licenses/zmij-1.0.23.txt) |
+
+对双许可包选择 MIT；其余按保留文本声明。sdl2-sys 的 MIT 来自同一固定上游 commit `52de59121c087d43b555f6d9e1aaae35a0cb0ed6` 的仓库根 LICENSE（与 sdl2 包一致），另保留[SDL Zlib 文本](../../tools/host/licenses/sdl2-sys-0.38.0-zlib.txt)；未编译包内 bundled SDL。embedded-graphics-core 的包体未带 LICENSE，从其 VCS 身份 `3b7458ff9e0e5201191366f442297ba49d1ff2c5` 的官方仓库取得 MIT 文本。缺末尾换行的许可补 LF；sdl2-sys 的 SDL Zlib 文本与 zlib-rs 文本的本地复制件另清除行尾空格以符合仓库文本检查，许可正文和署名不变，隔离缓存保留原件。提交前暂存检查另发现 ouroboros、ouroboros_macro、sdl2-sys 的 SDL Zlib 文本及 version-compare 复制件末尾多余空行，仅删除这些空行并保留一个末尾 LF；格式变化摘要另见 `evidence/disk-cleanup-20261029/license-format.json`。记录原始和复制摘要，不改检查规则。
+
+字形使用 embedded-graphics 同包的 ASCII 6×10 / 10×20 字体，800×600 以上采用 10×20；保留 [fonts/src/README 与两份 BDF 声明](../../tools/boot/licenses/embedded-graphics-0.8.2-fonts.txt)，含 X.Org 来源、Markus Kuhn 注记与 public domain 声明，未下载独立字体。字体声明与 9 个新增内核许可进入本地 ESP；宿主依赖许可留 tools/host/licenses，不进入 guest。
+
+宿主 GUI 动态复用已安装的 sdl2-compat 2.32.72 / SDL3 3.4.16，只设置本次子进程链接参数；固定安装收据、库路径与 SHA-256 记入 xtask 日志。官方来源为 [sdl2-compat](https://github.com/libsdl-org/sdl2-compat) 与 [SDL](https://github.com/libsdl-org/SDL)，均保留现有 keg 内的 Zlib 许可；本批不复制、打包或分发原生库，未安装 SDL2 Classic、CMake 或全局开发组件。实际可运行范围与未验证面由 current 指向的 T07 验收记录说明。

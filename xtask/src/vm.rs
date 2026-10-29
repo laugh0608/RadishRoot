@@ -31,6 +31,7 @@ pub(super) struct Machine {
     pub qemu: PathBuf,
     pub code: PathBuf,
     pub vars: PathBuf,
+    pub host_view: Option<PathBuf>,
 }
 pub(super) struct BootSpec<'a> {
     pub boot_disk: &'a Path,
@@ -41,8 +42,14 @@ pub(super) struct BootSpec<'a> {
 
 pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Result<()> {
     let manifest = Manifest::load(&context.root)?;
-    let kernel = build::kernel(context, runner, true, true, false)?;
-    let disk = boot_image::create(&context.root, runner, &manifest, &kernel, "")?;
+    let selected = if let Action::TestGraphicsCases(cases) = action {
+        Some(cases)
+    } else {
+        None
+    };
+    let kernel = build::kernel(context, runner, true, true, selected.is_some())?;
+    let first_mode = selected.map_or("", |cases| cases[0]);
+    let disk = boot_image::create(&context.root, runner, &manifest, &kernel, first_mode)?;
     if *action == Action::Image {
         return Ok(());
     }
@@ -61,14 +68,49 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     let vars = share.join(manifest.get("firmware_vars")?);
     manifest.hash(runner, &code, "firmware_code_sha256")?;
     manifest.hash(runner, &vars, "firmware_vars_sha256")?;
-    let machine = Machine { qemu, code, vars };
+    let host_view = if matches!(action, Action::TestStorageVm | Action::TestFatVm) {
+        None
+    } else {
+        Some(crate::ui::build(context, runner, false)?)
+    };
+    let machine = Machine {
+        qemu,
+        code,
+        vars,
+        host_view,
+    };
+    if let Some(cases) = selected {
+        for (index, mode) in cases.iter().enumerate() {
+            let selected_disk = if index == 0 {
+                disk.clone()
+            } else {
+                boot_image::create(&context.root, runner, &manifest, &kernel, mode)?
+            };
+            boot(
+                runner,
+                &manifest,
+                &machine,
+                BootSpec {
+                    boot_disk: &selected_disk,
+                    data_disk: None,
+                    readonly: true,
+                    mode,
+                },
+            )?;
+            println!("graphics {mode}: verified");
+        }
+        return runner.record(&format!(
+            "selected T07 cases complete: {}; not the full suite",
+            cases.join(",")
+        ));
+    }
     let repetitions = match action {
         Action::TestVm => 10,
         Action::TestStorageVm | Action::TestFatVm => 0,
         _ => 1,
     };
     for number in 1..=repetitions {
-        boot(
+        boot_configured(
             runner,
             &manifest,
             &machine,
@@ -78,13 +120,19 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
                 readonly: true,
                 mode: "",
             },
+            number == 1 && matches!(action, Action::TestVm | Action::TestGraphicsVm),
+            *action == Action::RunGui,
         )?;
         println!("normal boot {number}/{repetitions}: verified");
     }
     crate::digest(&disk, runner)?;
     if matches!(
         action,
-        Action::TestVm | Action::TestStorageVm | Action::TestFatVm | Action::TestRuntimeVm
+        Action::TestVm
+            | Action::TestStorageVm
+            | Action::TestFatVm
+            | Action::TestRuntimeVm
+            | Action::TestGraphicsVm
     ) {
         let kernel = build::kernel(context, runner, true, true, true)?;
         for fault in [
@@ -98,7 +146,10 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         ] {
             if matches!(
                 action,
-                Action::TestStorageVm | Action::TestFatVm | Action::TestRuntimeVm
+                Action::TestStorageVm
+                    | Action::TestFatVm
+                    | Action::TestRuntimeVm
+                    | Action::TestGraphicsVm
             ) {
                 break;
             }
@@ -125,15 +176,20 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         if matches!(action, Action::TestVm | Action::TestRuntimeVm) {
             crate::vm_runtime::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
         }
+        if matches!(action, Action::TestVm | Action::TestGraphicsVm) {
+            crate::vm_graphics::execute(context, runner, &manifest, &machine, &kernel)?;
+        }
     }
-    runner.record(if *action == Action::TestRuntimeVm {
+    runner.record(if *action == Action::TestGraphicsVm {
+        "T07 nine graphics cases complete; standalone T02-T06 regressions not run; host termination is not guest shutdown"
+    } else if *action == Action::TestRuntimeVm {
         "T06 runtime cases complete; standalone T02-T05 regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestFatVm {
         "T05 FAT cases complete; T02/T03/T04 standalone regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestStorageVm {
         "T04 storage cases complete; T02/T03 standalone regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestVm {
-        "T02/T03/T04/T05/T06 complete: terminal serial observation followed by host termination; no guest shutdown claim"
+        "T02/T03/T04/T05/T06/T07 complete: 47 VM starts, actual input/screens and independent storage checks; host termination is not guest shutdown"
     } else {
         "one normal read-only boot complete; standalone fault suites not run; no guest shutdown claim"
     })
@@ -143,6 +199,16 @@ pub(super) fn boot(
     manifest: &Manifest,
     machine: &Machine,
     spec: BootSpec<'_>,
+) -> Result<String> {
+    boot_configured(runner, manifest, machine, spec, false, false)
+}
+fn boot_configured(
+    runner: &mut Runner,
+    manifest: &Manifest,
+    machine: &Machine,
+    spec: BootSpec<'_>,
+    full: bool,
+    gui: bool,
 ) -> Result<String> {
     let fault = spec.mode;
     let disk = spec.data_disk.unwrap_or(spec.boot_disk);
@@ -173,7 +239,7 @@ pub(super) fn boot(
             manifest.get("memory_mib")?,
             "-nodefaults",
             "-display",
-            "none",
+            if gui { "cocoa" } else { "none" },
             "-monitor",
             "none",
             "-nic",
@@ -227,27 +293,71 @@ pub(super) fn boot(
         disk.display(),
         spec.readonly
     ))?;
+    let graphics = fault.is_empty() || fault.starts_with("t07-");
+    let socket_dir = if graphics {
+        Some(process::unique_directory(
+            Path::new("/private/tmp"),
+            "rr-qmp",
+        )?)
+    } else {
+        None
+    };
+    let socket = socket_dir.as_ref().map(|p| p.join("qmp.sock"));
+    if let Some(socket) = &socket {
+        command
+            .arg("-qmp")
+            .arg(format!("unix:{},server=on,wait=off", socket.display()));
+        runner.record(&format!(
+            "qmp_private_socket={} gui={gui} global_grab=off",
+            socket.display()
+        ))?;
+    }
     let previous = runner.timeout;
-    runner.timeout = previous.min(Duration::from_secs(
-        manifest.number("boot_timeout_seconds")?,
-    ));
-    let output = runner.boot(
-        &mut command,
-        &serial,
-        fault.is_empty() || fault.starts_with("t06-"),
-    );
+    runner.timeout = if gui {
+        Duration::from_secs(600)
+    } else {
+        previous.min(Duration::from_secs(
+            manifest.number("boot_timeout_seconds")?,
+        ))
+    };
+    let mut session = socket.as_ref().map(|socket| {
+        crate::vm_graphics::Session::new(&serial, socket, &directory, fault, full, gui)
+    });
+    let output = if let Some(session) = &mut session {
+        runner.interactive(&mut command, &serial, &mut || session.poll())
+    } else {
+        runner.boot(
+            &mut command,
+            &serial,
+            fault.is_empty() || fault.starts_with("t06-"),
+        )
+    };
     runner.timeout = previous;
+    if let Some(socket_dir) = socket_dir {
+        let path = socket_dir.join("qmp.sock");
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        fs::remove_dir(&socket_dir)?;
+        runner.record(&format!("qmp_private_socket_removed={}", path.display()))?;
+    }
     let output = output?;
-    validate(
+    validate_size(
         &output,
         if fault.starts_with("t03-")
             || fault.starts_with("t04-")
             || fault.starts_with("t05-")
             || fault.starts_with("t06-")
+            || fault.starts_with("t07-")
         {
             ""
         } else {
             fault
+        },
+        if fault == "t07-resolution" {
+            (800, 600)
+        } else {
+            (1024, 768)
         },
     )?;
     if fault.is_empty()
@@ -255,24 +365,38 @@ pub(super) fn boot(
         || fault.starts_with("t04-")
         || fault.starts_with("t05-")
         || fault.starts_with("t06-")
+        || fault.starts_with("t07-")
     {
         crate::vm_platform::validate(
             &output,
-            if fault.starts_with("t04-") || fault.starts_with("t05-") || fault.starts_with("t06-") {
+            if fault.starts_with("t04-")
+                || fault.starts_with("t05-")
+                || fault.starts_with("t06-")
+                || fault.starts_with("t07-")
+            {
                 ""
             } else {
                 fault
             },
         )?;
     }
-    if fault.is_empty() || fault.starts_with("t04-") {
-        crate::vm_storage::validate(&output, fault)?;
+    if fault.is_empty() || fault.starts_with("t04-") || fault.starts_with("t07-") {
+        crate::vm_storage::validate(&output, if fault.starts_with("t07-") { "" } else { fault })?;
     }
     if fault.starts_with("t05-") {
         crate::vm_fat::validate(&output, fault)?;
     }
-    if fault.is_empty() || fault.starts_with("t06-") {
-        crate::vm_runtime::validate(&output, fault)?;
+    if fault.is_empty() || fault.starts_with("t06-") || fault.starts_with("t07-") {
+        crate::vm_runtime::validate(&output, if fault.starts_with("t07-") { "" } else { fault })?;
+    }
+    if let Some(session) = session {
+        crate::vm_graphics::validate_recording(&output, fault, full, gui)?;
+        crate::vm_graphics::negative_controls(&output, fault, full, gui, &directory)?;
+        let host = machine
+            .host_view
+            .as_ref()
+            .ok_or_else(|| Error::new("host-view", "missing host comparator"))?;
+        crate::screen::verify(runner, host, &directory, &session.snapshots)?;
     }
     runner.record(&format!(
         "boot={} case={fault:?} validation=pass",
@@ -303,7 +427,11 @@ pub(super) fn number(fields: &BTreeMap<&str, &str>, key: &str) -> Result<u64> {
     };
     value.map_err(|_| Error::new("serial-fields", format!("invalid {key}")))
 }
+#[cfg(test)]
 pub fn validate(output: &str, fault: &str) -> Result<()> {
+    validate_size(output, fault, (1024, 768))
+}
+fn validate_size(output: &str, fault: &str, size: (u64, u64)) -> Result<()> {
     let lines = output
         .lines()
         .filter(|line| line.starts_with("RR:T02:"))
@@ -400,10 +528,10 @@ pub fn validate(output: &str, fault: &str) -> Result<()> {
     let kernel = one("RR:T02:KERNEL ")?;
     let fb = one("RR:T02:FB ")?;
     if number(&kernel, "virtual")? != 0xffffffff80000000
-        || number(&fb, "width")? != 1024
-        || number(&fb, "height")? != 768
+        || number(&fb, "width")? != size.0
+        || number(&fb, "height")? != size.1
         || number(&fb, "bpp")? != 32
-        || number(&fb, "pitch")? < 4096
+        || number(&fb, "pitch")? < size.0 * 4
     {
         return Err(Error::new(
             "serial-layout",
@@ -411,7 +539,7 @@ pub fn validate(output: &str, fault: &str) -> Result<()> {
         ));
     }
     let fb_length = number(&fb, "pitch")?
-        .checked_mul(768)
+        .checked_mul(size.1)
         .ok_or_else(|| Error::new("serial-layout", "framebuffer overflow"))?;
     for (object, length, kind) in [
         (&kernel, number(&kernel, "length")?, 6),
