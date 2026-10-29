@@ -63,7 +63,7 @@ env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile dev --
 env RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask build --profile release --fresh
 ```
 
-`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask 宿主测试和 kernel lib 的纯引导、内存、PCI、DMA、块接口、GPT、FAT 字节流与名称、ACPI、时钟 / 等待、队列和计量契约测试（不运行硬件入口）。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
+`check` 分别运行宿主 / 裸机 check、clippy（拒绝警告）和 fmt 检查；`test --host` 运行 xtask、默认无 SDL 的 host-runner 和 kernel lib 的宿主测试目标，覆盖纯引导、内存、PCI、DMA、块接口、GPT、FAT 字节流与名称、ACPI、时钟 / 等待、队列、计量、Surface / 输入 / 共享视图、文件服务与内置命令契约（不运行硬件入口或打开窗口）。`build` 实际链接并检查 ELF；这些入口均不执行 guest。`--fresh` 在本次独占目录构建并关闭增量；不带该参数时复用 target/kernel 编译缓存，但仍检查本次返回的产物。尚未实现的命令返回 2。
 
 首次进入 Cargo 的编译发生在 xtask 启动前，应先按上述方式选择工具链；xtask 随后验证自身编译器身份、项目工具链来源与外部配置，不修改 shell、rustup override 或全局默认。当前宿主进程管理使用 Unix 进程组，目标宿主为 macOS / Linux，Windows 不在 T01 支持范围。系统需有 git、shasum 和 /bin/kill；Python 独立复核及 CI 辅助使用标准库，CI 辅助脚本需 Python 3.11+。
 

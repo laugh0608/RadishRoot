@@ -136,7 +136,7 @@ T03 提交复核时，`git diff --cached --check` 对 zerocopy 与 zerocopy-deri
 
 新增 46 个 registry 包（9 个内核构建闭包、37 个仅宿主闭包），包体合计 15349696 字节。原有 31 个外部包的版本、来源、checksum 与解析后的依赖关系保持不变。新包摘要由 Cargo.lock 固定，来源为 crates.io registry；精确声明、原始 / 复制许可摘要与闭包记录在 evidence/t07-runtime-20261029-e1b72f4/。没有整包源码迁入正式仓库、修改上游源码或对外分发。
 
-内核两项直接依赖关闭默认 feature，保留 no_std；宿主 runner 默认关闭 SDL，gui 特性启用 simulator/with-sdl 和 sdl2；不启用 bundled 或 static-link。serde_json 只用于 xtask 的 QMP 结构化协议，xtask 自 T07 起不再是仅标准库。下表按最终锁列出新增包；构建辅助包不等同于 guest 运行链接组成。
+内核两项直接依赖关闭默认 feature，保留 no_std；宿主 runner 默认关闭 SDL，gui 特性启用 simulator/with-sdl 和 sdl2；不启用 bundled 或 static-link。serde_json 仅用于宿主 xtask 的结构化 JSON 校验，T07 接入 QMP，T09 复用于串口命令结果；未进入内核依赖图，T09 无新增版本或依赖。xtask 自 T07 起不再是仅标准库。下表按最终锁列出新增包；构建辅助包不等同于 guest 运行链接组成。
 
 | 包 / 精确版本 | 官方来源 | 范围 / 上游许可 / 本地文本 |
 | --- | --- | --- |
