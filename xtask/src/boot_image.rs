@@ -132,6 +132,13 @@ pub fn create(
         "t07-input-overflow",
         "t07-clipping",
         "t07-redraw",
+        "t08-write",
+        "t08-reopen",
+        "t08-readonly",
+        "t08-file-sync",
+        "t08-volume-sync",
+        "t08-device-flush",
+        "t08-bad-fat",
     ]
     .contains(&fault)
     {

@@ -189,6 +189,8 @@ impl Runner {
                             (runtime && line.starts_with("RR:T06:READY "))
                                 || (!runtime && line.starts_with("RR:T05:READY "))
                                 || line.starts_with("RR:T05:FAIL ")
+                                || line.starts_with("RR:T08:READY ")
+                                || line.starts_with("RR:T08:FAIL ")
                                 || (!runtime && line.starts_with("RR:T04:READY "))
                                 || line.starts_with("RR:T06:FAIL ")
                                 || line.starts_with("RR:T04:FAIL ")

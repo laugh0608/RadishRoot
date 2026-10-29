@@ -375,25 +375,39 @@ pub fn validate(output: &str, mode: &str) -> Result<()> {
             "rejected request reached device",
         ));
     }
-    let stop = one("RR:T04:STOP ")?;
-    // 无效主表头必须阻止读取其数组：MBR + 两个表头 + 备用数组 + DATA = 5。
-    let expected_requests = match mode {
-        "t04-primary-gpt" => 5,
-        "t04-write" => 30,
-        "t04-reopen" => 13,
-        _ => 6,
-    };
-    if stop.get("reset") != Some(&"confirmed")
-        || number(&stop, "bus_master")? != 0
-        || number(&stop, "allocations")? != 0
-        || number(&stop, "shared")? != 0
-        || number(&stop, "requests")? != expected_requests
-        || number(&stop, "flushes")? != u64::from(mode == "t04-write")
-    {
-        return Err(Error::new(
-            "storage-stop",
-            "missing reset / release / flush evidence",
-        ));
+    if mode.is_empty() {
+        let live = one("RR:T04:LIVE ")?;
+        if count("RR:T04:STOP ") != 0
+            || live.get("owner") != Some(&"file-service")
+            || number(&live, "requests")? != 6
+            || number(&live, "flushes")? != 0
+        {
+            return Err(Error::new(
+                "storage-live",
+                "default device must remain exclusively owned by the file service",
+            ));
+        }
+    } else {
+        let stop = one("RR:T04:STOP ")?;
+        // 无效主表头必须阻止读取其数组：MBR + 两个表头 + 备用数组 + DATA = 5。
+        let expected_requests = match mode {
+            "t04-primary-gpt" => 5,
+            "t04-write" => 30,
+            "t04-reopen" => 13,
+            _ => 6,
+        };
+        if stop.get("reset") != Some(&"confirmed")
+            || number(&stop, "bus_master")? != 0
+            || number(&stop, "allocations")? != 0
+            || number(&stop, "shared")? != 0
+            || number(&stop, "requests")? != expected_requests
+            || number(&stop, "flushes")? != u64::from(mode == "t04-write")
+        {
+            return Err(Error::new(
+                "storage-stop",
+                "missing reset / release / flush evidence",
+            ));
+        }
     }
     if matches!(mode, "t04-write" | "t04-reopen") {
         let payload = one("RR:T04:PAYLOAD ")?;

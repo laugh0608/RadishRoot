@@ -7,10 +7,12 @@ mod block_driver;
 mod boot;
 mod clock;
 mod exclusive;
+mod file_runtime;
 mod graphics;
 mod heap;
 mod interrupts;
 mod pci;
+mod platform_identity;
 mod platform_memory;
 mod ps2;
 mod runtime;
@@ -18,6 +20,8 @@ mod serial;
 mod t03;
 mod t04;
 mod t05;
+#[cfg(feature = "boot-test")]
+mod t08;
 use core::{fmt::Write, panic::PanicInfo};
 
 // SAFETY: 唯一导出入口，Limine 按 x86_64 System V ABI 提供有效栈及高半区映射。
@@ -41,24 +45,28 @@ pub extern "C" fn _start() -> ! {
                 if facts.mode.starts_with("t06-") {
                     runtime::test(&mut serial, device, facts.mode);
                 }
-                if facts.mode.starts_with("t05-") {
+                #[cfg(feature = "boot-test")]
+                if facts.mode.starts_with("t08-") {
+                    t08::run(&mut serial, device, facts.mode);
+                    halt();
+                }
+                if facts.mode.is_empty() || facts.mode.starts_with("t07-") {
+                    match t04::probe(&mut serial, device) {
+                        Ok(disk) => file_runtime::run(&mut serial, disk, &facts),
+                        Err(error) => {
+                            let _ = writeln!(serial, "RR:T04:DETAIL error={error:?}");
+                            let _ =
+                                writeln!(serial, "RR:T04:FAIL code={} stage=storage", error.code());
+                        }
+                    }
+                } else if facts.mode.starts_with("t05-") {
                     if let Err(error) = t05::run(&mut serial, device, facts.mode) {
                         let _ = writeln!(serial, "RR:T05:DETAIL error={error:?}");
                         let _ = writeln!(serial, "RR:T05:FAIL code={} stage=fat", error.code());
                     }
-                } else if let Err(error) = t04::run(
-                    &mut serial,
-                    device,
-                    if facts.mode.starts_with("t07-") {
-                        ""
-                    } else {
-                        facts.mode
-                    },
-                ) {
+                } else if let Err(error) = t04::run(&mut serial, device, facts.mode) {
                     let _ = writeln!(serial, "RR:T04:DETAIL error={error:?}");
                     let _ = writeln!(serial, "RR:T04:FAIL code={} stage=storage", error.code());
-                } else if facts.mode.is_empty() || facts.mode.starts_with("t07-") {
-                    runtime::run(&mut serial, "", None, Some(&facts));
                 }
             }
             Err(code) => {

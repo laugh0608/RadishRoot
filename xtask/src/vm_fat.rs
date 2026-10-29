@@ -15,10 +15,10 @@ use std::{
     process::Command,
 };
 
-struct Expected {
-    id: &'static str,
-    path: String,
-    bytes: Vec<u8>,
+pub(super) struct Expected {
+    pub id: &'static str,
+    pub path: String,
+    pub bytes: Vec<u8>,
 }
 fn expected_files() -> Vec<Expected> {
     let mut files = vec![
@@ -76,15 +76,41 @@ fn tools(
     mode: &str,
     complete: bool,
 ) -> Result<PathBuf> {
+    let files = expected_files()
+        .into_iter()
+        .filter(|e| complete || e.id == "seed")
+        .collect();
+    tools_with_files(
+        context,
+        runner,
+        manifest,
+        disk,
+        FatCheck {
+            mode,
+            files,
+            directories: if complete { vec!["folder"] } else { Vec::new() },
+        },
+    )
+}
+pub(super) struct FatCheck<'a> {
+    pub mode: &'a str,
+    pub files: Vec<Expected>,
+    pub directories: Vec<&'a str>,
+}
+pub(super) fn tools_with_files(
+    context: &Context,
+    runner: &mut Runner,
+    manifest: &Manifest,
+    disk: &Path,
+    check: FatCheck<'_>,
+) -> Result<PathBuf> {
+    let mode = check.mode;
+    let expected = check.files;
     let directory = process::unique_directory(&runner.dir, "fat-tools")?;
     let inputs = directory.join("inputs");
     let output = directory.join("output");
     process::directory(&inputs)?;
     process::directory(&output)?;
-    let expected = expected_files()
-        .into_iter()
-        .filter(|e| complete || e.id == "seed")
-        .collect::<Vec<_>>();
     let mut index = String::new();
     for e in &expected {
         fs::write(inputs.join(format!("{}.bin", e.id)), &e.bytes)?;
@@ -156,8 +182,8 @@ fn tools(
             .iter()
             .map(|e| format!("::/{}", e.path))
             .collect::<BTreeSet<_>>();
-        if complete {
-            wanted.insert("::/folder/".into());
+        for directory in check.directories {
+            wanted.insert(format!("::/{directory}/"));
         }
         if actual != wanted {
             return Err(Error::new(
@@ -179,7 +205,7 @@ fn tools(
     }
     Ok(output)
 }
-fn outside_unchanged(source: &Path, disk: &Path, manifest: &Manifest) -> Result<()> {
+pub(super) fn outside_unchanged(source: &Path, disk: &Path, manifest: &Manifest) -> Result<()> {
     let mut a = File::open(source)?;
     let mut b = File::open(disk)?;
     let length = manifest.number("disk_bytes")?;
@@ -210,7 +236,7 @@ fn outside_unchanged(source: &Path, disk: &Path, manifest: &Manifest) -> Result<
     }
     Ok(())
 }
-fn sha(path: &Path, runner: &mut Runner) -> Result<String> {
+pub(super) fn sha(path: &Path, runner: &mut Runner) -> Result<String> {
     let output = runner.run(Command::new("shasum").args(["-a", "256"]).arg(path))?;
     runner.record(output.trim())?;
     Ok(output.split_whitespace().next().unwrap_or("").into())

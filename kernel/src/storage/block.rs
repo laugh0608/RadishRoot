@@ -142,6 +142,11 @@ impl<'a, D: BlockDevice> Partition<'a, D> {
             readonly: info.readonly || layout.readonly(),
         })
     }
+    /// 查询事务强制只读，即使底层设备可写也禁止库析构写回。
+    pub fn read_only(mut self) -> Self {
+        self.readonly = true;
+        self
+    }
     pub fn byte_len(&self) -> u64 {
         self.bytes
     }

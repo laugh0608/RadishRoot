@@ -13,6 +13,7 @@ mod vm_fat;
 mod vm_graphics;
 mod vm_platform;
 mod vm_runtime;
+mod vm_service;
 mod vm_storage;
 
 use cli::{Action, Options};
@@ -31,7 +32,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\nui --host [--gui] | run --gui (bounded native windows)."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--service-only|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\nui --host [--gui] | run --gui (bounded native windows)."
         );
         return Ok(());
     }
@@ -181,6 +182,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
         | Action::TestVm
         | Action::TestStorageVm
         | Action::TestFatVm
+        | Action::TestServiceVm
         | Action::TestRuntimeVm
         | Action::TestGraphicsVm
         | Action::TestGraphicsCases(_) => vm::execute(&context, runner, &options.action)?,

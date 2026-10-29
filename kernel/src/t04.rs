@@ -214,3 +214,21 @@ pub fn run(serial: &mut Serial, device: pci::Device, mode: &str) -> Result<(), E
     let label = if mode.is_empty() { "probe" } else { mode };
     emit(serial, format_args!("RR:T04:READY mode={label}\n"))
 }
+
+/// 默认服务路径继续拥有已初始化设备；独立存储验收仍使用 run 的停止 / 释放契约。
+pub fn probe(serial: &mut Serial, device: pci::Device) -> Result<Driver, Error> {
+    emit(serial, format_args!("RR:T04:ENTER\n"))?;
+    let mut disk = Driver::new(device, false)?;
+    if let Err(error) = exercise(serial, &mut disk, "") {
+        disk.stop()?;
+        return Err(error);
+    }
+    emit(
+        serial,
+        format_args!(
+            "RR:T04:LIVE owner=file-service requests={} flushes={}\nRR:T04:READY mode=probe\n",
+            disk.requests, disk.flushes
+        ),
+    )?;
+    Ok(disk)
+}

@@ -93,6 +93,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         && !mode.starts_with("t05-")
         && !mode.starts_with("t06-")
         && !mode.starts_with("t07-")
+        && !mode.starts_with("t08-")
     {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
@@ -228,6 +229,13 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t07-input-overflow",
         "t07-clipping",
         "t07-redraw",
+        "t08-write",
+        "t08-reopen",
+        "t08-readonly",
+        "t08-file-sync",
+        "t08-volume-sync",
+        "t08-device-flush",
+        "t08-bad-fat",
     ]
     .contains(&mode)
     {

@@ -15,7 +15,9 @@ pub fn initialize(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str
     writeln!(
         serial,
         "RR:T06:ENTER mode={}",
-        if facts.mode.is_empty() || facts.mode.starts_with("t07-") {
+        if facts.mode.is_empty()
+            || (facts.mode.starts_with("t07-") || facts.mode.starts_with("t08-"))
+        {
             "normal"
         } else {
             facts.mode
@@ -97,10 +99,10 @@ pub fn test(serial: &mut Serial, device: pci::Device, mode: &str) -> ! {
                 "RR:T06:FAIL code=TIMEOUT_NOT_TRIGGERED stage=inject\n"
             ));
         }
-        "t06-overflow" => run(serial, mode, None, None),
+        "t06-overflow" => run(serial, mode, None, None, None),
         "t06-invalid-input" => {
             let disk = Driver::new(device, false).expect("input control device");
-            run(serial, mode, Some(disk), None);
+            run(serial, mode, Some(disk), None, None);
         }
         _ => interrupts::fatal(format_args!("RR:T06:FAIL code=UNKNOWN_TEST stage=inject\n")),
     }
@@ -110,7 +112,21 @@ fn now() -> u64 {
         interrupts::fatal(format_args!("RR:T06:FAIL code={} stage=clock\n", e.code()))
     })
 }
-pub fn run(serial: &mut Serial, mode: &str, mut disk: Option<Driver>, facts: Option<&Facts>) -> ! {
+pub fn run(
+    serial: &mut Serial,
+    mode: &str,
+    mut disk: Option<Driver>,
+    facts: Option<&Facts>,
+    files: Option<&mut crate::file_runtime::Service<'_>>,
+) -> ! {
+    if let Some(files) = files {
+        let _ = writeln!(
+            serial,
+            "RR:T08:AVAILABLE generation={} state={:?}",
+            files.generation(),
+            files.volume().mount_state
+        );
+    }
     let mut graphics = None;
     let mut events = Queue::new();
     if mode == "t06-overflow" {

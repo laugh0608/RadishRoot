@@ -23,6 +23,7 @@ pub enum Cause {
     Budget,
     Aborted,
     InjectedWrite,
+    InjectedFlush,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Error {
@@ -56,6 +57,9 @@ pub struct State {
     first: Cell<Option<Error>>,
     calls: Cell<u32>,
     blocked: Cell<u32>,
+    writes: Cell<u32>,
+    #[cfg(any(test, feature = "boot-test"))]
+    fail_flush: Cell<bool>,
     #[cfg(any(test, feature = "boot-test"))]
     fail_write: Cell<bool>,
 }
@@ -66,6 +70,9 @@ impl Default for State {
             first: Cell::new(None),
             calls: Cell::new(0),
             blocked: Cell::new(0),
+            writes: Cell::new(0),
+            #[cfg(any(test, feature = "boot-test"))]
+            fail_flush: Cell::new(false),
             #[cfg(any(test, feature = "boot-test"))]
             fail_write: Cell::new(false),
         }
@@ -80,6 +87,13 @@ impl State {
     }
     pub fn blocked_calls(&self) -> u32 {
         self.blocked.get()
+    }
+    pub fn writes(&self) -> u32 {
+        self.writes.get()
+    }
+    #[cfg(any(test, feature = "boot-test"))]
+    pub fn inject_flush_failure(&self) {
+        self.fail_flush.set(true);
     }
     pub fn calls(&self) -> u32 {
         self.calls.get()
@@ -186,6 +200,7 @@ impl<D: BlockDevice> Write for &mut Stream<'_, D> {
         let count = input
             .len()
             .min(block::SECTOR - (self.position % block::SECTOR as u64) as usize);
+        self.state.writes.set(self.state.writes.get() + 1);
         self.partition
             .write_at(self.position, &input[..count])
             .map_err(|e| self.state.fail(Cause::Block(e), self.position))?;
@@ -197,6 +212,10 @@ impl<D: BlockDevice> Write for &mut Stream<'_, D> {
         // 只读挂载从未提交写入；库的只读句柄 Drop 也调用 flush，无脏数据可提交。
         if self.partition.readonly() {
             return Ok(());
+        }
+        #[cfg(any(test, feature = "boot-test"))]
+        if self.state.fail_flush.replace(false) {
+            return Err(self.state.fail(Cause::InjectedFlush, self.position));
         }
         self.partition
             .flush()
