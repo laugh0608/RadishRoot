@@ -10,6 +10,13 @@ impl Serial {
         uart.init(Config::default()).map_err(|_| ())?;
         Ok(Self(uart))
     }
+    /// 单 BSP 非阻塞接收；LSR 保留发送过程中观测到的接收错误，不能静默吃掉。
+    pub fn receive(&mut self) -> Result<Option<u8>, u8> {
+        let before = self.0.lsr().bits() & 0x1e;
+        let byte = self.0.try_receive_byte().ok();
+        let errors = before | (self.0.lsr().bits() & 0x1e);
+        if errors != 0 { Err(errors) } else { Ok(byte) }
+    }
     fn byte(&mut self, byte: u8) -> fmt::Result {
         for _ in 0..100_000 {
             if self.0.try_send_byte(byte).is_ok() {

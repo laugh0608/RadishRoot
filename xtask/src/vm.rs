@@ -70,7 +70,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     manifest.hash(runner, &vars, "firmware_vars_sha256")?;
     let host_view = if matches!(
         action,
-        Action::TestStorageVm | Action::TestFatVm | Action::TestServiceVm
+        Action::TestStorageVm | Action::TestFatVm | Action::TestServiceVm | Action::TestShellVm
     ) {
         None
     } else {
@@ -109,7 +109,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     }
     let repetitions = match action {
         Action::TestVm => 10,
-        Action::TestStorageVm | Action::TestFatVm | Action::TestServiceVm => 0,
+        Action::TestStorageVm | Action::TestFatVm | Action::TestServiceVm | Action::TestShellVm => {
+            0
+        }
         _ => 1,
     };
     for number in 1..=repetitions {
@@ -135,6 +137,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             | Action::TestStorageVm
             | Action::TestFatVm
             | Action::TestServiceVm
+            | Action::TestShellVm
             | Action::TestRuntimeVm
             | Action::TestGraphicsVm
     ) {
@@ -153,6 +156,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
                 Action::TestStorageVm
                     | Action::TestFatVm
                     | Action::TestServiceVm
+                    | Action::TestShellVm
                     | Action::TestRuntimeVm
                     | Action::TestGraphicsVm
             ) {
@@ -181,6 +185,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         if matches!(action, Action::TestVm | Action::TestServiceVm) {
             crate::vm_service::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
         }
+        if matches!(action, Action::TestVm | Action::TestShellVm) {
+            crate::vm_shell::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
+        }
         if matches!(action, Action::TestVm | Action::TestRuntimeVm) {
             crate::vm_runtime::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
         }
@@ -188,7 +195,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             crate::vm_graphics::execute(context, runner, &manifest, &machine, &kernel)?;
         }
     }
-    runner.record(if *action == Action::TestServiceVm {
+    runner.record(if *action == Action::TestShellVm {
+        "T09 seven console cases complete; real external input and independent FAT; no full suite or shutdown claim"
+    } else if *action == Action::TestServiceVm {
         "T08 seven service cases complete; independent FAT comparison; standalone T02-T07 regressions not run; no guest shutdown claim"
     } else if *action == Action::TestGraphicsVm {
         "T07 nine graphics cases complete; standalone T02-T06 regressions not run; host termination is not guest shutdown"
@@ -199,7 +208,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     } else if *action == Action::TestStorageVm {
         "T04 storage cases complete; T02/T03 standalone regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestVm {
-        "T02/T03/T04/T05/T06/T07/T08 complete: 54 VM starts, actual input/screens and independent storage checks; host termination is not guest shutdown"
+        "T02/T03/T04/T05/T06/T07/T08/T09 complete: 61 VM starts, actual input/screens and independent storage checks; host termination is not guest shutdown"
     } else {
         "one normal read-only boot complete; standalone fault suites not run; no guest shutdown claim"
     })
@@ -230,6 +239,16 @@ fn boot_configured(
     fs::copy(vars, &writable_vars)?;
     let serial = directory.join("serial.log");
     fs::write(&serial, "")?;
+    let console_dir = if fault.is_empty() || fault.starts_with("t07-") || fault.starts_with("t09-")
+    {
+        let path = process::unique_directory(Path::new("/private/tmp"), "rr-console")?;
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))?;
+        Some(path)
+    } else {
+        None
+    };
+    let console_socket = console_dir.as_ref().map(|p| p.join("console.sock"));
     let mut command = Command::new(qemu);
     command
         .args([
@@ -260,7 +279,11 @@ fn boot_configured(
             "VGA",
             "-serial",
         ])
-        .arg(format!("file:{}", serial.display()))
+        .arg(if console_socket.is_some() {
+            String::from("chardev:console")
+        } else {
+            format!("file:{}", serial.display())
+        })
         .arg("-drive")
         .arg(format!(
             "if=pflash,format=raw,unit=0,readonly=on,file={}",
@@ -283,6 +306,14 @@ fn boot_configured(
             "-boot",
             "strict=on",
         ]);
+    if let Some(socket) = &console_socket {
+        command.arg("-chardev").arg(format!(
+            "socket,id=console,path={},server=on,wait=off,logfile={},logappend=off",
+            socket.display(),
+            serial.display()
+        ));
+        runner.record(&format!("console_private_socket={}", socket.display()))?;
+    }
     if spec.data_disk.is_some() {
         command
             .arg("-drive")
@@ -346,7 +377,20 @@ fn boot_configured(
     let mut session = socket.as_ref().map(|socket| {
         crate::vm_graphics::Session::new(&serial, socket, &directory, fault, full, gui)
     });
-    let output = if let Some(session) = &mut session {
+    let mut shell_session = if fault.starts_with("t09-") {
+        Some(crate::vm_shell::Session::new(
+            console_socket.as_ref().unwrap(),
+            &serial,
+            &directory,
+            fault,
+            boot_id,
+        )?)
+    } else {
+        None
+    };
+    let output = if let Some(session) = &mut shell_session {
+        runner.interactive(&mut command, &serial, &mut || session.poll())
+    } else if let Some(session) = &mut session {
         runner.interactive(&mut command, &serial, &mut || session.poll())
     } else {
         runner.boot(
@@ -364,6 +408,18 @@ fn boot_configured(
         fs::remove_dir(&socket_dir)?;
         runner.record(&format!("qmp_private_socket_removed={}", path.display()))?;
     }
+    drop(shell_session);
+    if let Some(console_dir) = console_dir {
+        let path = console_dir.join("console.sock");
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        fs::remove_dir(&console_dir)?;
+        runner.record(&format!(
+            "console_private_socket_removed={}",
+            path.display()
+        ))?;
+    }
     let output = output?;
     validate_size(
         &output,
@@ -373,6 +429,7 @@ fn boot_configured(
             || fault.starts_with("t06-")
             || fault.starts_with("t07-")
             || fault.starts_with("t08-")
+            || fault.starts_with("t09-")
         {
             ""
         } else {
@@ -391,6 +448,7 @@ fn boot_configured(
         || fault.starts_with("t06-")
         || fault.starts_with("t07-")
         || fault.starts_with("t08-")
+        || fault.starts_with("t09-")
     {
         crate::vm_platform::validate(
             &output,
@@ -399,6 +457,7 @@ fn boot_configured(
                 || fault.starts_with("t06-")
                 || fault.starts_with("t07-")
                 || fault.starts_with("t08-")
+                || fault.starts_with("t09-")
             {
                 ""
             } else {
@@ -408,6 +467,9 @@ fn boot_configured(
     }
     if fault.is_empty() || fault.starts_with("t04-") || fault.starts_with("t07-") {
         crate::vm_storage::validate(&output, if fault.starts_with("t07-") { "" } else { fault })?;
+    }
+    if fault.starts_with("t09-") {
+        crate::vm_shell::validate(&output, fault, boot_id)?;
     }
     if fault.starts_with("t08-") {
         crate::vm_service::validate(&output, fault, boot_id)?;
@@ -420,6 +482,7 @@ fn boot_configured(
     }
     if fault.is_empty() || fault.starts_with("t07-") {
         crate::vm_service::validate_default(&output, boot_id)?;
+        crate::vm_shell::validate_default(&output, boot_id)?;
     }
     if let Some(session) = session {
         crate::vm_graphics::validate_recording(&output, fault, full, gui)?;

@@ -14,6 +14,7 @@ mod vm_graphics;
 mod vm_platform;
 mod vm_runtime;
 mod vm_service;
+mod vm_shell;
 mod vm_storage;
 
 use cli::{Action, Options};
@@ -183,6 +184,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
         | Action::TestStorageVm
         | Action::TestFatVm
         | Action::TestServiceVm
+        | Action::TestShellVm
         | Action::TestRuntimeVm
         | Action::TestGraphicsVm
         | Action::TestGraphicsCases(_) => vm::execute(&context, runner, &options.action)?,

@@ -6,6 +6,7 @@ extern crate alloc;
 mod block_driver;
 mod boot;
 mod clock;
+mod console;
 mod exclusive;
 mod file_runtime;
 mod graphics;
@@ -22,6 +23,8 @@ mod t04;
 mod t05;
 #[cfg(feature = "boot-test")]
 mod t08;
+#[cfg(feature = "boot-test")]
+mod t09;
 use core::{fmt::Write, panic::PanicInfo};
 
 // SAFETY: 唯一导出入口，Limine 按 x86_64 System V ABI 提供有效栈及高半区映射。
@@ -44,6 +47,11 @@ pub extern "C" fn _start() -> ! {
                 }
                 if facts.mode.starts_with("t06-") {
                     runtime::test(&mut serial, device, facts.mode);
+                }
+                #[cfg(feature = "boot-test")]
+                if facts.mode.starts_with("t09-") {
+                    t09::run(&mut serial, device, facts.mode);
+                    halt();
                 }
                 #[cfg(feature = "boot-test")]
                 if facts.mode.starts_with("t08-") {

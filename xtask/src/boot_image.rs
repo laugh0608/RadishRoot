@@ -139,6 +139,13 @@ pub fn create(
         "t08-volume-sync",
         "t08-device-flush",
         "t08-bad-fat",
+        "t09-write",
+        "t09-reopen",
+        "t09-readonly",
+        "t09-file-sync",
+        "t09-volume-sync",
+        "t09-device-flush",
+        "t09-bad-fat",
     ]
     .contains(&fault)
     {

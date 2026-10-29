@@ -13,6 +13,7 @@ pub enum Action {
     TestStorageVm,
     TestFatVm,
     TestServiceVm,
+    TestShellVm,
     TestRuntimeVm,
     TestGraphicsVm,
     TestGraphicsCases(Vec<&'static str>),
@@ -46,6 +47,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["test", "--vm", "--storage-only"] => Action::TestStorageVm,
         ["test", "--vm", "--fat-only"] => Action::TestFatVm,
         ["test", "--vm", "--service-only"] => Action::TestServiceVm,
+        ["test", "--vm", "--shell-only"] => Action::TestShellVm,
         ["test", "--vm", "--runtime-only"] => Action::TestRuntimeVm,
         ["test", "--vm", "--graphics-only"] => Action::TestGraphicsVm,
         ["test", "--vm", "--graphics-cases", selected] => {

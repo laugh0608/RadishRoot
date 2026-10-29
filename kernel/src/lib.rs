@@ -10,5 +10,6 @@ pub mod memory;
 pub mod pci_contract;
 pub mod runtime_contract;
 pub mod services;
+pub mod shell;
 pub mod storage;
 pub mod surface;

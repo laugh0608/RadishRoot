@@ -304,7 +304,7 @@ fn histories_report_eviction_and_ids_never_wrap() {
     assert_eq!(s.backend.calls, calls);
 }
 
-struct Disk {
+pub(crate) struct Disk {
     sectors: BTreeMap<u64, [u8; 512]>,
     writes: usize,
     flushes: usize,
@@ -338,7 +338,7 @@ impl block::BlockDevice for Disk {
         Ok(())
     }
 }
-fn formatted() -> (Disk, gpt::Layout) {
+pub(crate) fn formatted() -> (Disk, gpt::Layout) {
     let guid = Guid::parse_or_panic("19e3b3b5-20ad-4d64-8ec4-e97b578589a0");
     let layout = gpt::Layout {
         data_start: 100,

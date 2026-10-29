@@ -94,6 +94,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         && !mode.starts_with("t06-")
         && !mode.starts_with("t07-")
         && !mode.starts_with("t08-")
+        && !mode.starts_with("t09-")
     {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
@@ -236,6 +237,13 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t08-volume-sync",
         "t08-device-flush",
         "t08-bad-fat",
+        "t09-write",
+        "t09-reopen",
+        "t09-readonly",
+        "t09-file-sync",
+        "t09-volume-sync",
+        "t09-device-flush",
+        "t09-bad-fat",
     ]
     .contains(&mode)
     {

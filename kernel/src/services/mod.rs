@@ -115,6 +115,9 @@ impl<B: Backend> FileService<B> {
             changes: History::new(CHANGES),
         })
     }
+    pub fn boot_id(&self) -> BootId {
+        self.boot
+    }
     pub fn volume(&self) -> VolumeInfo {
         self.volume
     }
@@ -322,4 +325,4 @@ impl<B: Backend> FileService<B> {
     }
 }
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

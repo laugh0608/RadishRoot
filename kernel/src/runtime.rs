@@ -16,7 +16,9 @@ pub fn initialize(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str
         serial,
         "RR:T06:ENTER mode={}",
         if facts.mode.is_empty()
-            || (facts.mode.starts_with("t07-") || facts.mode.starts_with("t08-"))
+            || (facts.mode.starts_with("t07-")
+                || facts.mode.starts_with("t08-")
+                || facts.mode.starts_with("t09-"))
         {
             "normal"
         } else {
@@ -117,15 +119,21 @@ pub fn run(
     mode: &str,
     mut disk: Option<Driver>,
     facts: Option<&Facts>,
-    files: Option<&mut crate::file_runtime::Service<'_>>,
+    mut files: Option<&mut crate::file_runtime::Service<'_>>,
 ) -> ! {
-    if let Some(files) = files {
+    if let Some(files) = files.as_deref() {
         let _ = writeln!(
             serial,
             "RR:T08:AVAILABLE generation={} state={:?}",
             files.generation(),
             files.volume().mount_state
         );
+    }
+    let mut console = crate::console::Console::new();
+    if let Some(files) = files.as_deref() {
+        console.announce(serial, files).unwrap_or_else(|code| {
+            interrupts::fatal(format_args!("RR:T09:FAIL code={code} stage=console-init\n"))
+        });
     }
     let mut graphics = None;
     let mut events = Queue::new();
@@ -284,7 +292,14 @@ pub fn run(
                 interrupts::fatal(format_args!("RR:T07:FAIL code={code} stage=loop\n"))
             })
         });
-        interrupts::idle(!events.is_empty() || input_pending);
+        let console_pending = if let Some(files) = files.as_deref_mut() {
+            console.turn(serial, files, now()).unwrap_or_else(|code| {
+                interrupts::fatal(format_args!("RR:T09:FAIL code={code} stage=console\n"))
+            })
+        } else {
+            false
+        };
+        interrupts::idle(!events.is_empty() || input_pending || console_pending);
     }
 }
 pub fn wait_error(error: WaitError, elapsed: u64, stage: &str) {
