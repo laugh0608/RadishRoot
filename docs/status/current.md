@@ -1,6 +1,10 @@
 # 当前状态
 
-更新日期：2026-10-29（Asia/Shanghai）。
+更新日期：2026-11-01（Asia/Shanghai；仅更新规划导航，以下运行与任务证据仍截至 2026-10-29）。
+
+## 规划阅读链
+
+[产品整体规划](../product-plan.md) → [MVP 五个大专题](../mvp-plan.md#capability-map) → [工作台与终端](../mvp-plan.md#workbench-terminal) → [T10 双面板与文件列表](../mvp-plan.md#t10-双面板骨架与最小文件列表)。T10–T13 分属工作台及生命周期主线，阶段顺序仍为 M1；任务状态、FR / AT 与证据来源见[MVP 状态规则](../mvp-plan.md#planning-state-sources)。本次只整理文档，不启动 T10 或运行验证。
 
 ## 当前结论
 
