@@ -1,6 +1,7 @@
 //! 真实键鼠驱动工作台，宿主用实际输入记录和同一只读盘重放；独立像素另行核对。
 mod cases;
 mod link;
+mod power;
 use crate::{
     error::{Error, Result},
     process::{self, Runner},
@@ -11,6 +12,8 @@ use crate::{
 };
 pub use cases::execute;
 pub use link::execute as execute_link;
+pub use power::CASES as POWER_CASES;
+pub use power::execute as execute_power;
 use serde_json::json;
 use std::{
     fs,
@@ -33,6 +36,7 @@ pub struct Session {
     console_socket: Option<PathBuf>,
     deadline: Instant,
     initial: bool,
+    power_done: bool,
     pub snapshots: Vec<Snapshot>,
 }
 impl Session {
@@ -56,6 +60,7 @@ impl Session {
             console_socket: console_socket.map(PathBuf::from),
             deadline: Instant::now() + Duration::from_secs(if gui { 600 } else { 60 }),
             initial: false,
+            power_done: false,
             snapshots: vec![],
         }
     }
@@ -203,6 +208,9 @@ impl Session {
             self.snapshot("workbench-initial")?;
             self.initial = true;
         }
+        if self.mode.starts_with("t12-") {
+            return self.power_poll();
+        }
         if self.gui {
             let f = fields(&state)?;
             if number(&f, "releases")? < 2
@@ -286,11 +294,28 @@ pub fn verify(
     directory: &Path,
     disk: &Path,
     boot: [u8; 16],
-    session: Session,
+    mut session: Session,
     output: &str,
 ) -> Result<()> {
     validate(output, session.full && session.mode.is_empty(), session.gui)?;
-    if session.mode.starts_with("t11-") {
+    if session.mode.starts_with("t12-") {
+        power::validate(output, &session.mode)?;
+        if !power::failure(&session.mode) {
+            session
+                .client
+                .as_mut()
+                .ok_or_else(|| bad("missing QMP exit observer"))?
+                .guest_exit(if session.mode == "t12-reboot" {
+                    "guest-reset"
+                } else {
+                    "guest-shutdown"
+                })?;
+            runner.record("power_exit=natural qmp_guest_reason=verified")?;
+        }
+    }
+    if session.mode.starts_with("t12-") {
+        // T12 独立验证器已核对同步 / 停机 / 平台与自然退出。
+    } else if session.mode.starts_with("t11-") {
         link::validate(output, &session.mode)?;
     } else if !session.mode.is_empty() {
         cases::validate(output, &session.mode)?;

@@ -111,10 +111,10 @@ impl Runner {
         Ok(())
     }
     pub fn run(&mut self, command: &mut Command) -> Result<String> {
-        self.run_inner(command, None, None)
+        self.run_inner(command, None, None, false)
     }
     pub fn boot(&mut self, command: &mut Command, serial: &Path, runtime: bool) -> Result<String> {
-        self.run_inner(command, Some((serial, runtime)), None)
+        self.run_inner(command, Some((serial, runtime)), None, false)
     }
     pub fn interactive(
         &mut self,
@@ -122,13 +122,23 @@ impl Runner {
         serial: &Path,
         monitor: &mut dyn FnMut() -> Result<bool>,
     ) -> Result<String> {
-        self.run_inner(command, Some((serial, false)), Some(monitor))
+        self.run_inner(command, Some((serial, false)), Some(monitor), false)
+    }
+    /// 仅供显式电源验收：允许自然退出，QMP guest 原因由调用方独立验证。
+    pub fn power_vm(
+        &mut self,
+        command: &mut Command,
+        serial: &Path,
+        monitor: &mut dyn FnMut() -> Result<bool>,
+    ) -> Result<String> {
+        self.run_inner(command, Some((serial, false)), Some(monitor), true)
     }
     fn run_inner(
         &mut self,
         command: &mut Command,
         serial: Option<(&Path, bool)>,
         mut monitor: Option<&mut dyn FnMut() -> Result<bool>>,
+        natural_exit: bool,
     ) -> Result<String> {
         self.sequence += 1;
         let prefix = format!("{:03}", self.sequence);
@@ -235,7 +245,7 @@ impl Runner {
             });
         }
         if let Some((path, _)) = serial {
-            if !observed {
+            if !observed && (!natural_exit || !status.success()) {
                 return Err(Error::new(
                     "vm-exited",
                     "guest exited before terminal observation; not a successful shutdown",

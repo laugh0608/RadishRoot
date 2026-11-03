@@ -18,6 +18,8 @@ pub enum Error {
     OperationUnavailable { evicted: u64 },
 }
 pub enum Output {
+    Synced,
+    PowerPrepared(services::power::Action),
     Help,
     Files(ListPage),
     Bytes {
@@ -73,6 +75,7 @@ impl Shell {
         let result = (|| {
             let command = parser::parse(line).map_err(Error::Parse)?;
             let request = match command {
+                Command::Power(action) => Request::Power(action),
                 Command::Help => return Ok(Output::Help),
                 Command::Operations => {
                     return Ok(Output::Operations {
@@ -128,6 +131,8 @@ impl Shell {
             operation_id = Some(r.operation_id);
             let result = r.result.map_err(Error::Service)?;
             Ok(match result {
+                services::Output::Synced => Output::Synced,
+                services::Output::PowerPrepared(a) => Output::PowerPrepared(a),
                 services::Output::List(page) => {
                     self.next_page = page
                         .next

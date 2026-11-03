@@ -12,6 +12,8 @@ pub struct FatBackend<'a, D: BlockDevice> {
     layout: gpt::Layout,
     #[cfg(any(test, feature = "boot-test"))]
     failure: Option<Stage>,
+    #[cfg(any(test, feature = "boot-test"))]
+    sync_failure: Option<Stage>,
 }
 impl<'a, D: BlockDevice> FatBackend<'a, D> {
     pub fn new(device: &'a mut D, layout: gpt::Layout) -> Self {
@@ -20,11 +22,17 @@ impl<'a, D: BlockDevice> FatBackend<'a, D> {
             layout,
             #[cfg(any(test, feature = "boot-test"))]
             failure: None,
+            #[cfg(any(test, feature = "boot-test"))]
+            sync_failure: None,
         }
     }
     #[cfg(any(test, feature = "boot-test"))]
     pub fn inject(&mut self, stage: Stage) {
         self.failure = Some(stage);
+    }
+    #[cfg(any(test, feature = "boot-test"))]
+    pub fn inject_sync(&mut self, stage: Stage) {
+        self.sync_failure = Some(stage);
     }
 }
 fn error(e: fatfs::Error<stream::Error>) -> Cause {
@@ -71,10 +79,18 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
         request: BackendRequest<'_>,
         progress: &mut Progress,
     ) -> Result<Data, Cause> {
-        let writing = matches!(request, BackendRequest::CreateText(_));
+        let syncing = matches!(request, BackendRequest::Sync);
+        let writing = matches!(request, BackendRequest::CreateText(_))
+            || (syncing && !self.volume().read_only);
         let state = State::default();
         #[cfg(any(test, feature = "boot-test"))]
-        let failure = if writing { self.failure.take() } else { None };
+        let failure = if syncing {
+            self.sync_failure.take()
+        } else if writing {
+            self.failure.take()
+        } else {
+            None
+        };
         enter(progress, &state, Stage::Mount, Phase::Mount, false);
         let partition = Partition::open(self.device, &self.layout).map_err(Cause::Block)?;
         let mut stream = Stream::new(
@@ -99,6 +115,7 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
         let result = (|| {
             let root = fs.root_dir();
             let data = match request {
+                BackendRequest::Sync => Data::Synced,
                 BackendRequest::List { offset } => {
                     enter(progress, &state, Stage::List, Phase::Read, false);
                     let dir = if path.is_root() {
@@ -217,7 +234,16 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
                     enter(progress, &state, Stage::VolumeSync, Phase::VolumeSync, true);
                     #[cfg(any(test, feature = "boot-test"))]
                     if failure == Some(Stage::VolumeSync) {
-                        state.inject_write_failure();
+                        // 即使本次卷没有 FSInfo 脏数据，也准确在卷同步边界注入一次失败。
+                        if syncing {
+                            state.fail(stream::Cause::InjectedWrite, 0);
+                        } else {
+                            state.inject_write_failure();
+                        }
+                    }
+                    if let Err(e) = state.check() {
+                        drop(fs);
+                        return Err(Cause::Stream(e));
                     }
                     if let Err(e) = fs.flush() {
                         state.fail(stream::Cause::Aborted, 0);
@@ -235,7 +261,7 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
             })(),
         };
         let result = result.and_then(|data| {
-            if writing {
+            if writing || syncing {
                 enter(
                     progress,
                     &state,
@@ -247,7 +273,11 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
                 if failure == Some(Stage::DeviceFlush) {
                     state.inject_flush_failure();
                 }
-                (&mut stream).flush().map_err(Cause::Stream)?;
+                if syncing && stream.readonly() {
+                    stream.sync_device().map_err(Cause::Stream)?;
+                } else {
+                    (&mut stream).flush().map_err(Cause::Stream)?;
+                }
                 state.check().map_err(Cause::Stream)?;
                 progress.completed();
                 progress.record.partial_effect.persistence_confirmed = true;

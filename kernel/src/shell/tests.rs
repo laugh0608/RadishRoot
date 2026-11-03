@@ -146,6 +146,7 @@ impl Backend for Memory {
         p.mounted = true;
         p.completed();
         match request {
+            BackendRequest::Sync => Err(Cause::Contract(Code::InvalidArgument)),
             BackendRequest::List { offset } => {
                 p.enter(Stage::List, Status::Running);
                 let entries = self

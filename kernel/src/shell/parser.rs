@@ -16,6 +16,7 @@ pub enum ParseError {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
+    Power(crate::services::power::Action),
     Help,
     List(String),
     Next,
@@ -30,7 +31,25 @@ pub struct CommandSpec {
     pub modifies: bool,
     pub result: &'static str,
 }
-pub const COMMANDS: [CommandSpec; 6] = [
+pub const COMMANDS: [CommandSpec; 9] = [
+    CommandSpec {
+        name: "sync",
+        usage: "sync",
+        modifies: true,
+        result: "synced",
+    },
+    CommandSpec {
+        name: "reboot",
+        usage: "reboot",
+        modifies: true,
+        result: "power-prepared",
+    },
+    CommandSpec {
+        name: "shutdown",
+        usage: "shutdown",
+        modifies: true,
+        result: "power-prepared",
+    },
     CommandSpec {
         name: "help",
         usage: "help",
@@ -163,6 +182,9 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
     let w = words(line)?;
     let a: Vec<&str> = w.iter().map(String::as_str).collect();
     Ok(match a.as_slice() {
+        ["sync"] => Command::Power(crate::services::power::Action::Sync),
+        ["reboot"] => Command::Power(crate::services::power::Action::Reboot),
+        ["shutdown"] => Command::Power(crate::services::power::Action::Shutdown),
         ["help"] => Command::Help,
         ["ls"] => Command::List(String::from("/data")),
         ["ls", "--next"] => Command::Next,

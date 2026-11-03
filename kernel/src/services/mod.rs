@@ -1,9 +1,11 @@
 //! 唯一文件语义入口。单 BSP 同步请求；真实后端只通过 DATA Partition 访问设备。
 pub mod fat;
 pub mod path;
+pub mod power;
 mod types;
 use alloc::{collections::VecDeque, string::String, vec::Vec};
 use path::Path;
+use power::request_power;
 pub use types::*;
 
 pub const PAGE_SIZE: usize = 32;
@@ -62,6 +64,7 @@ pub struct RawEntry {
     pub size_bytes: Option<u64>,
 }
 pub enum Data {
+    Synced,
     List {
         entries: Vec<RawEntry>,
         next: Option<u32>,
@@ -73,6 +76,7 @@ pub enum Data {
     Created,
 }
 pub enum BackendRequest<'a> {
+    Sync,
     List { offset: u32 },
     Read { offset: u64, limit: usize },
     CreateText(&'a str),
@@ -96,6 +100,7 @@ pub struct FileService<B: Backend> {
     pub operations: History<OperationRecord>,
     pub events: History<OperationEvent>,
     pub changes: History<ChangeEvent>,
+    power: power::State,
 }
 impl<B: Backend> FileService<B> {
     pub fn new(backend: B, boot: BootId) -> Result<Self, Code> {
@@ -113,6 +118,7 @@ impl<B: Backend> FileService<B> {
             operations: History::new(RECORDS),
             events: History::new(EVENTS),
             changes: History::new(CHANGES),
+            power: power::State::Running,
         })
     }
     pub fn boot_id(&self) -> BootId {
@@ -141,10 +147,21 @@ impl<B: Backend> FileService<B> {
         request: &'a Request<'a>,
     ) -> Result<BackendRequest<'a>, Cause> {
         let fail = |code| Cause::Contract(code);
+        if !matches!(self.power, power::State::Running)
+            && matches!(request, Request::CreateText { .. } | Request::Power(_))
+        {
+            return Err(fail(Code::ShuttingDown));
+        }
         if self.volume.mount_state == MountState::Offline {
             return Err(fail(Code::Offline));
         }
         match request {
+            Request::Power(_) => {
+                if !self.volume.flush_support {
+                    return Err(fail(Code::FlushUnsupported));
+                }
+                Ok(BackendRequest::Sync)
+            }
             Request::List { cursor, .. } => {
                 if cursor.is_some_and(|c| !self.current(&c.directory, path)) {
                     return Err(fail(Code::StaleReference));
@@ -222,13 +239,21 @@ impl<B: Backend> FileService<B> {
         };
         progress.enter(Stage::Validate, Status::Created);
         progress.enter(Stage::Validate, Status::Validating);
+        let mut power_started = false;
         let result = (|| {
             let path = cwd.resolve(request.path()).map_err(Cause::Path)?;
             progress.record.target = Some(path.clone());
             let action = self.validate(&path, &request)?;
             progress.completed();
+            if let Request::Power(action) = request {
+                self.power = power::State::Preparing(action, id);
+                power_started = true;
+                // 独占服务且每请求关闭句柄，无异步文件请求可遗留。
+                progress.enter(Stage::Drain, Status::Running);
+                progress.completed();
+            }
             let data = self.backend.run(&path, action, &mut progress)?;
-            if request.kind() == RequestKind::CreateText
+            if matches!(request, Request::CreateText { .. } | Request::Power(_))
                 && !progress.record.partial_effect.persistence_confirmed
             {
                 return Err(Cause::Contract(Code::Io));
@@ -239,7 +264,8 @@ impl<B: Backend> FileService<B> {
             self.volume.mount_state = MountState::Ready;
         }
         let effect = progress.record.partial_effect;
-        if effect.may_have_changed || effect.created {
+        if request.kind() == RequestKind::CreateText && (effect.may_have_changed || effect.created)
+        {
             self.generation += 1; // 创建请求在 IO 前已拒绝耗尽的代次。
             let path = progress
                 .record
@@ -260,6 +286,16 @@ impl<B: Backend> FileService<B> {
                 .as_ref()
                 .expect("successful request has path");
             Ok(match data {
+                Data::Synced => {
+                    let Request::Power(action) = request else {
+                        unreachable!("sync request")
+                    };
+                    if action == power::Action::Sync {
+                        Output::Synced
+                    } else {
+                        Output::PowerPrepared(action)
+                    }
+                }
                 Data::Created => Output::Created(self.reference(path.clone())),
                 Data::Read { bytes, eof } => Output::Read { bytes, eof },
                 Data::List { entries, next } => {
@@ -285,11 +321,31 @@ impl<B: Backend> FileService<B> {
         });
         let result = match result {
             Ok(output) => {
-                progress.enter(Stage::Complete, Status::Succeeded);
+                let prepared = matches!(output, Output::PowerPrepared(_));
+                if let Output::PowerPrepared(action) = output {
+                    self.power = power::State::Prepared(action, id);
+                } else if power_started {
+                    self.power = power::State::Running;
+                }
+                progress.enter(
+                    if prepared {
+                        Stage::PowerReady
+                    } else {
+                        Stage::Complete
+                    },
+                    if prepared {
+                        Status::Prepared
+                    } else {
+                        Status::Succeeded
+                    },
+                );
                 progress.completed();
                 Ok(output)
             }
             Err(cause) => {
+                if power_started {
+                    self.power = power::State::Failed(request_power(&request), id);
+                }
                 let error = SystemError {
                     code: cause.code(),
                     stage: progress.record.stage,
@@ -316,6 +372,25 @@ impl<B: Backend> FileService<B> {
                 status: *status,
             });
             self.next_event += 1;
+        }
+        // 电源错误与后续平台阶段需要更新原记录；诊断洪流不能在请求完成前挤掉它。
+        let pinned = match self.power {
+            power::State::Preparing(_, id)
+            | power::State::Prepared(_, id)
+            | power::State::Stopped(_, id)
+            | power::State::Requested(_, id)
+            | power::State::Failed(_, id) => Some(id),
+            power::State::Running => None,
+        };
+        if self.operations.entries.len() == self.operations.capacity
+            && self
+                .operations
+                .entries
+                .front()
+                .is_some_and(|r| Some(r.id) == pinned)
+        {
+            self.operations.entries.remove(1);
+            self.operations.evicted = self.operations.evicted.saturating_add(1);
         }
         self.operations.push(progress.record);
         Ok(Reply {

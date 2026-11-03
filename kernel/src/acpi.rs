@@ -1,4 +1,5 @@
-//! 仅解析 HPET 所需的 ACPI 2+ 表；不访问硬件、不执行 AML。
+//! 解析 HPET 与固定 q35 电源所需的 ACPI 2+ 表；不访问硬件、不执行 AML。
+pub mod power;
 pub const MAX_TABLE: usize = 65536;
 pub const MAX_ROOT_ENTRIES: usize = 256;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

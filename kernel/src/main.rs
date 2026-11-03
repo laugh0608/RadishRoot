@@ -15,6 +15,7 @@ mod interrupts;
 mod pci;
 mod platform_identity;
 mod platform_memory;
+mod platform_power;
 mod ps2;
 mod runtime;
 mod serial;
@@ -61,7 +62,7 @@ pub extern "C" fn _start() -> ! {
                 if facts.mode.is_empty()
                     || facts.mode.starts_with("t07-")
                     || facts.mode.starts_with("t10-")
-                    || facts.mode.starts_with("t11-")
+                    || (facts.mode.starts_with("t11-") || facts.mode.starts_with("t12-"))
                 {
                     match t04::probe(&mut serial, device) {
                         Ok(disk) => file_runtime::run(&mut serial, disk, &facts),

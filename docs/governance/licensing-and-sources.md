@@ -52,6 +52,8 @@ CI 使用 GitHub 官方 actions/checkout v4.2.2，固定 commit `11bd71901bbe5b1
 
 其余 29 项 Homebrew 运行依赖的实际版本与包收据已记录在环境证据中，本轮没有逐项完成分发许可审查。许可证摘要仅记录本机工具来源；未来若分发 QEMU、固件或其他依赖，须按实际制品重新处理许可、源码与归属义务。宿主 OpenSSL 4 与固件内嵌密码库属于不同材料，不能用宿主版本推断固件的库版本或许可。
 
+T12 仅核对 [QEMU v11.1.2 ACPI 构表](https://github.com/qemu/qemu/blob/v11.1.2/hw/i386/acpi-build.c)、[ACPI 控制](https://github.com/qemu/qemu/blob/v11.1.2/hw/acpi/core.c)及 [ICH9 LPC](https://github.com/qemu/qemu/blob/v11.1.2/hw/isa/lpc_ich9.c)的固定平台协议：S5 类型、FADT reset GAS、guest 电源事件。构表文件声明 GPL-2.0-or-later，LPC 文件为 MIT；core 文件保留原 LGPL-2.1-or-later 及 2012 年后贡献 GPL-2.0-or-later 的区分。未复制、修改或分发上游代码 / 二进制，仅按协议编写本项目适配和边界测试；使用锁定宿主工具，不改变其许可记录。
+
 ### 本机 Rust nightly 工具链
 
 2026-10-19 用户安装 `nightly-2026-10-13-aarch64-apple-darwin`，本轮只核对工具与文件，未编译、修改或分发 Rust 材料。来源为此前核对的 [Rust 官方日期清单](https://static.rust-lang.org/dist/2026-10-13/channel-rust-nightly.toml)；已装七项组件的版本、归档 URL 和摘要与该清单一致，实际 rustc commit 为 `e9bbadf6824e65b3583c2dda3a0926ec76df9143`，链接器为 LLD 23.1.3。详细身份与核验边界见[开发环境第 2.9 节](../development/environment.md)。

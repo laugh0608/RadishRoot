@@ -337,7 +337,7 @@ impl Graphics {
             let count = view.page.as_ref().map_or(0, |p| p.entries.len());
             let _ = writeln!(
                 serial,
-                "RR:T10:FRAME generation={} width={} height={} x={} y={} left={} events={} releases={} button_releases={} resets={} pending={} entries={} list_ok={} results={} evicted={} selected={} input_bytes={} details={} focus={:?} notice={:?} single={} terminal={} frame_bytes={} heap={} elapsed_ns={} update={} change={} list_generation={} file_row={} file_scroll={}",
+                "RR:T10:FRAME generation={} width={} height={} x={} y={} left={} events={} releases={} button_releases={} resets={} pending={} entries={} list_ok={} results={} evicted={} selected={} input_bytes={} details={} focus={:?} notice={:?} single={} terminal={} frame_bytes={} heap={} elapsed_ns={} update={} change={} list_generation={} file_row={} file_scroll={} power={}",
                 self.display.presents,
                 view.geometry().width(),
                 view.geometry().height(),
@@ -367,7 +367,8 @@ impl Graphics {
                 view.change_operation.map_or(0, |id| id.sequence),
                 view.list_generation,
                 view.file_row,
-                view.file_scroll
+                view.file_scroll,
+                view.power.label()
             );
             return Ok(());
         }

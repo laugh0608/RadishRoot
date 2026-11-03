@@ -112,6 +112,8 @@ pub struct View {
     refresh: Option<changes::Refresh>,
     pub update: UpdateState,
     pub change_operation: Option<OperationId>,
+    pub power: services::power::State,
+    pub power_error: Option<SystemError>,
 }
 impl View {
     pub fn new(geometry: Geometry) -> Self {
@@ -154,6 +156,8 @@ impl View {
             refresh: None,
             update: UpdateState::Idle,
             change_operation: None,
+            power: services::power::State::Running,
+            power_error: None,
         }
     }
     pub fn geometry(&self) -> Geometry {
@@ -530,6 +534,15 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
         }
         Err(e) => {
             let _ = writeln!(text, "FAILED {e:?}");
+        }
+        Ok(shell::Output::Synced) => {
+            let _ = writeln!(text, "SYNCED: filesystem closed; device flush confirmed.");
+        }
+        Ok(shell::Output::PowerPrepared(action)) => {
+            let _ = writeln!(
+                text,
+                "PREPARED {action:?}: sync confirmed; power is not complete.\nSee live power state and original operation details."
+            );
         }
         Ok(shell::Output::Help) => {
             for c in shell::parser::COMMANDS {

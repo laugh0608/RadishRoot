@@ -19,6 +19,8 @@ pub enum Action {
     TestShellVm,
     TestWorkbenchVm,
     TestLinkVm,
+    TestPowerVm,
+    TestPowerCases(Vec<&'static str>),
     TestRuntimeVm,
     TestGraphicsVm,
     TestGraphicsCases(Vec<&'static str>),
@@ -33,6 +35,21 @@ pub struct Options {
     pub timeout: u64,
 }
 
+fn select_cases(selected: &str, allowed: &[&'static str]) -> Result<Vec<&'static str>> {
+    let mut cases = Vec::new();
+    for value in selected.split(',') {
+        let case = allowed
+            .iter()
+            .copied()
+            .find(|case| *case == value)
+            .ok_or_else(|| Error::usage("unknown selected VM case"))?;
+        if cases.contains(&case) {
+            return Err(Error::usage("duplicate selected VM case"));
+        }
+        cases.push(case);
+    }
+    Ok(cases)
+}
 pub fn parse(args: &[String]) -> Result<Options> {
     let mut args = args.iter().map(String::as_str).collect::<Vec<_>>();
     let mut timeout = 120;
@@ -58,22 +75,14 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["test", "--vm", "--shell-only"] => Action::TestShellVm,
         ["test", "--vm", "--workbench-only"] => Action::TestWorkbenchVm,
         ["test", "--vm", "--link-only"] => Action::TestLinkVm,
+        ["test", "--vm", "--power-only"] => Action::TestPowerVm,
+        ["test", "--vm", "--power-cases", selected] => {
+            Action::TestPowerCases(select_cases(selected, &crate::vm_workbench::POWER_CASES)?)
+        }
         ["test", "--vm", "--runtime-only"] => Action::TestRuntimeVm,
         ["test", "--vm", "--graphics-only"] => Action::TestGraphicsVm,
         ["test", "--vm", "--graphics-cases", selected] => {
-            let mut cases = Vec::new();
-            for value in selected.split(',') {
-                let case = crate::vm_graphics::CASES
-                    .iter()
-                    .copied()
-                    .find(|case| *case == value)
-                    .ok_or_else(|| Error::usage("unknown T07 graphics case"))?;
-                if cases.contains(&case) {
-                    return Err(Error::usage("duplicate T07 graphics case"));
-                }
-                cases.push(case);
-            }
-            Action::TestGraphicsCases(cases)
+            Action::TestGraphicsCases(select_cases(selected, crate::vm_graphics::CASES)?)
         }
         ["ui", "--host"] => Action::Ui {
             gui: false,
@@ -145,6 +154,9 @@ mod tests {
         );
         for s in [
             "run",
+            "test --vm --power-cases unknown",
+            "test --vm --power-cases t12-reopen",
+            "test --vm --power-cases t12-sync,t12-sync",
             "test --vm --graphics-cases unknown",
             "test --vm --graphics-cases t07-redraw,t07-redraw",
             "test --vm --runtime-only --fat-only",
@@ -160,5 +172,22 @@ mod tests {
         ] {
             assert_eq!(parse(&args(s)).unwrap_err().exit, 2, "{s}");
         }
+        assert_eq!(
+            parse(&args("test --vm --power-cases t12-shutdown,t12-flush-fail"))
+                .unwrap()
+                .action,
+            Action::TestPowerCases(vec!["t12-shutdown", "t12-flush-fail"])
+        );
+        assert_eq!(
+            parse(&[
+                "test".into(),
+                "--vm".into(),
+                "--power-cases".into(),
+                String::new()
+            ])
+            .unwrap_err()
+            .exit,
+            2
+        );
     }
 }

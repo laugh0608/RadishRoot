@@ -47,6 +47,7 @@ impl Backend for MemoryBackend {
         self.calls += 1;
         p.mounted = true;
         match request {
+            BackendRequest::Sync => Err(Cause::Contract(Code::InvalidArgument)),
             BackendRequest::List { .. } => Ok(Data::List {
                 entries: vec![RawEntry {
                     name: String::from("one.txt"),

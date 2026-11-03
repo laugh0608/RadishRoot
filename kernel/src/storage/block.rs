@@ -113,6 +113,10 @@ pub trait BlockDevice {
     fn write_blocks(&mut self, lba: u64, bytes: &[u8]) -> Result<(), Error>;
     fn flush(&mut self) -> Result<(), Error>;
 }
+/// 平台停机边界：只有确认设备不再访问 DMA 后才可返回成功。
+pub trait Quiesce: BlockDevice {
+    fn stop(&mut self) -> Result<(), Error>;
+}
 pub struct Partition<'a, D: BlockDevice> {
     device: &'a mut D,
     start: u64,

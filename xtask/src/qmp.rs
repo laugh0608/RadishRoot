@@ -15,6 +15,8 @@ pub struct Client {
     buffer: Vec<u8>,
     id: u64,
     log: File,
+    closed: bool,
+    events: Vec<Value>,
 }
 fn bad(detail: impl Into<String>) -> Error {
     Error::new("qmp", detail)
@@ -28,13 +30,15 @@ impl Client {
             buffer: Vec::new(),
             id: 0,
             log: OpenOptions::new().write(true).create_new(true).open(log)?,
+            closed: false,
+            events: vec![],
         };
         let greeting = client.read(Instant::now() + Duration::from_secs(3))?;
         validate_greeting(&greeting)?;
         client.execute("qmp_capabilities", json!({}))?;
         Ok(client)
     }
-    fn read(&mut self, deadline: Instant) -> Result<Value> {
+    fn poll(&mut self) -> Result<Option<Value>> {
         loop {
             if let Some(index) = self.buffer.iter().position(|b| *b == b'\n') {
                 if index > MAX_MESSAGE {
@@ -45,24 +49,56 @@ impl Client {
                     serde_json::from_slice(&bytes).map_err(|e| bad(e.to_string()))?;
                 writeln!(self.log, "receive {}", value)?;
                 self.log.flush()?;
-                return Ok(value);
+                return Ok(Some(value));
             }
             if self.buffer.len() > MAX_MESSAGE {
                 return Err(bad("message exceeds 64 KiB"));
             }
-            if Instant::now() >= deadline {
-                return Err(bad("reply deadline exceeded (3 seconds)"));
+            if self.closed {
+                return Ok(None);
             }
             let mut bytes = [0; 4096];
             match self.stream.read(&mut bytes) {
-                Ok(0) => return Err(bad("channel closed")),
-                Ok(n) => self.buffer.extend_from_slice(&bytes[..n]),
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(2))
+                Ok(0) => {
+                    self.closed = true;
+                    return Ok(None);
                 }
+                Ok(n) => self.buffer.extend_from_slice(&bytes[..n]),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
                 Err(e) => return Err(e.into()),
             }
         }
+    }
+    fn read(&mut self, deadline: Instant) -> Result<Value> {
+        loop {
+            if let Some(v) = self.poll()? {
+                return Ok(v);
+            }
+            if self.closed {
+                return Err(bad("channel closed"));
+            }
+            if Instant::now() >= deadline {
+                return Err(bad("reply deadline exceeded (3 seconds)"));
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+    fn keep_event(&mut self, value: Value) -> Result<()> {
+        if !value.get("event").is_some_and(Value::is_string) {
+            return Err(bad("unsolicited QMP reply"));
+        }
+        if self.events.len() == 64 {
+            return Err(bad("QMP event limit"));
+        }
+        reply(value.clone(), self.id)?;
+        self.events.push(value);
+        Ok(())
+    }
+    pub fn guest_exit(&mut self, reason: &str) -> Result<()> {
+        while let Some(v) = self.poll()? {
+            self.keep_event(v)?;
+        }
+        validate_guest_exit(&self.events, reason)
     }
     pub fn execute(&mut self, command: &str, arguments: Value) -> Result<Value> {
         self.id = self
@@ -94,11 +130,25 @@ impl Client {
         }
         loop {
             let response = self.read(deadline)?;
+            if response.get("event").is_some() {
+                self.keep_event(response.clone())?;
+            }
             if let Some(value) = reply(response, self.id)? {
                 return Ok(value);
             }
         }
     }
+}
+fn validate_guest_exit(events: &[Value], reason: &str) -> Result<()> {
+    let shutdowns: Vec<_> = events.iter().filter(|v| v["event"] == "SHUTDOWN").collect();
+    if shutdowns.len() != 1
+        || shutdowns[0]["data"]["guest"] != true
+        || shutdowns[0]["data"]["reason"] != reason
+    {
+        return Err(bad("missing or wrong guest SHUTDOWN event"));
+    }
+    reply((*shutdowns[0]).clone(), 0)?;
+    Ok(())
 }
 fn validate_greeting(value: &Value) -> Result<()> {
     let qmp = value
@@ -136,6 +186,22 @@ fn reply(value: Value, id: u64) -> Result<Option<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn power_exit_requires_one_real_guest_event_and_exact_reason() {
+        let good = json!({"event":"SHUTDOWN","data":{"guest":true,"reason":"guest-shutdown"}});
+        assert!(validate_guest_exit(std::slice::from_ref(&good), "guest-shutdown").is_ok());
+        for events in [
+            vec![],
+            vec![good.clone(), good.clone()],
+            vec![json!({"event":"SHUTDOWN","data":{"guest":false,"reason":"guest-shutdown"}})],
+            vec![json!({"event":"SHUTDOWN","data":{"guest":true,"reason":"guest-reset"}})],
+            vec![
+                json!({"event":"SHUTDOWN","id":1,"data":{"guest":true,"reason":"guest-shutdown"}}),
+            ],
+        ] {
+            assert!(validate_guest_exit(&events, "guest-shutdown").is_err());
+        }
+    }
     #[test]
     fn greeting_reply_ids_errors_and_events_are_not_interchangeable() {
         assert!(validate_greeting(&json!({"QMP":{"version":{},"capabilities":[]}})).is_ok());

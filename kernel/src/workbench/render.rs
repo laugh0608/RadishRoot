@@ -213,9 +213,16 @@ impl View {
         );
         let volume = self.volume.map_or(String::from("Volume: loading"), |v| {
             format!(
-                "/data  {:?}  {}",
+                "/data  {:?}  {}  Power: {}",
                 v.mount_state,
-                if v.read_only { "READ ONLY" } else { "WRITABLE" }
+                if !matches!(self.power, services::power::State::Running) {
+                    "WRITES BLOCKED"
+                } else if v.read_only {
+                    "READ ONLY"
+                } else {
+                    "WRITABLE"
+                },
+                self.power.label()
             )
         });
         label(
@@ -233,11 +240,17 @@ impl View {
             Notice::InputUnavailable => "Input unavailable. See serial diagnostics.",
             Notice::IdentityExhausted => "FAILED: identity exhausted. No further command executed.",
         };
+        let power_error = self.power_error.as_ref().map(|e| {
+            format!(
+                "Power FAILED {:?} at {:?}; writes blocked. Open original operation details.",
+                e.code, e.stage
+            )
+        });
         label(
             s,
             rect(12, l.row * 2 + 12, w - 24, l.row),
-            status,
-            if matches!(self.notice, Notice::Ready | Notice::Executing) {
+            power_error.as_deref().unwrap_or(status),
+            if power_error.is_none() && matches!(self.notice, Notice::Ready | Notice::Executing) {
                 style::MUTED
             } else {
                 style::ERROR

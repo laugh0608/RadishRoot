@@ -20,7 +20,7 @@ pub fn initialize(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str
                 || facts.mode.starts_with("t08-")
                 || facts.mode.starts_with("t09-")
                 || facts.mode.starts_with("t10-")
-                || facts.mode.starts_with("t11-"))
+                || (facts.mode.starts_with("t11-") || facts.mode.starts_with("t12-")))
         {
             "normal"
         } else {
@@ -132,6 +132,9 @@ pub fn run(
         );
     }
     let mut console = crate::console::Console::new();
+    let mut power = facts
+        .filter(|_| files.is_some())
+        .map(crate::platform_power::Controller::new);
     if let Some(files) = files.as_deref() {
         console.announce(serial, files).unwrap_or_else(|code| {
             interrupts::fatal(format_args!("RR:T09:FAIL code={code} stage=console-init\n"))
@@ -301,6 +304,9 @@ pub fn run(
         } else {
             false
         };
+        if let (Some(power), Some(files)) = (&mut power, files.as_deref_mut()) {
+            power.turn(serial, files, current);
+        }
         interrupts::idle(!events.is_empty() || input_pending || console_pending);
     }
 }

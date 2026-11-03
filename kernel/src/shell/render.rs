@@ -140,6 +140,13 @@ pub fn reply(w: &mut impl Write, r: &Reply) -> fmt::Result {
                     }
                     w.write_str("]}")?;
                 }
+                Output::Synced => {
+                    w.write_str("{\"kind\":\"synced\",\"persistence_confirmed\":true}")?
+                }
+                Output::PowerPrepared(a) => write!(
+                    w,
+                    "{{\"kind\":\"power-prepared\",\"action\":\"{a:?}\",\"power_completed\":false}}"
+                )?,
                 Output::Files(page) => {
                     write!(
                         w,

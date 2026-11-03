@@ -15,6 +15,13 @@ pub fn run(serial: &mut Serial, mut disk: Driver, facts: &Facts) -> ! {
     });
     let backend = FatBackend::new(&mut disk, layout);
     #[cfg(feature = "boot-test")]
+    if facts.mode == "t12-platform-fail" {
+        let _ = writeln!(
+            serial,
+            "RR:T12:INJECTION stage=Platform mechanism=capability-reject"
+        );
+    }
+    #[cfg(feature = "boot-test")]
     let backend = {
         let mut backend = backend;
         if matches!(facts.mode, "t10-file-sync" | "t11-file-sync") {
@@ -22,6 +29,18 @@ pub fn run(serial: &mut Serial, mut disk: Driver, facts: &Facts) -> ! {
             let _ = writeln!(
                 serial,
                 "RR:T10:INJECTION stage=FileSync mechanism=adapter-once"
+            );
+        }
+        let sync_failure = match facts.mode {
+            "t12-volume-fail" => Some(radishroot_kernel::services::Stage::VolumeSync),
+            "t12-flush-fail" => Some(radishroot_kernel::services::Stage::DeviceFlush),
+            _ => None,
+        };
+        if let Some(stage) = sync_failure {
+            backend.inject_sync(stage);
+            let _ = writeln!(
+                serial,
+                "RR:T12:INJECTION stage={stage:?} mechanism=sync-adapter-once"
             );
         }
         backend

@@ -295,6 +295,11 @@ fn wait_kind(reason: WaitError) -> Kind {
         WaitError::Clock(_) => Kind::Clock,
     }
 }
+impl radishroot_kernel::storage::block::Quiesce for Driver {
+    fn stop(&mut self) -> Result<(), Error> {
+        Driver::stop(self)
+    }
+}
 impl BlockDevice for Driver {
     fn info(&self) -> Info {
         self.info

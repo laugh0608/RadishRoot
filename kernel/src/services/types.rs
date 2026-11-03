@@ -49,10 +49,14 @@ pub enum RequestKind {
     List,
     Read,
     CreateText,
+    Sync,
+    Reboot,
+    Shutdown,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
     Validate,
+    Drain,
     Mount,
     List,
     Read,
@@ -62,6 +66,9 @@ pub enum Stage {
     VolumeSync,
     Unmount,
     DeviceFlush,
+    DeviceStop,
+    PowerReady,
+    Platform,
     Complete,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +77,8 @@ pub enum Status {
     Validating,
     Running,
     Flushing,
+    Prepared,
+    Requested,
     Succeeded,
     Failed,
 }
@@ -89,6 +98,9 @@ pub enum Code {
     Offline,
     ResourceLimit,
     IdentityExhausted,
+    ShuttingDown,
+    PlatformUnsupported,
+    PowerNotTaken,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FatCause {
@@ -111,10 +123,19 @@ pub enum Cause {
     Fat(FatCause),
     Stream(stream::Error),
     Block(block::Error),
+    Platform(PlatformCause),
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlatformCause {
+    Discovery(&'static str),
+    Acpi(crate::acpi::Error),
+    NotTaken,
 }
 impl Cause {
     pub fn code(self) -> Code {
         match self {
+            Self::Platform(PlatformCause::NotTaken) => Code::PowerNotTaken,
+            Self::Platform(_) => Code::PlatformUnsupported,
             Self::Path(_) => Code::InvalidPath,
             Self::Contract(c) => c,
             Self::Fat(FatCause::NotFound) => Code::NotFound,
@@ -186,12 +207,15 @@ pub enum Output {
     List(ListPage),
     Read { bytes: Vec<u8>, eof: bool },
     Created(FileRef),
+    Synced,
+    PowerPrepared(super::power::Action),
 }
 pub struct Reply {
     pub operation_id: OperationId,
     pub result: Result<Output, SystemError>,
 }
 pub enum Request<'a> {
+    Power(super::power::Action),
     List {
         path: &'a str,
         cursor: Option<&'a ListCursor>,
@@ -210,6 +234,7 @@ pub enum Request<'a> {
 impl Request<'_> {
     pub fn path(&self) -> &str {
         match self {
+            Self::Power(_) => "/data",
             Self::List { path, .. } | Self::Read { path, .. } | Self::CreateText { path, .. } => {
                 path
             }
@@ -217,6 +242,11 @@ impl Request<'_> {
     }
     pub fn kind(&self) -> RequestKind {
         match self {
+            Self::Power(action) => match action {
+                super::power::Action::Sync => RequestKind::Sync,
+                super::power::Action::Reboot => RequestKind::Reboot,
+                super::power::Action::Shutdown => RequestKind::Shutdown,
+            },
             Self::List { .. } => RequestKind::List,
             Self::Read { .. } => RequestKind::Read,
             Self::CreateText { .. } => RequestKind::CreateText,

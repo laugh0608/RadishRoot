@@ -147,6 +147,17 @@ impl<'a, D: BlockDevice> Stream<'a, D> {
     pub fn position(&self) -> u64 {
         self.position
     }
+    /// 显式 sync 请求即使卷只读也须取得真实设备 flush 响应；不写文件或扇区。
+    pub fn sync_device(&mut self) -> Result<(), Error> {
+        self.state.enter(self.position)?;
+        #[cfg(any(test, feature = "boot-test"))]
+        if self.state.fail_flush.replace(false) {
+            return Err(self.state.fail(Cause::InjectedFlush, self.position));
+        }
+        self.partition
+            .flush()
+            .map_err(|e| self.state.fail(Cause::Block(e), self.position))
+    }
 }
 // 实现在借用上，使显式 unmount 消耗 FileSystem 后仍能执行最后一次设备 flush。
 impl<D: BlockDevice> IoBase for &mut Stream<'_, D> {

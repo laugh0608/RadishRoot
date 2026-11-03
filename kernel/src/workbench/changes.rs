@@ -48,6 +48,19 @@ pub(super) struct Refresh {
 impl View {
     /// 只检查最多 32 条变更事实；返回是否观察到新状态，不执行 IO。
     pub fn observe_changes<B: Backend>(&mut self, files: &FileService<B>) -> bool {
+        let power_changed = self.power != files.power();
+        if power_changed {
+            self.power = files.power();
+            self.power_error = match self.power {
+                services::power::State::Failed(_, id) => files
+                    .operations
+                    .iter()
+                    .find(|r| r.id == id)
+                    .and_then(|r| r.error.clone()),
+                _ => None,
+            };
+            self.dirty = true;
+        }
         let now = Subscription {
             boot: files.boot_id(),
             volume: files.volume().id,
@@ -55,11 +68,11 @@ impl View {
             state: files.volume().mount_state,
         };
         let Some(old) = self.subscription.replace(now) else {
-            return false;
+            return power_changed;
         };
         let identity = old.boot != now.boot || old.volume != now.volume;
         if !identity && old.generation == now.generation && old.state == now.state {
-            return false;
+            return power_changed;
         }
         self.volume = Some(files.volume());
         self.dirty |= identity || old.state != now.state;

@@ -29,7 +29,7 @@ fn table(facts: &Facts, physical: u64) -> Result<&[u8], &'static str> {
     let length = acpi::table_length(header).map_err(|_| "ACPI_LENGTH")?;
     bytes(facts, physical, length)
 }
-fn discover(facts: &Facts) -> Result<u64, &'static str> {
+pub fn acpi_table<'a>(facts: &'a Facts, signature: &[u8; 4]) -> Result<&'a [u8], &'static str> {
     let rsdp = facts
         .rsdp
         .ok_or("ACPI_RSDP_MISSING")?
@@ -43,14 +43,11 @@ fn discover(facts: &Facts) -> Result<u64, &'static str> {
     for entry in entries.as_chunks::<8>().0 {
         let address = u64::from_le_bytes(*entry);
         let header = bytes(facts, address, 36)?;
-        if &header[..4] == b"HPET" {
-            let base = acpi::hpet(table(facts, address)?).map_err(|_| "ACPI_HPET")?;
-            if found.replace(base).is_some() {
-                return Err("HPET_MULTIPLE");
-            }
+        if &header[..4] == signature && found.replace(table(facts, address)?).is_some() {
+            return Err("ACPI_TABLE_MULTIPLE");
         }
     }
-    found.ok_or("HPET_MISSING")
+    found.ok_or("ACPI_TABLE_MISSING")
 }
 fn read(base: usize, offset: usize) -> u32 {
     // SAFETY: base 仅来自本模块保存的已验证独占 HPET 映射，调用点 offset 为标准寄存器且4字节对齐。
@@ -73,7 +70,12 @@ fn counter(base: usize) -> Result<u64, TimeError> {
     Err(TimeError::Inconsistent)
 }
 pub fn initialize(facts: &Facts) -> Result<(u64, u64), &'static str> {
-    let physical = discover(facts)?;
+    let physical = acpi::hpet(acpi_table(facts, b"HPET").map_err(|e| match e {
+        "ACPI_TABLE_MISSING" => "HPET_MISSING",
+        "ACPI_TABLE_MULTIPLE" => "HPET_MULTIPLE",
+        other => other,
+    })?)
+    .map_err(|_| "ACPI_HPET")?;
     let base = platform_memory::map_hpet(physical, &facts.regions[..facts.count])?;
     let caps = read(base, 0);
     let period = u64::from(read(base, 4));

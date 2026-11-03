@@ -52,7 +52,14 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         runner,
         true,
         true,
-        selected.is_some() || matches!(action, Action::TestWorkbenchVm | Action::TestLinkVm),
+        selected.is_some()
+            || matches!(
+                action,
+                Action::TestWorkbenchVm
+                    | Action::TestLinkVm
+                    | Action::TestPowerVm
+                    | Action::TestPowerCases(_)
+            ),
     )?;
     let first_mode = selected.map_or("", |cases| cases[0]);
     let disk = boot_image::create(&context.root, runner, &manifest, &kernel, first_mode)?;
@@ -90,6 +97,20 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     };
     if *action == Action::TestWorkbenchVm {
         return crate::vm_workbench::execute(context, runner, &manifest, &machine, &kernel, &disk);
+    }
+    if matches!(action, Action::TestPowerVm | Action::TestPowerCases(_)) {
+        return crate::vm_workbench::execute_power(
+            context,
+            runner,
+            &manifest,
+            &machine,
+            &kernel,
+            &disk,
+            match action {
+                Action::TestPowerCases(cases) => cases,
+                _ => &crate::vm_workbench::POWER_CASES,
+            },
+        );
     }
     if *action == Action::TestLinkVm {
         return crate::vm_workbench::execute_link(
@@ -213,6 +234,15 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             crate::vm_workbench::execute_link(
                 context, runner, &manifest, &machine, &kernel, &disk,
             )?;
+            crate::vm_workbench::execute_power(
+                context,
+                runner,
+                &manifest,
+                &machine,
+                &kernel,
+                &disk,
+                &crate::vm_workbench::POWER_CASES,
+            )?;
         }
     }
     runner.record(if *action == Action::TestShellVm {
@@ -228,7 +258,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     } else if *action == Action::TestStorageVm {
         "T04 storage cases complete; T02/T03 standalone regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestVm {
-        "T02/T03/T04/T05/T06/T07/T08/T09/T10/T11 complete: 69 VM starts, actual input/screens and independent storage checks; host termination is not guest shutdown"
+        "T02-T12 complete: 77 VM starts; T12 power exits require guest QMP causes and natural exit, other host terminations are not guest shutdown"
     } else {
         "one normal read-only boot complete; standalone fault suites not run; no guest shutdown claim"
     })
@@ -272,7 +302,7 @@ fn boot_configured(
         || fault.starts_with("t07-")
         || fault.starts_with("t09-")
         || fault.starts_with("t10-")
-        || fault.starts_with("t11-")
+        || (fault.starts_with("t11-") || fault.starts_with("t12-"))
     {
         let path = process::unique_directory(Path::new("/private/tmp"), "rr-console")?;
         use std::os::unix::fs::PermissionsExt;
@@ -313,7 +343,6 @@ fn boot_configured(
             "-nic",
             "none",
             "-no-reboot",
-            "-no-shutdown",
             "-device",
             "VGA",
             "-serial",
@@ -376,7 +405,7 @@ fn boot_configured(
     let graphics = fault.is_empty()
         || fault.starts_with("t07-")
         || fault.starts_with("t10-")
-        || fault.starts_with("t11-");
+        || (fault.starts_with("t11-") || fault.starts_with("t12-"));
     let socket_dir = if graphics {
         Some(process::unique_directory(
             Path::new("/private/tmp"),
@@ -424,7 +453,11 @@ fn boot_configured(
         });
     let mut workbench_session = socket
         .as_ref()
-        .filter(|_| fault.is_empty() || fault.starts_with("t10-") || fault.starts_with("t11-"))
+        .filter(|_| {
+            fault.is_empty()
+                || fault.starts_with("t10-")
+                || (fault.starts_with("t11-") || fault.starts_with("t12-"))
+        })
         .map(|socket| {
             crate::vm_workbench::Session::new(
                 &serial,
@@ -447,7 +480,12 @@ fn boot_configured(
     } else {
         None
     };
-    let output = if let Some(session) = &mut shell_session {
+    let output = if fault.starts_with("t12-") {
+        let session = workbench_session
+            .as_mut()
+            .ok_or_else(|| Error::new("power-session", "missing workbench"))?;
+        runner.power_vm(&mut command, &serial, &mut || session.poll())
+    } else if let Some(session) = &mut shell_session {
         runner.interactive(&mut command, &serial, &mut || session.poll())
     } else if let Some(session) = &mut session {
         runner.interactive(&mut command, &serial, &mut || session.poll())
@@ -492,7 +530,7 @@ fn boot_configured(
             || fault.starts_with("t08-")
             || fault.starts_with("t09-")
             || fault.starts_with("t10-")
-            || fault.starts_with("t11-")
+            || (fault.starts_with("t11-") || fault.starts_with("t12-"))
         {
             ""
         } else {
@@ -513,7 +551,7 @@ fn boot_configured(
         || fault.starts_with("t08-")
         || fault.starts_with("t09-")
         || fault.starts_with("t10-")
-        || fault.starts_with("t11-")
+        || (fault.starts_with("t11-") || fault.starts_with("t12-"))
     {
         crate::vm_platform::validate(
             &output,
@@ -524,7 +562,7 @@ fn boot_configured(
                 || fault.starts_with("t08-")
                 || fault.starts_with("t09-")
                 || fault.starts_with("t10-")
-                || fault.starts_with("t11-")
+                || (fault.starts_with("t11-") || fault.starts_with("t12-"))
             {
                 ""
             } else {
@@ -548,11 +586,14 @@ fn boot_configured(
         || fault.starts_with("t06-")
         || fault.starts_with("t07-")
         || fault.starts_with("t10-")
-        || fault.starts_with("t11-")
+        || (fault.starts_with("t11-") || fault.starts_with("t12-"))
     {
         crate::vm_runtime::validate(
             &output,
-            if fault.starts_with("t07-") || fault.starts_with("t10-") || fault.starts_with("t11-") {
+            if fault.starts_with("t07-")
+                || fault.starts_with("t10-")
+                || (fault.starts_with("t11-") || fault.starts_with("t12-"))
+            {
                 ""
             } else {
                 fault

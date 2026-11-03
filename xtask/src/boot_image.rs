@@ -154,6 +154,14 @@ pub fn create(
         "t11-pages",
         "t11-file-sync",
         "t11-external",
+        "t12-sync",
+        "t12-shutdown",
+        "t12-reboot",
+        "t12-reopen",
+        "t12-volume-fail",
+        "t12-flush-fail",
+        "t12-platform-fail",
+        "t12-readonly",
     ]
     .contains(&fault)
     {
