@@ -74,7 +74,7 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
         let writing = matches!(request, BackendRequest::CreateText(_));
         let state = State::default();
         #[cfg(any(test, feature = "boot-test"))]
-        let failure = self.failure.take();
+        let failure = if writing { self.failure.take() } else { None };
         enter(progress, &state, Stage::Mount, Phase::Mount, false);
         let partition = Partition::open(self.device, &self.layout).map_err(Cause::Block)?;
         let mut stream = Stream::new(

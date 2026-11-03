@@ -18,7 +18,8 @@ pub fn initialize(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str
         if facts.mode.is_empty()
             || (facts.mode.starts_with("t07-")
                 || facts.mode.starts_with("t08-")
-                || facts.mode.starts_with("t09-"))
+                || facts.mode.starts_with("t09-")
+                || facts.mode.starts_with("t10-"))
         {
             "normal"
         } else {
@@ -288,7 +289,7 @@ pub fn run(
             }
         }
         let input_pending = graphics.as_mut().is_some_and(|g| {
-            g.turn(serial).unwrap_or_else(|code| {
+            g.turn(serial, files.as_deref_mut()).unwrap_or_else(|code| {
                 interrupts::fatal(format_args!("RR:T07:FAIL code={code} stage=loop\n"))
             })
         });

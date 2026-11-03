@@ -112,9 +112,20 @@ pub(super) fn tools_with_files(
     process::directory(&inputs)?;
     process::directory(&output)?;
     let mut index = String::new();
-    for e in &expected {
-        fs::write(inputs.join(format!("{}.bin", e.id)), &e.bytes)?;
-        index.push_str(&format!("{}\t{}\n", e.id, e.path));
+    let material_ids = expected
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            if expected.iter().filter(|other| other.id == e.id).count() > 1 {
+                format!("{}-{i}", e.id)
+            } else {
+                e.id.into()
+            }
+        })
+        .collect::<Vec<String>>();
+    for (e, id) in expected.iter().zip(&material_ids) {
+        fs::write(inputs.join(format!("{id}.bin")), &e.bytes)?;
+        index.push_str(&format!("{id}\t{}\n", e.path));
     }
     fs::write(inputs.join("files.tsv"), index)?;
     fs::copy(
@@ -191,8 +202,8 @@ pub(super) fn tools_with_files(
                 format!("expected={wanted:?} actual={actual:?}"),
             ));
         }
-        for e in &expected {
-            let path = output.join(format!("{}.bin", e.id));
+        for (e, id) in expected.iter().zip(&material_ids) {
+            let path = output.join(format!("{id}.bin"));
             if fs::read(&path)? != e.bytes {
                 return Err(Error::new("fat-content", format!("{} differs", e.path)));
             }

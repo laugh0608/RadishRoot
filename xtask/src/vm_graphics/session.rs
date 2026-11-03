@@ -127,6 +127,7 @@ impl Session {
             "t07-input-overflow" => self.recovery(true)?,
             "t07-redraw" => self.redraw()?,
             "" if self.full => self.normal()?,
+            "t07-input-check" => self.normal()?,
             "t07-resolution" => {
                 self.key("a", true)?;
                 self.key("a", false)?;

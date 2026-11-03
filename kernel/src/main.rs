@@ -58,7 +58,10 @@ pub extern "C" fn _start() -> ! {
                     t08::run(&mut serial, device, facts.mode);
                     halt();
                 }
-                if facts.mode.is_empty() || facts.mode.starts_with("t07-") {
+                if facts.mode.is_empty()
+                    || facts.mode.starts_with("t07-")
+                    || facts.mode.starts_with("t10-")
+                {
                     match t04::probe(&mut serial, device) {
                         Ok(disk) => file_runtime::run(&mut serial, disk, &facts),
                         Err(error) => {

@@ -1,5 +1,5 @@
 //! 原始 SDL 事件保留 Esc 和 FocusLost；simulator 的事件封装会把 Esc 当作 Quit。
-use crate::{Result, render, save};
+use crate::{Interactive, Result, render, save};
 use radishroot_kernel::{
     input::{Decoder, Event, Port, Raw},
     input_view::View,
@@ -20,6 +20,17 @@ use std::{
 };
 
 pub fn run(output: &Path) -> Result<()> {
+    run_view(
+        output,
+        View::new(Geometry::new(1024, 768).map_err(|e| e.code())?),
+        |_| {},
+    )
+}
+pub fn run_view<V: Interactive>(
+    output: &Path,
+    mut view: V,
+    mut execute: impl FnMut(&mut V),
+) -> Result<()> {
     let mut log = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -27,14 +38,13 @@ pub fn run(output: &Path) -> Result<()> {
     let context = sdl2::init()?;
     let video = context.video()?;
     let window = video
-        .window("RadishRoot T07 input and display", 1024, 768)
+        .window("RadishRoot shared view", 1024, 768)
         .position_centered()
         .build()?;
     let mut canvas = window.into_canvas().software().build()?;
     let creator = canvas.texture_creator();
     let mut texture = creator.create_texture_streaming(PixelFormatEnum::RGB24, 1024, 768)?;
     let mut pump = context.event_pump()?;
-    let mut view = View::new(Geometry::new(1024, 768).map_err(|e| e.code())?);
     let mut decoder = Decoder::new();
     let started = Instant::now();
     let mut generation = 0u64;
@@ -44,6 +54,9 @@ pub fn run(output: &Path) -> Result<()> {
         std::process::id()
     )?;
     loop {
+        if !view.dirty() {
+            execute(&mut view);
+        }
         for event in pump.poll_iter() {
             match event {
                 SdlEvent::Quit { .. } => {
@@ -60,7 +73,7 @@ pub fn run(output: &Path) -> Result<()> {
                     ..
                 } => {
                     decoder = Decoder::new();
-                    view.apply(Event::InputReset);
+                    view.event(Event::InputReset);
                     writeln!(log, "event=focus-lost reset=1")?;
                 }
                 SdlEvent::Window {
@@ -100,13 +113,13 @@ pub fn run(output: &Path) -> Result<()> {
                                 Ok(events) => {
                                     for event in events.into_iter().flatten() {
                                         writeln!(log, "event={event:?}")?;
-                                        view.apply(event);
+                                        view.event(event);
                                     }
                                 }
                                 Err(error) => {
                                     writeln!(log, "decode-error={error:?}")?;
                                     decoder = Decoder::new();
-                                    view.apply(Event::InputReset);
+                                    view.event(Event::InputReset);
                                 }
                             }
                         }
@@ -114,24 +127,32 @@ pub fn run(output: &Path) -> Result<()> {
                         writeln!(log, "unsupported-scancode={code:?}")?;
                     }
                 }
-                SdlEvent::MouseMotion { xrel, yrel, .. } => {
-                    let dx = xrel.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                    let dy = yrel.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-                    view.apply(Event::PointerMove { dx, dy });
-                    writeln!(log, "event=relative-pointer dx={dx} dy={dy}")?;
+                SdlEvent::MouseMotion { x, y, .. } => {
+                    // SDL 提供窗口内绝对坐标；首次进入 / 失焦恢复不能沿用未知的相对起点。
+                    let pointer = view.pointer();
+                    let dx = (x - pointer.x).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    let dy = (y - pointer.y).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                    view.event(Event::PointerMove { dx, dy });
+                    writeln!(log, "event=absolute-pointer x={x} y={y} dx={dx} dy={dy}")?;
+                }
+                SdlEvent::KeyDown { .. } | SdlEvent::KeyUp { .. } => {
+                    writeln!(log, "key-event-without-scancode")?
+                }
+                SdlEvent::TextInput { text, .. } => {
+                    writeln!(log, "text-input-not-scancode bytes={}", text.len())?
                 }
                 SdlEvent::MouseButtonDown {
                     mouse_btn: MouseButton::Left,
                     ..
                 } => {
-                    view.apply(Event::PointerButton { down: true });
+                    view.event(Event::PointerButton { down: true });
                     writeln!(log, "event=left-down")?;
                 }
                 SdlEvent::MouseButtonUp {
                     mouse_btn: MouseButton::Left,
                     ..
                 } => {
-                    view.apply(Event::PointerButton { down: false });
+                    view.event(Event::PointerButton { down: false });
                     writeln!(log, "event=left-up")?;
                 }
                 _ => {}
@@ -147,16 +168,7 @@ pub fn run(output: &Path) -> Result<()> {
             canvas.copy(&texture, None, None)?;
             canvas.present();
             generation += 1;
-            writeln!(
-                log,
-                "frame={generation} events={} releases={} resets={} focus={} left={} text={:?}",
-                view.events,
-                view.releases,
-                view.resets,
-                view.focus,
-                view.left,
-                view.text()
-            )?;
+            writeln!(log, "frame={generation} {}", view.summary())?;
             log.flush()?;
         }
         if started.elapsed() >= Duration::from_secs(600) {

@@ -13,8 +13,20 @@ pub fn run(serial: &mut Serial, mut disk: Driver, facts: &Facts) -> ! {
     let layout = gpt::inspect(&mut disk).unwrap_or_else(|e| {
         crate::interrupts::fatal(format_args!("RR:T08:FAIL code={} stage=gpt\n", e.code()))
     });
-    let mut files = FileService::new(FatBackend::new(&mut disk, layout), id)
-        .expect("verified nonzero identities");
+    let backend = FatBackend::new(&mut disk, layout);
+    #[cfg(feature = "boot-test")]
+    let backend = {
+        let mut backend = backend;
+        if facts.mode == "t10-file-sync" {
+            backend.inject(radishroot_kernel::services::Stage::FileSync);
+            let _ = writeln!(
+                serial,
+                "RR:T10:INJECTION stage=FileSync mechanism=adapter-once"
+            );
+        }
+        backend
+    };
+    let mut files = FileService::new(backend, id).expect("verified nonzero identities");
     let reply = files
         .execute(
             &Path::root(),
@@ -24,19 +36,23 @@ pub fn run(serial: &mut Serial, mut disk: Driver, facts: &Facts) -> ! {
             },
         )
         .expect("initial operation identity");
-    let Output::List(page) = reply.result.unwrap_or_else(|e| {
-        crate::interrupts::fatal(format_args!(
-            "RR:T08:FAIL code={:?} stage={:?} cause={:?}\n",
-            e.code, e.stage, e.cause
-        ))
-    }) else {
-        unreachable!()
+    let page = match reply.result {
+        Ok(Output::List(page)) => Some(page),
+        Err(e) => {
+            let _ = writeln!(
+                serial,
+                "RR:T08:DEFAULT_ERROR code={:?} stage={:?} cause={:?}",
+                e.code, e.stage, e.cause
+            );
+            None
+        }
+        _ => unreachable!(),
     };
     let _ = writeln!(
         serial,
         "RR:T08:DEFAULT entries={} more={} readonly={} generation={} operation={} boot_id={:032x}",
-        page.entries.len(),
-        u8::from(page.next.is_some()),
+        page.as_ref().map_or(0, |p| p.entries.len()),
+        u8::from(page.as_ref().is_some_and(|p| p.next.is_some())),
         u8::from(files.volume().read_only),
         files.generation(),
         reply.operation_id.sequence,

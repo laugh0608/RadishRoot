@@ -16,6 +16,7 @@ mod vm_runtime;
 mod vm_service;
 mod vm_shell;
 mod vm_storage;
+mod vm_workbench;
 
 use cli::{Action, Options};
 use config::{Context, TARGET};
@@ -33,7 +34,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--service-only|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\nui --host [--gui] | run --gui (bounded native windows)."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--service-only|--shell-only|--workbench-only|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\nui --host [--disk IMAGE] [--gui] | run --gui (bounded native windows)."
         );
         return Ok(());
     }
@@ -70,7 +71,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
     digest(root.join("Cargo.lock").as_path(), runner)?;
     let checks_dir = runner.dir.join("checks");
     process::directory(&checks_dir)?;
-    match options.action {
+    match &options.action {
         Action::Check => {
             runner.run(&mut context.cargo(&["fmt", "--all", "--", "--check"]))?;
             for (package, target) in [
@@ -150,7 +151,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
             print!("{output}");
         }
         Action::Build { release, fresh } => {
-            let artifact = build::kernel(&context, runner, release, fresh, false)?;
+            let artifact = build::kernel(&context, runner, *release, *fresh, false)?;
             for (package, target) in [
                 ("xtask", context.host.as_str()),
                 ("radishroot-kernel", TARGET),
@@ -185,10 +186,11 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
         | Action::TestFatVm
         | Action::TestServiceVm
         | Action::TestShellVm
+        | Action::TestWorkbenchVm
         | Action::TestRuntimeVm
         | Action::TestGraphicsVm
         | Action::TestGraphicsCases(_) => vm::execute(&context, runner, &options.action)?,
-        Action::Ui { gui } => ui::execute(&context, runner, gui)?,
+        Action::Ui { gui, disk } => ui::execute(&context, runner, *gui, disk.as_deref())?,
         Action::Help => unreachable!(),
     }
     Ok(())

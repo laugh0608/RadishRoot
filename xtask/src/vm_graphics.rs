@@ -18,6 +18,7 @@ pub fn read_serial(path: &Path) -> Result<String> {
     Ok(fs::read_to_string(path)?)
 }
 pub const CASES: &[&str] = &[
+    "t07-input-check",
     "t07-resolution",
     "t07-surface-allocation",
     "t07-surface-description",
@@ -212,6 +213,7 @@ pub fn validate(output: &str, mode: &str) -> Result<()> {
 }
 
 pub fn validate_recording(output: &str, mode: &str, full: bool, gui: bool) -> Result<()> {
+    let full = full || mode == "t07-input-check";
     validate(output, mode)?;
     if full || gui {
         let last = output

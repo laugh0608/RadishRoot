@@ -4,7 +4,10 @@ use crate::error::{Error, Result};
 pub enum Action {
     Help,
     Check,
-    Build { release: bool, fresh: bool },
+    Build {
+        release: bool,
+        fresh: bool,
+    },
     TestHost,
     Image,
     Run,
@@ -14,10 +17,14 @@ pub enum Action {
     TestFatVm,
     TestServiceVm,
     TestShellVm,
+    TestWorkbenchVm,
     TestRuntimeVm,
     TestGraphicsVm,
     TestGraphicsCases(Vec<&'static str>),
-    Ui { gui: bool },
+    Ui {
+        gui: bool,
+        disk: Option<std::path::PathBuf>,
+    },
 }
 #[derive(Debug)]
 pub struct Options {
@@ -48,6 +55,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["test", "--vm", "--fat-only"] => Action::TestFatVm,
         ["test", "--vm", "--service-only"] => Action::TestServiceVm,
         ["test", "--vm", "--shell-only"] => Action::TestShellVm,
+        ["test", "--vm", "--workbench-only"] => Action::TestWorkbenchVm,
         ["test", "--vm", "--runtime-only"] => Action::TestRuntimeVm,
         ["test", "--vm", "--graphics-only"] => Action::TestGraphicsVm,
         ["test", "--vm", "--graphics-cases", selected] => {
@@ -65,8 +73,22 @@ pub fn parse(args: &[String]) -> Result<Options> {
             }
             Action::TestGraphicsCases(cases)
         }
-        ["ui", "--host"] => Action::Ui { gui: false },
-        ["ui", "--host", "--gui"] => Action::Ui { gui: true },
+        ["ui", "--host"] => Action::Ui {
+            gui: false,
+            disk: None,
+        },
+        ["ui", "--host", "--gui"] => Action::Ui {
+            gui: true,
+            disk: None,
+        },
+        ["ui", "--host", "--disk", path] => Action::Ui {
+            gui: false,
+            disk: Some((*path).into()),
+        },
+        ["ui", "--host", "--disk", path, "--gui"] => Action::Ui {
+            gui: true,
+            disk: Some((*path).into()),
+        },
         ["build", "--profile", profile] | ["build", "--profile", profile, "--fresh"]
             if ["dev", "release"].contains(profile) =>
         {

@@ -95,6 +95,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         && !mode.starts_with("t07-")
         && !mode.starts_with("t08-")
         && !mode.starts_with("t09-")
+        && !mode.starts_with("t10-")
     {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
@@ -223,6 +224,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t06-timeout",
         "t06-no-hpet",
         "t07-resolution",
+        "t07-input-check",
         "t07-surface-allocation",
         "t07-surface-description",
         "t07-ps2-timeout",
@@ -244,6 +246,9 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t09-volume-sync",
         "t09-device-flush",
         "t09-bad-fat",
+        "t10-write",
+        "t10-file-sync",
+        "t10-pages",
     ]
     .contains(&mode)
     {

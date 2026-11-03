@@ -16,6 +16,7 @@ use radishroot_kernel::{
 pub struct Graphics {
     display: Display,
     view: View,
+    workbench: Option<radishroot_kernel::workbench::View>,
     decoder: Decoder,
     events: Queue<Event>,
     recovered: bool,
@@ -65,6 +66,8 @@ impl Graphics {
         let mut state = Self {
             display,
             view,
+            workbench: (!facts.mode.starts_with("t07-"))
+                .then(|| radishroot_kernel::workbench::View::new(display_geometry(facts))),
             decoder: Decoder::new(),
             events: Queue::new(),
             recovered: false,
@@ -117,12 +120,23 @@ impl Graphics {
             },
             state.display.presents
         );
+        if state.workbench.is_some() {
+            let _ = writeln!(
+                serial,
+                "RR:T10:READY generation={} view=workbench",
+                state.display.presents
+            );
+        }
         Ok(state)
     }
     fn reset(&mut self, serial: &mut Serial, reason: &'static str) {
         self.events.clear();
         self.decoder = Decoder::new();
         self.view.apply(Event::InputReset);
+        if let Some(view) = &mut self.workbench {
+            view.event(Event::InputReset);
+            let _ = writeln!(serial, "RR:T10:STEP reset");
+        }
         let _ = writeln!(
             serial,
             "RR:T07:RESET reason={reason} raw_received={} raw_dropped={} event_dropped={} modifiers=0 left=0 text_bytes={} count={}",
@@ -136,6 +150,9 @@ impl Graphics {
             interrupts::input_enabled(false);
             self.offline = true;
             self.view.unavailable();
+            if let Some(view) = &mut self.workbench {
+                view.unavailable();
+            }
             let _ = writeln!(serial, "RR:T07:OFFLINE reason=RECOVERY_LIMIT irq_masked=1");
             return;
         }
@@ -147,6 +164,9 @@ impl Graphics {
             Err(error) => {
                 self.offline = true;
                 self.view.unavailable();
+                if let Some(view) = &mut self.workbench {
+                    view.unavailable();
+                }
                 let _ = writeln!(
                     serial,
                     "RR:T07:OFFLINE reason={} stage={} port={:?} irq_masked=1",
@@ -155,7 +175,36 @@ impl Graphics {
             }
         }
     }
-    pub fn turn(&mut self, serial: &mut Serial) -> Result<bool, &'static str> {
+    pub fn turn(
+        &mut self,
+        serial: &mut Serial,
+        files: Option<&mut crate::file_runtime::Service<'_>>,
+    ) -> Result<bool, &'static str> {
+        // 上轮已经绘制 Executing 后才执行；服务所有权由运行循环唯一借用。
+        if let Some(view) = &mut self.workbench
+            && view.pending()
+        {
+            let files = files.ok_or("WORKBENCH_SERVICE_MISSING")?;
+            writeln!(serial, "RR:T10:STEP execute").map_err(|_| "SERIAL")?;
+            let before = view.results.len() as u64 + view.evicted;
+            let detail_before = view.details.as_ref().map(|r| r.command_id);
+            view.execute_pending(files);
+            if view.results.len() as u64 + view.evicted > before
+                && let Some(result) = view.results.back()
+            {
+                write!(serial, "RR:T10:REPLY ").map_err(|_| "SERIAL")?;
+                radishroot_kernel::shell::render::reply(serial, &result.reply)
+                    .map_err(|_| "SERIAL")?;
+                writeln!(serial).map_err(|_| "SERIAL")?;
+            }
+            if view.details.as_ref().map(|r| r.command_id) != detail_before
+                && let Some(reply) = &view.details
+            {
+                write!(serial, "RR:T10:DETAIL ").map_err(|_| "SERIAL")?;
+                radishroot_kernel::shell::render::reply(serial, reply).map_err(|_| "SERIAL")?;
+                writeln!(serial).map_err(|_| "SERIAL")?;
+            }
+        }
         let mut pending = false;
         if !self.offline {
             if self.mode == "t07-input-overflow" && self.view.events > 0 && !self.injected {
@@ -199,7 +248,15 @@ impl Graphics {
                 let Some(event) = self.events.pop() else {
                     break;
                 };
-                self.view.apply(event);
+                if let Some(view) = &mut self.workbench {
+                    write!(serial, "RR:T10:STEP ").map_err(|_| "SERIAL")?;
+                    radishroot_kernel::workbench::replay::write_event(serial, event)
+                        .map_err(|_| "SERIAL")?;
+                    writeln!(serial).map_err(|_| "SERIAL")?;
+                    view.event(event);
+                } else {
+                    self.view.apply(event);
+                }
             }
             if self.mode == "t07-corrupt-input" && self.view.events > 0 && !self.injected {
                 self.injected = true;
@@ -218,7 +275,11 @@ impl Graphics {
                 self.reset(serial, error.code());
             }
         }
-        if self.view.dirty() {
+        if self
+            .workbench
+            .as_ref()
+            .map_or_else(|| self.view.dirty(), |v| v.dirty())
+        {
             self.draw(serial)?;
         }
         let now = clock::now().map_err(|e| e.code())?;
@@ -237,11 +298,49 @@ impl Graphics {
                 u8::from(pending || !self.events.is_empty())
             );
         }
-        Ok(pending || !self.events.is_empty())
+        Ok(pending
+            || !self.events.is_empty()
+            || self.workbench.as_ref().is_some_and(|v| v.pending()))
     }
     fn draw(&mut self, serial: &mut Serial) -> Result<(), &'static str> {
         let start = clock::now().map_err(|e| e.code())?;
         let clipping = self.mode == "t07-clipping";
+        if let Some(view) = &mut self.workbench {
+            view.render(&mut self.display.surface());
+            self.display.present()?;
+            let end = clock::now().map_err(|e| e.code())?;
+            let count = view.page.as_ref().map_or(0, |p| p.entries.len());
+            let _ = writeln!(
+                serial,
+                "RR:T10:FRAME generation={} width={} height={} x={} y={} left={} events={} releases={} button_releases={} resets={} pending={} entries={} list_ok={} results={} evicted={} selected={} input_bytes={} details={} focus={:?} notice={:?} single={} terminal={} frame_bytes={} heap={} elapsed_ns={}",
+                self.display.presents,
+                view.geometry().width(),
+                view.geometry().height(),
+                view.pointer.x,
+                view.pointer.y,
+                u8::from(view.left),
+                view.events,
+                view.releases,
+                view.button_releases,
+                view.resets,
+                u8::from(view.pending()),
+                count,
+                u8::from(view.page.is_ok()),
+                view.results.len(),
+                view.evicted,
+                view.selected,
+                view.editor.text().len(),
+                u8::from(view.details.is_some()),
+                view.focus,
+                view.notice,
+                u8::from(view.single),
+                u8::from(view.terminal),
+                platform_memory::stats().allocated_bytes,
+                heap::stats().allocated_bytes,
+                end - start
+            );
+            return Ok(());
+        }
         {
             let mut surface = self.display.surface();
             self.view.render(&mut surface);
@@ -310,4 +409,8 @@ impl Graphics {
         let _ = writeln!(serial);
         Ok(())
     }
+}
+fn display_geometry(facts: &Facts) -> radishroot_kernel::surface::Geometry {
+    radishroot_kernel::surface::Geometry::new(facts.framebuffer.width, facts.framebuffer.height)
+        .expect("validated display geometry")
 }

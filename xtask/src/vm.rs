@@ -47,7 +47,13 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     } else {
         None
     };
-    let kernel = build::kernel(context, runner, true, true, selected.is_some())?;
+    let kernel = build::kernel(
+        context,
+        runner,
+        true,
+        true,
+        selected.is_some() || *action == Action::TestWorkbenchVm,
+    )?;
     let first_mode = selected.map_or("", |cases| cases[0]);
     let disk = boot_image::create(&context.root, runner, &manifest, &kernel, first_mode)?;
     if *action == Action::Image {
@@ -82,6 +88,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         vars,
         host_view,
     };
+    if *action == Action::TestWorkbenchVm {
+        return crate::vm_workbench::execute(context, runner, &manifest, &machine, &kernel, &disk);
+    }
     if let Some(cases) = selected {
         for (index, mode) in cases.iter().enumerate() {
             let selected_disk = if index == 0 {
@@ -194,13 +203,16 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         if matches!(action, Action::TestVm | Action::TestGraphicsVm) {
             crate::vm_graphics::execute(context, runner, &manifest, &machine, &kernel)?;
         }
+        if *action == Action::TestVm {
+            crate::vm_workbench::execute(context, runner, &manifest, &machine, &kernel, &disk)?;
+        }
     }
     runner.record(if *action == Action::TestShellVm {
         "T09 seven console cases complete; real external input and independent FAT; no full suite or shutdown claim"
     } else if *action == Action::TestServiceVm {
         "T08 seven service cases complete; independent FAT comparison; standalone T02-T07 regressions not run; no guest shutdown claim"
     } else if *action == Action::TestGraphicsVm {
-        "T07 nine graphics cases complete; standalone T02-T06 regressions not run; host termination is not guest shutdown"
+        "T10 normal graphics interaction and T07 nine check cases complete; standalone T02-T06 regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestRuntimeVm {
         "T06 runtime cases complete; standalone T02-T05 regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestFatVm {
@@ -208,7 +220,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     } else if *action == Action::TestStorageVm {
         "T04 storage cases complete; T02/T03 standalone regressions not run; host termination is not guest shutdown"
     } else if *action == Action::TestVm {
-        "T02/T03/T04/T05/T06/T07/T08/T09 complete: 61 VM starts, actual input/screens and independent storage checks; host termination is not guest shutdown"
+        "T02/T03/T04/T05/T06/T07/T08/T09/T10 complete: 65 VM starts, actual input/screens and independent storage checks; host termination is not guest shutdown"
     } else {
         "one normal read-only boot complete; standalone fault suites not run; no guest shutdown claim"
     })
@@ -235,11 +247,23 @@ fn boot_configured(
     let code = &machine.code;
     let vars = &machine.vars;
     let directory = process::unique_directory(&runner.dir, "boot")?;
+    let native_qemu = if gui {
+        let bundled =
+            crate::ui::native_bundle(&directory, qemu, "RadishRoot-QEMU", "qemu-system-x86_64")?;
+        crate::digest(qemu, runner)?;
+        crate::digest(&bundled, runner)?;
+        Some(bundled)
+    } else {
+        None
+    };
     let writable_vars = directory.join("vars.fd");
     fs::copy(vars, &writable_vars)?;
     let serial = directory.join("serial.log");
     fs::write(&serial, "")?;
-    let console_dir = if fault.is_empty() || fault.starts_with("t07-") || fault.starts_with("t09-")
+    let console_dir = if fault.is_empty()
+        || fault.starts_with("t07-")
+        || fault.starts_with("t09-")
+        || fault.starts_with("t10-")
     {
         let path = process::unique_directory(Path::new("/private/tmp"), "rr-console")?;
         use std::os::unix::fs::PermissionsExt;
@@ -249,7 +273,13 @@ fn boot_configured(
         None
     };
     let console_socket = console_dir.as_ref().map(|p| p.join("console.sock"));
-    let mut command = Command::new(qemu);
+    let mut command = Command::new(native_qemu.as_ref().unwrap_or(qemu));
+    if gui {
+        command.arg("-L").arg(
+            code.parent()
+                .ok_or_else(|| Error::new("qemu-share", "firmware directory"))?,
+        );
+    }
     command
         .args([
             "-machine",
@@ -334,7 +364,7 @@ fn boot_configured(
         disk.display(),
         spec.readonly
     ))?;
-    let graphics = fault.is_empty() || fault.starts_with("t07-");
+    let graphics = fault.is_empty() || fault.starts_with("t07-") || fault.starts_with("t10-");
     let socket_dir = if graphics {
         Some(process::unique_directory(
             Path::new("/private/tmp"),
@@ -374,9 +404,18 @@ fn boot_configured(
             manifest.number("boot_timeout_seconds")?,
         ))
     };
-    let mut session = socket.as_ref().map(|socket| {
-        crate::vm_graphics::Session::new(&serial, socket, &directory, fault, full, gui)
-    });
+    let mut session = socket
+        .as_ref()
+        .filter(|_| fault.starts_with("t07-"))
+        .map(|socket| {
+            crate::vm_graphics::Session::new(&serial, socket, &directory, fault, full, gui)
+        });
+    let mut workbench_session = socket
+        .as_ref()
+        .filter(|_| fault.is_empty() || fault.starts_with("t10-"))
+        .map(|socket| {
+            crate::vm_workbench::Session::new(&serial, socket, &directory, full, gui, fault)
+        });
     let mut shell_session = if fault.starts_with("t09-") {
         Some(crate::vm_shell::Session::new(
             console_socket.as_ref().unwrap(),
@@ -391,6 +430,8 @@ fn boot_configured(
     let output = if let Some(session) = &mut shell_session {
         runner.interactive(&mut command, &serial, &mut || session.poll())
     } else if let Some(session) = &mut session {
+        runner.interactive(&mut command, &serial, &mut || session.poll())
+    } else if let Some(session) = &mut workbench_session {
         runner.interactive(&mut command, &serial, &mut || session.poll())
     } else {
         runner.boot(
@@ -430,6 +471,7 @@ fn boot_configured(
             || fault.starts_with("t07-")
             || fault.starts_with("t08-")
             || fault.starts_with("t09-")
+            || fault.starts_with("t10-")
         {
             ""
         } else {
@@ -449,6 +491,7 @@ fn boot_configured(
         || fault.starts_with("t07-")
         || fault.starts_with("t08-")
         || fault.starts_with("t09-")
+        || fault.starts_with("t10-")
     {
         crate::vm_platform::validate(
             &output,
@@ -458,6 +501,7 @@ fn boot_configured(
                 || fault.starts_with("t07-")
                 || fault.starts_with("t08-")
                 || fault.starts_with("t09-")
+                || fault.starts_with("t10-")
             {
                 ""
             } else {
@@ -477,8 +521,19 @@ fn boot_configured(
     if fault.starts_with("t05-") {
         crate::vm_fat::validate(&output, fault)?;
     }
-    if fault.is_empty() || fault.starts_with("t06-") || fault.starts_with("t07-") {
-        crate::vm_runtime::validate(&output, if fault.starts_with("t07-") { "" } else { fault })?;
+    if fault.is_empty()
+        || fault.starts_with("t06-")
+        || fault.starts_with("t07-")
+        || fault.starts_with("t10-")
+    {
+        crate::vm_runtime::validate(
+            &output,
+            if fault.starts_with("t07-") || fault.starts_with("t10-") {
+                ""
+            } else {
+                fault
+            },
+        )?;
     }
     if fault.is_empty() || fault.starts_with("t07-") {
         crate::vm_service::validate_default(&output, boot_id)?;
@@ -492,6 +547,13 @@ fn boot_configured(
             .as_ref()
             .ok_or_else(|| Error::new("host-view", "missing host comparator"))?;
         crate::screen::verify(runner, host, &directory, &session.snapshots)?;
+    }
+    if let Some(session) = workbench_session {
+        let host = machine
+            .host_view
+            .as_ref()
+            .ok_or_else(|| Error::new("host-view", "missing workbench comparator"))?;
+        crate::vm_workbench::verify(runner, host, &directory, disk, boot_id, session, &output)?;
     }
     runner.record(&format!(
         "boot={} case={fault:?} validation=pass",

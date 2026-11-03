@@ -1,6 +1,7 @@
 #[cfg(feature = "gui")]
 mod gui;
 mod snapshot;
+mod workbench;
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use embedded_graphics_simulator::{OutputSettingsBuilder, SimulatorDisplay};
 use radishroot_kernel::{
@@ -14,6 +15,79 @@ use std::{
     path::Path,
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+trait Paint {
+    fn geometry(&self) -> Geometry;
+    fn paint(&mut self, surface: &mut Surface<'_>);
+}
+impl Paint for View {
+    fn geometry(&self) -> Geometry {
+        self.geometry()
+    }
+    fn paint(&mut self, surface: &mut Surface<'_>) {
+        self.render(surface);
+    }
+}
+impl Paint for radishroot_kernel::workbench::View {
+    fn geometry(&self) -> Geometry {
+        self.geometry()
+    }
+    fn paint(&mut self, surface: &mut Surface<'_>) {
+        self.render(surface);
+    }
+}
+#[cfg(feature = "gui")]
+trait Interactive: Paint {
+    fn event(&mut self, event: radishroot_kernel::input::Event);
+    fn dirty(&self) -> bool;
+    fn summary(&self) -> String;
+    fn pointer(&self) -> Point;
+}
+#[cfg(feature = "gui")]
+impl Interactive for View {
+    fn pointer(&self) -> Point {
+        self.pointer
+    }
+    fn event(&mut self, e: radishroot_kernel::input::Event) {
+        self.apply(e);
+    }
+    fn dirty(&self) -> bool {
+        self.dirty()
+    }
+    fn summary(&self) -> String {
+        format!(
+            "events={} releases={} resets={} focus={} left={} text={:?}",
+            self.events,
+            self.releases,
+            self.resets,
+            self.focus,
+            self.left,
+            self.text()
+        )
+    }
+}
+#[cfg(feature = "gui")]
+impl Interactive for radishroot_kernel::workbench::View {
+    fn pointer(&self) -> Point {
+        self.pointer
+    }
+    fn event(&mut self, e: radishroot_kernel::input::Event) {
+        self.event(e);
+    }
+    fn dirty(&self) -> bool {
+        self.dirty()
+    }
+    fn summary(&self) -> String {
+        format!(
+            "events={} releases={} resets={} focus={:?} left={} input_bytes={}",
+            self.events,
+            self.releases,
+            self.resets,
+            self.focus,
+            self.left,
+            self.editor.text().len()
+        )
+    }
+}
 fn main() {
     if let Err(error) = run() {
         eprintln!("host-view: {error}");
@@ -28,6 +102,9 @@ fn run() -> Result<()> {
     let output = Path::new(output);
     if !output.is_dir() {
         return Err("output directory must already exist".into());
+    }
+    if rest.first().is_some_and(|s| s == "--workbench-disk") {
+        return workbench::run(output, rest);
     }
     let (mut view, clipping) = match rest {
         [] => (
@@ -51,17 +128,17 @@ fn run() -> Result<()> {
     println!("host-view=headless output={}", output.display());
     Ok(())
 }
-fn render(view: &mut View) -> Result<(Geometry, Vec<u32>)> {
+fn render(view: &mut impl Paint) -> Result<(Geometry, Vec<u32>)> {
     let geometry = view.geometry();
     let mut pixels = vec![0; geometry.pixels()];
-    view.render(&mut Surface::new(geometry, &mut pixels).map_err(|e| e.code())?);
+    view.paint(&mut Surface::new(geometry, &mut pixels).map_err(|e| e.code())?);
     Ok((geometry, pixels))
 }
 #[cfg(feature = "gui")]
-fn save(view: &mut View, output: &Path, name: &str) -> Result<()> {
+fn save(view: &mut impl Paint, output: &Path, name: &str) -> Result<()> {
     save_with_probe(view, output, name, false)
 }
-fn save_with_probe(view: &mut View, output: &Path, name: &str, clipping: bool) -> Result<()> {
+fn save_with_probe(view: &mut impl Paint, output: &Path, name: &str, clipping: bool) -> Result<()> {
     let (geometry, mut pixels) = render(view)?;
     if clipping {
         radishroot_kernel::surface::boundary_probe(

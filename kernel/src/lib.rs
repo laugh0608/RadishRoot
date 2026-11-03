@@ -13,3 +13,4 @@ pub mod services;
 pub mod shell;
 pub mod storage;
 pub mod surface;
+pub mod workbench;

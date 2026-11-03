@@ -10,7 +10,9 @@ cd /output
 dpkg-query -W -f='${Package}\t${Version}\n' mtools dosfstools
 case "$mode" in
   prepare)
-    mcopy -i "$disk" /inputs/seed.bin ::/seed.txt
+    while IFS="$(printf '\t')" read -r id name; do
+      mcopy -i "$disk" "/inputs/$id.bin" "::/$name"
+    done < /inputs/files.tsv
     ;;
   verify|observe|observe-file)
     mdir -b -s -i "$disk" ::/ > paths.txt

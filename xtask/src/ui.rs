@@ -76,29 +76,39 @@ pub fn build(context: &Context, runner: &mut Runner, gui: bool) -> Result<PathBu
         .join(&context.host)
         .join("debug/radishroot-host-runner"))
 }
-pub fn execute(context: &Context, runner: &mut Runner, gui: bool) -> Result<()> {
+pub fn execute(
+    context: &Context,
+    runner: &mut Runner,
+    gui: bool,
+    disk: Option<&Path>,
+) -> Result<()> {
     let binary = build(context, runner, gui)?;
     let output = process::unique_directory(&runner.dir, "host-view")?;
     // macOS 原生窗口需要实际 bundle 身份，便于窗口系统识别与交互验收；仅生成本次私有产物。
     let binary = if gui {
-        let app = output.join("RadishRoot-T07.app");
-        process::directory(&app)?;
-        let contents = app.join("Contents");
-        process::directory(&contents)?;
-        let executable = contents.join("MacOS");
-        process::directory(&executable)?;
-        fs::write(
-            contents.join("Info.plist"),
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>org.radishroot.t07-host</string><key>CFBundleName</key><string>RadishRoot T07</string><key>CFBundleExecutable</key><string>radishroot-host-runner</string><key>CFBundlePackageType</key><string>APPL</string><key>NSHighResolutionCapable</key><true/></dict></plist>\n",
-        )?;
-        let target = executable.join("radishroot-host-runner");
-        fs::copy(binary, &target)?;
-        target
+        native_bundle(
+            &output,
+            &binary,
+            "RadishRoot-Host",
+            "radishroot-host-runner",
+        )?
     } else {
         binary
     };
     let mut command = Command::new(binary);
     command.arg(&output);
+    if let Some(disk) = disk {
+        let mut boot = [0u8; 16];
+        std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut boot)?;
+        if boot == [0; 16] {
+            return Err(Error::new("boot-id", "zero identity"));
+        }
+        command
+            .arg("--workbench-disk")
+            .arg(disk.canonicalize()?)
+            .arg("--boot-id")
+            .arg(format!("{:032x}", u128::from_be_bytes(boot)));
+    }
     if gui {
         command.arg("--gui");
     }
@@ -113,4 +123,37 @@ pub fn execute(context: &Context, runner: &mut Runner, gui: bool) -> Result<()> 
         "host_view={} gui={gui}; host rendering is not QEMU evidence",
         output.display()
     ))
+}
+/// 两个真实窗口入口共用任务内 bundle；每个输出目录拥有唯一身份，避免旧产物歧义。
+pub fn native_bundle(
+    output: &Path,
+    binary: &Path,
+    name: &str,
+    executable: &str,
+) -> Result<PathBuf> {
+    let app = output.join(format!("{name}.app"));
+    process::directory(&app)?;
+    let contents = app.join("Contents");
+    process::directory(&contents)?;
+    let macos = contents.join("MacOS");
+    process::directory(&macos)?;
+    let unique = output
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| Error::new("app-identity", "output directory identity"))?;
+    if !unique
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return Err(Error::new("app-identity", "invalid output identity"));
+    }
+    fs::write(
+        contents.join("Info.plist"),
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>org.radishroot.{unique}</string><key>CFBundleName</key><string>{name}</string><key>CFBundleExecutable</key><string>{executable}</string><key>CFBundlePackageType</key><string>APPL</string><key>NSHighResolutionCapable</key><true/></dict></plist>\n"
+        ),
+    )?;
+    let target = macos.join(executable);
+    fs::copy(binary, &target)?;
+    Ok(target)
 }

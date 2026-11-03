@@ -125,6 +125,7 @@ pub fn create(
         "t06-timeout",
         "t06-no-hpet",
         "t07-resolution",
+        "t07-input-check",
         "t07-surface-allocation",
         "t07-surface-description",
         "t07-ps2-timeout",
@@ -146,6 +147,9 @@ pub fn create(
         "t09-volume-sync",
         "t09-device-flush",
         "t09-bad-fat",
+        "t10-write",
+        "t10-file-sync",
+        "t10-pages",
     ]
     .contains(&fault)
     {
