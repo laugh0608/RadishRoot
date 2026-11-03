@@ -1,5 +1,6 @@
 //! 真实键鼠驱动工作台，宿主用实际输入记录和同一只读盘重放；独立像素另行核对。
 mod cases;
+mod link;
 use crate::{
     error::{Error, Result},
     process::{self, Runner},
@@ -9,6 +10,7 @@ use crate::{
     vm_graphics::read_serial,
 };
 pub use cases::execute;
+pub use link::execute as execute_link;
 use serde_json::json;
 use std::{
     fs,
@@ -28,6 +30,7 @@ pub struct Session {
     full: bool,
     gui: bool,
     mode: String,
+    console_socket: Option<PathBuf>,
     deadline: Instant,
     initial: bool,
     pub snapshots: Vec<Snapshot>,
@@ -40,6 +43,7 @@ impl Session {
         full: bool,
         gui: bool,
         mode: &str,
+        console_socket: Option<&Path>,
     ) -> Self {
         Self {
             serial: serial.into(),
@@ -49,6 +53,7 @@ impl Session {
             full,
             gui,
             mode: mode.into(),
+            console_socket: console_socket.map(PathBuf::from),
             deadline: Instant::now() + Duration::from_secs(if gui { 600 } else { 60 }),
             initial: false,
             snapshots: vec![],
@@ -207,6 +212,8 @@ impl Session {
                 return Ok(false);
             }
             self.snapshot("workbench-window")?;
+        } else if self.mode.starts_with("t11-") {
+            self.link_steps()?;
         } else if !self.mode.is_empty() {
             self.case_steps()?;
         } else if self.full {
@@ -283,7 +290,9 @@ pub fn verify(
     output: &str,
 ) -> Result<()> {
     validate(output, session.full && session.mode.is_empty(), session.gui)?;
-    if !session.mode.is_empty() {
+    if session.mode.starts_with("t11-") {
+        link::validate(output, &session.mode)?;
+    } else if !session.mode.is_empty() {
         cases::validate(output, &session.mode)?;
     }
     if output

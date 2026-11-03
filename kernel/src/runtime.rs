@@ -19,7 +19,8 @@ pub fn initialize(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str
             || (facts.mode.starts_with("t07-")
                 || facts.mode.starts_with("t08-")
                 || facts.mode.starts_with("t09-")
-                || facts.mode.starts_with("t10-"))
+                || facts.mode.starts_with("t10-")
+                || facts.mode.starts_with("t11-"))
         {
             "normal"
         } else {

@@ -103,6 +103,8 @@ pub fn run(output: &Path, args: &[String]) -> Result<()> {
             for line in fs::read_to_string(path)?.lines() {
                 if line == "execute" {
                     view.execute_pending(&mut files);
+                } else if line == "observe" {
+                    view.observe_changes(&files);
                 } else {
                     view.event(replay::parse(line).ok_or("invalid workbench replay event")?);
                 }

@@ -96,6 +96,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         && !mode.starts_with("t08-")
         && !mode.starts_with("t09-")
         && !mode.starts_with("t10-")
+        && !mode.starts_with("t11-")
     {
         emit(serial, format_args!("RR:T02:INJECT case={mode}\n"));
     }
@@ -249,6 +250,10 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t10-write",
         "t10-file-sync",
         "t10-pages",
+        "t11-link",
+        "t11-pages",
+        "t11-file-sync",
+        "t11-external",
     ]
     .contains(&mode)
     {

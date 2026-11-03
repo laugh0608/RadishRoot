@@ -6,7 +6,7 @@ use crate::{
     vm_fat::{self, Expected, FatCheck},
     vm_storage,
 };
-fn fixture(pages: bool, complete: bool) -> Vec<Expected> {
+pub(super) fn fixture(pages: bool, complete: bool) -> Vec<Expected> {
     let mut files = vec![Expected {
         id: "seed",
         path: "seed.txt".into(),
@@ -141,18 +141,7 @@ impl Session {
 }
 pub fn validate(output: &str, mode: &str) -> Result<()> {
     let readonly = mode == "t10-pages";
-    let device = output
-        .lines()
-        .find(|l| l.starts_with("RR:T04:DEVICE "))
-        .ok_or_else(|| bad("missing actual storage device"))?;
-    let f = fields(device)?;
-    if number(&f, "sectors")? != 2097152
-        || number(&f, "readonly")? != u64::from(readonly)
-        || number(&f, "flush")? != 1
-        || !output.contains("RR:T04:LIVE owner=file-service ")
-    {
-        return Err(bad("graphical storage device facts"));
-    }
+    live_device(output, readonly)?;
     let replies = output
         .lines()
         .filter_map(|l| l.strip_prefix("RR:T10:REPLY "))
@@ -203,6 +192,22 @@ pub fn validate(output: &str, mode: &str) -> Result<()> {
         || details[0]["output"]["record"]["status"] != "Failed"
     {
         return Err(bad("graphical detail identity / failure"));
+    }
+    Ok(())
+}
+
+pub(super) fn live_device(output: &str, readonly: bool) -> Result<()> {
+    let device = output
+        .lines()
+        .find(|l| l.starts_with("RR:T04:DEVICE "))
+        .ok_or_else(|| bad("missing actual storage device"))?;
+    let f = fields(device)?;
+    if number(&f, "sectors")? != 2097152
+        || number(&f, "readonly")? != u64::from(readonly)
+        || number(&f, "flush")? != 1
+        || !output.contains("RR:T04:LIVE owner=file-service ")
+    {
+        return Err(bad("graphical storage device facts"));
     }
     Ok(())
 }

@@ -17,7 +17,7 @@ pub fn run(serial: &mut Serial, mut disk: Driver, facts: &Facts) -> ! {
     #[cfg(feature = "boot-test")]
     let backend = {
         let mut backend = backend;
-        if facts.mode == "t10-file-sync" {
+        if matches!(facts.mode, "t10-file-sync" | "t11-file-sync") {
             backend.inject(radishroot_kernel::services::Stage::FileSync);
             let _ = writeln!(
                 serial,

@@ -83,7 +83,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `image` 在新目录构建 release ELF，调用锁定的既有 Debian 工具镜像产生 1 GiB GPT / FAT32 开发盘，输出真实路径。容器禁用网络、只读根、无新增 capabilities，仅挂本次输入 / 输出普通目录，`--pull=never`；工具镜像缺失即失败。工具脚本只由 xtask 编排，参数来自 manifest，不提供第二套独立制盘入口。
 
-`run --serial` 创建镜像并完成一次无窗口 UEFI 启动、只读 GPT / DATA 探测、T08 真实服务根目录读取、T09 串口控制台初始化、T06 循环进展及 T10 工作台首帧 / 静止验证，串口保存到本次 boot-*/serial.log。`test --vm` 对正常镜像启动 10 次，再使用独立 boot-test 构建校验 4 个 T02、3 个 T03、7 个 T04、7 个 T05、7 个 T08、7 个 T09、8 个 T06、9 个 T07 和 3 个 T10 独立用例；共 65 次启动、56 张引导 / 源盘及 26 张数据副本，逻辑容量均为 1 GiB，实际稀疏占用另记。T04 覆盖写入 / flush、同盘重新启动读回、单 GPT 损坏降级、双损坏拒绝、有效副本冲突拒绝、请求超时隔离及缺少 flush 能力拒绝。`test --vm --storage-only` 复用同一存储用例实现，只运行 7 个 T04 用例，生成 8 张引导 / 源盘与 4 张数据副本；日志明确未执行 T02 / T03 独立回归，不能冒充完整套件。完整套件按资源授权运行，普通 CI 不自动执行 VM。
+`run --serial` 创建镜像并完成一次无窗口 UEFI 启动、只读 GPT / DATA 探测、T08 真实服务根目录读取、T09 串口控制台初始化、T06 循环进展及 T10 工作台首帧 / 静止验证，串口保存到本次 boot-*/serial.log。`test --vm` 对正常镜像启动 10 次，再使用独立 boot-test 构建校验 4 个 T02、3 个 T03、7 个 T04、7 个 T05、7 个 T08、7 个 T09、8 个 T06、9 个 T07、3 个 T10 和 4 个 T11 独立用例；共 69 次启动、60 张引导 / 源盘及 30 张数据副本，逻辑容量均为 1 GiB，实际稀疏占用另记。T04 覆盖写入 / flush、同盘重新启动读回、单 GPT 损坏降级、双损坏拒绝、有效副本冲突拒绝、请求超时隔离及缺少 flush 能力拒绝。`test --vm --storage-only` 复用同一存储用例实现，只运行 7 个 T04 用例，生成 8 张引导 / 源盘与 4 张数据副本；日志明确未执行 T02 / T03 独立回归，不能冒充完整套件。完整套件按资源授权运行，普通 CI 不自动执行 VM。
 
 每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，无网络，自动套件无 GUI，禁止自动重启。普通盘只读；T04 / T05 / T08 / T09 双盘用例由固件从只读 virtio-scsi / scsi-hd 引导，内核仅操作唯一 VirtIO-blk 数据盘。t04-write 及 T05 / T08 / T09 写入 / 同步失败用例打开各自新建数据副本的写权限，使用 cache=writeback、aio=threads、无 snapshot；T06 timeout 使用独立只读 DATA 副本，其他数据盘只读。所有盘均为任务普通文件，不挂宿主物理盘。固件路径从 QEMU 实体 prefix/share/qemu 派生并核对哈希；实际 VM 环境是 Homebrew macOS，其他安装布局未验证。
 
@@ -135,7 +135,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `ui --host` 无窗口生成同视图 PPM 与状态；`--gui` 显式链接固定本机 SDL 兼容层并打开真实窗口，macOS 应用包仅在本次输出目录生成。Esc 清空输入，关闭窗口退出；失焦清除解码器与按键 / 按钮状态。GUI 单次限 600 秒，首次 host 构建单次限 600 秒；总资源仍遵循 current 预算。SDL 路径仅覆盖已确认 macOS 宿主；默认无 SDL 的 check / test 可进入 CI，不把缺失 GUI 环境当通过。
 
-`--graphics-only` 共 10 次启动：默认 T10 工作台交互、T07 专用完整输入校验和 8 个独立注入 / 边界用例；`--graphics-cases` 只接受同一列表中的逗号分隔名称，拒绝未知 / 重复项，不创建额外正常盘，不代表全套完成。`test --vm` 包含 10 次正常、既有 29 个独立 T02–T06 用例、9 个 T07 用例、7 个 T08 用例、7 个 T09 用例和 3 个 T10 用例，共 65 次。QMP 使用任务私有 Unix socket、结构化 JSON、3 秒回复 / 64 KiB 上限；每例仍限 60 秒。实际接收计数决定注入进度，不能把发送数当硬件接收数。
+`--graphics-only` 共 10 次启动：默认 T10 工作台交互、T07 专用完整输入校验和 8 个独立注入 / 边界用例；`--graphics-cases` 只接受同一列表中的逗号分隔名称，拒绝未知 / 重复项，不创建额外正常盘，不代表全套完成。`test --vm` 包含 10 次正常、既有 29 个独立 T02–T06 用例、9 个 T07 用例、7 个 T08 用例、7 个 T09 用例、3 个 T10 用例和 4 个 T11 用例，共 69 次。QMP 使用任务私有 Unix socket、结构化 JSON、3 秒回复 / 64 KiB 上限；每例仍限 60 秒。实际接收计数决定注入进度，不能把发送数当硬件接收数。
 
 真实 PPM 检查角点、色序、字形行、裁剪与光标，并与同状态宿主像素比较；被破坏的实际截图必须拒绝。初始化 READY 不能替代交互终态，静止后的两次观测应保持帧代次不变。Cocoa 入口关闭全局抓取，等待真实窗口键盘释放、左键释放和激活后保存证据；宿主结束 QEMU 仍不算 guest 正常关机。生成目录保留串口、状态、QMP 往返、PPM、像素报告、盘和 VARS；精确候选与运行范围见 current。
 
@@ -145,7 +145,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --service-only
 ```
 
-`--service-only` 与其他 VM 分组互斥，复用完整套件中的七例：创建、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘和 6 张数据副本；单次 VM 限 60 秒。只验证此组不代表完整 65 次套件通过。实际结果和范围见[环境清单第 2.20 节](environment.md#220-t08-共享文件服务验收)。
+`--service-only` 与其他 VM 分组互斥，复用完整套件中的七例：创建、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘和 6 张数据副本；单次 VM 限 60 秒。只验证此组不代表完整 69 次套件通过。实际结果和范围见[环境清单第 2.20 节](environment.md#220-t08-共享文件服务验收)。
 
 生产入口为 `kernel::services::FileService`，真实后端为 `FatBackend`；`Request` / `Reply` 提供 list、分页 read 与 create-text。操作记录、错误、部分副作用、变更事件、启动 / 卷 / 代次绑定的引用均由同一服务生成。路径、上限和失败契约见 [T08](../mvp-plan.md#t08-实施契约与验证方案)。宿主替身仅在 cfg(test) 下存在。100000 次 Stream 调用预算可能先于满卷遍历结束，此时明确报 ResourceLimit / Budget 并离线，不能据此声称 NoSpace。
 
@@ -159,7 +159,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --shell-only
 ```
 
-`--shell-only` 与其他分组互斥，复用全套七例：外部串口编辑 / 命令写入、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘、6 张专用 DATA 副本；单 VM 60 秒。宿主逐字发送并等待实际接收确认，以防 UART 输入队列溢出；未确认不能当成已输入。文件只由 guest 的共享服务创建，宿主按独立预期读回。成功分组不代表完整 65 次 suite 或 M1 通过。
+`--shell-only` 与其他分组互斥，复用全套七例：外部串口编辑 / 命令写入、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘、6 张专用 DATA 副本；单 VM 60 秒。宿主逐字发送并等待实际接收确认，以防 UART 输入队列溢出；未确认不能当成已输入。文件只由 guest 的共享服务创建，宿主按独立预期读回。成功分组不代表完整 69 次 suite 或 M1 通过。
 
 `kernel::shell` 提供六个内置命令、明确 Command / Reply / Output、1024 字节行编辑器与 UART 输入解码；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
 
@@ -178,15 +178,29 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask ui --host --disk <专用镜像副本> --gui
 ```
 
-`--workbench-only` 复用完整套件同一三例：图形创建 / 冲突 / 原始字节读取、FileSync 单次失败 / 部分修改 / 离线、201 项真实目录跨七页。生成 4 张引导 / 源盘和 3 张 DATA 副本，单 VM 60 秒；可写盘仅为本批专用 DATA 副本。默认盘仍只读，写入被真实拒绝。`check-fat.sh prepare` 按同一合成材料清单逐项预置，重复材料标签由工具分配唯一输出名；guest 退出后按路径、字节、只读摘要及 DATA 外不变独立复核。不代表完整 65 次套件或 M1 通过。
+`--workbench-only` 复用完整套件同一三例：图形创建 / 冲突 / 原始字节读取、FileSync 单次失败 / 部分修改 / 离线、201 项真实目录跨七页。生成 4 张引导 / 源盘和 3 张 DATA 副本，单 VM 60 秒；可写盘仅为本批专用 DATA 副本。默认盘仍只读，写入被真实拒绝。`check-fat.sh prepare` 按同一合成材料清单逐项预置，重复材料标签由工具分配唯一输出名；guest 退出后按路径、字节、只读摘要及 DATA 外不变独立复核。不代表完整 69 次套件或 M1 通过。
 
-共享 `kernel::workbench::View` 提供固定 `/data`、显式刷新 / 下一页、本页行选择 / 滚动、图形行编辑、最近结果与操作详情；点击或 Tab / Enter 激活同一动作。Panels 在终端铺满、文件区铺满和双面板间切换，小屏保持单面板。终端复用 Shell / Editor，文件区直接发 FileService 请求；修改后的列表保持原查询快照，自动刷新留 T11。详情 Drawer 可关闭、独立滚动；解析错误没有伪造操作 ID，过期游标和记录淘汰保留真实错误。
+共享 `kernel::workbench::View` 提供固定 `/data`、显式刷新 / 下一页、本页行选择 / 滚动、图形行编辑、最近结果与操作详情；点击或 Tab / Enter 激活同一动作。Panels 在终端铺满、文件区铺满和双面板间切换，小屏保持单面板。终端复用 Shell / Editor，文件区直接发 FileService 请求；T10 的显式快照行为由 T11 自动联动扩展；当前列表按变更重新查询，终端历史仍保留原快照。详情 Drawer 可关闭、独立滚动；解析错误没有伪造操作 ID，过期游标和记录淘汰保留真实错误。
 
 行输入最多 1024 字节，溢出整行拒绝，Enter / Esc 清除；失焦 / InputReset 取消未提交草稿并重置按键和按钮。结果保留最多 16 条且保守计量不超过 256 KiB，展示最多 512 行 / 64 KiB；显示截断不改原始类型与字节。非 ASCII 使用 `?` 并说明字形限制，Bytes 同时保留 hex，不能推断文件损坏。
 
 `ui --host --disk` 仅读取明确给出的普通 GPT / FAT 镜像，调用同一 FatBackend；不列宿主真实目录、不写源镜像。无 `--disk` 仍为 T07 校验页。实际 guest 输入与服务执行步骤以 `RR:T10:STEP` 记录，宿主在相同只读镜像及 boot_id 上回放并逐像素比较；可写案例只声明独立像素 / 类型结果 / 磁盘验证，不宣称做过可写宿主像素回放。`RR:T10:REPLY` / `DETAIL` 使用已有类型投影，独立期望校验成功、错误阶段和同操作 ID。
 
 macOS 窗口使用任务目录内的唯一 bundle 身份；QEMU 副本与原件摘要相同，`-L` 显式指向锁定固件目录，不修改 Homebrew。SDL 原生鼠标绝对坐标转为共享输入事件；关闭窗口退出，超时回收。GUI / VM 按当前批额度执行；结果及 Cocoa 修饰键补验限制见[环境清单第 2.22 节](environment.md#222-t10-双面板工作台验收)。
+
+### T11 自动刷新与原操作联动入口
+
+```sh
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --link-only
+```
+
+`--link-only` 与其他分组互斥，复用完整套件同一四例：图形创建 / 冲突 / 原历史、201 项目录中新文件的自动跨页查找、FileSync 失败后的自动列表错误、串口创建到图形列表 / 原操作详情的联动。生成 5 张引导 / 源盘及 4 张 DATA 副本，均为任务普通文件；单 VM 60 秒，结束后独立 FAT / DATA 外检查。不发送 Refresh 动作冒充自动联动，不代表完整 69 次套件或 AT05 / M1 通过。
+
+`workbench::observe_changes` 只检查有界服务变更历史，按启动 / 卷 / 代次订阅，直接子项事件才触发固定 `/data` 重查；无关子目录和无修改拒绝不查询。目标跨页时每轮只读一页，最多 128 页；命令和详情优先，草稿不被刷新清空。代次变化合并并最多重启 4 次，超过显式停止；事件缺口重查第一页并显示原因，不猜测已丢目标。原列表读取错误保留真实阶段和原因，不能再用一次 Offline 查询覆盖它。
+
+文件区显示刷新状态与原变更操作来源，Enter / 点击文件区打开该原操作；列表查询自身仍有独立 ID。终端历史保持类型与字节快照，详情按所选原 ID 查询，淘汰 / 异启动显式报错。`RR:T11:PAGE` / `ITEM` 记录实际页、来源和 UTF-8 名称 hex，配合原 `FRAME` / `REPLY` / `DETAIL` 及独立磁盘预期核验；不能把新的列表操作当成原写入。
+
+T11 外部命令与 T09 共用同一有界串口输送入口，逐字发送、等待实际接收、消费 socket 输出防止回压；输入完成和 T09 场景终态由明确类型区分。宿主与 guest 仍用相同 View；只读路径继续按实际步骤回放逐像素比较，可写联动案例仅声明真实帧、类型结果与独立磁盘事实。实际结果和未覆盖项见[环境清单第 2.23 节](environment.md#223-t11-自动刷新与操作联动验收)。
 
 ## 5. 视觉与数据材料
 

@@ -261,8 +261,15 @@ impl View {
             label(
                 s,
                 rect(x + 8, y + 4, fw - 16, l.row),
-                "Files /data",
-                style::TEXT,
+                &format!("Files /data [{}]", self.update.label()),
+                if matches!(
+                    self.update,
+                    UpdateState::Failed(_) | UpdateState::Unstable | UpdateState::ScanLimit
+                ) {
+                    style::ERROR
+                } else {
+                    style::TEXT
+                },
                 l.cw,
             );
             let body = l
@@ -467,10 +474,43 @@ impl View {
                 l.cw,
             );
         }
+        let update = match self.update {
+            UpdateState::Idle => String::from(
+                "Names: ASCII glyphs; '?' preserves original UTF-8. Lists follow service changes.",
+            ),
+            UpdateState::Refreshing(UpdateReason::MissedEvents)
+            | UpdateState::Refreshed(UpdateReason::MissedEvents) => String::from(
+                "Change events missed: directory re-queried; unknown targets are not inferred.",
+            ),
+            UpdateState::Refreshing(UpdateReason::NewService)
+            | UpdateState::Refreshed(UpdateReason::NewService) => String::from(
+                "Service identity changed: directory re-queried; old results keep their original IDs.",
+            ),
+            UpdateState::Refreshing(_) => String::from(
+                "Refreshing directory in bounded pages. You can continue editing the command.",
+            ),
+            UpdateState::Refreshed(UpdateReason::Operation(id)) => format!(
+                "List source {:032x}:{}; Enter in Files opens that operation.",
+                u128::from_be_bytes(id.boot.0),
+                id.sequence
+            ),
+            UpdateState::Refreshed(_) => {
+                String::from("Directory re-queried from the shared service.")
+            }
+            UpdateState::Failed(_) => String::from(
+                "Directory refresh FAILED. Original command result is unchanged; see operation details.",
+            ),
+            UpdateState::Unstable => String::from(
+                "Directory keeps changing: automatic refresh stopped after 4 restarts. Use Refresh.",
+            ),
+            UpdateState::ScanLimit => String::from(
+                "Directory scan limit reached: target not located. Use Refresh; no entry was invented.",
+            ),
+        };
         label(
             s,
             rect(12, h - l.row - 4, w - 24, l.row),
-            "Names: ASCII glyphs; '?' preserves original UTF-8. Lists refresh explicitly.",
+            &update,
             style::MUTED,
             l.cw,
         );

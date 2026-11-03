@@ -61,6 +61,7 @@ pub extern "C" fn _start() -> ! {
                 if facts.mode.is_empty()
                     || facts.mode.starts_with("t07-")
                     || facts.mode.starts_with("t10-")
+                    || facts.mode.starts_with("t11-")
                 {
                     match t04::probe(&mut serial, device) {
                         Ok(disk) => file_runtime::run(&mut serial, disk, &facts),

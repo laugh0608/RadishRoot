@@ -7,12 +7,15 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+struct ShellCase {
+    mode: String,
+    id: [u8; 16],
+}
 pub struct Session {
     socket: PathBuf,
     serial: PathBuf,
     directory: PathBuf,
-    mode: String,
-    id: [u8; 16],
+    shell_case: Option<ShellCase>,
     stream: Option<UnixStream>,
     input: Vec<u8>,
     sent: usize,
@@ -27,14 +30,38 @@ impl Session {
         mode: &str,
         id: [u8; 16],
     ) -> Result<Self> {
-        let input = script(mode, id)?;
+        Self::from_input(
+            socket,
+            serial,
+            directory,
+            script(mode, id)?,
+            Some(ShellCase {
+                mode: mode.into(),
+                id,
+            }),
+        )
+    }
+    pub fn for_input(
+        socket: &Path,
+        serial: &Path,
+        directory: &Path,
+        input: Vec<u8>,
+    ) -> Result<Self> {
+        Self::from_input(socket, serial, directory, input, None)
+    }
+    fn from_input(
+        socket: &Path,
+        serial: &Path,
+        directory: &Path,
+        input: Vec<u8>,
+        shell_case: Option<ShellCase>,
+    ) -> Result<Self> {
         fs::write(directory.join("console-input.bin"), &input)?;
         Ok(Self {
             socket: socket.into(),
             serial: serial.into(),
             directory: directory.into(),
-            mode: mode.into(),
-            id,
+            shell_case,
             stream: None,
             input,
             sent: 0,
@@ -76,15 +103,16 @@ impl Session {
                 Err(e) => return Err(e.into()),
             }
         }
-        if output
-            .lines()
-            .any(|l| l == format!("RR:T09:READY mode={}", self.mode))
+        if let Some(case) = &self.shell_case
+            && output
+                .lines()
+                .any(|l| l == format!("RR:T09:READY mode={}", case.mode))
         {
             if self.sent != self.input.len() {
                 return Err(Error::new("shell-input", "guest ended before all input"));
             }
             if self.done.is_none() {
-                validate(output, &self.mode, self.id)?;
+                validate(output, &case.mode, case.id)?;
                 self.done = Some(Instant::now());
                 for (name, bad) in [
                     (
@@ -109,15 +137,15 @@ impl Session {
                     ),
                 ] {
                     // reopen 只有成功结果；另以错误启动身份作负对照。
-                    let bad = if name == "false-success" && self.mode == "t09-reopen" {
+                    let bad = if name == "false-success" && case.mode == "t09-reopen" {
                         output.replace(
-                            &format!("boot_id={:032x}", u128::from_be_bytes(self.id)),
+                            &format!("boot_id={:032x}", u128::from_be_bytes(case.id)),
                             "boot_id=0",
                         )
                     } else {
                         bad
                     };
-                    if validate(&bad, &self.mode, self.id).is_ok() {
+                    if validate(&bad, &case.mode, case.id).is_ok() {
                         return Err(Error::new("shell-negative", name));
                     }
                     fs::write(self.directory.join(format!("negative-{name}.log")), bad)?;
@@ -141,6 +169,12 @@ impl Session {
                 s.parse::<usize>()
                     .map_err(|_| Error::new("shell-input", "bad sequence"))
             })?;
+        if self.shell_case.is_none()
+            && acknowledged == self.input.len()
+            && self.sent == self.input.len()
+        {
+            return Ok(true);
+        }
         if acknowledged > self.sent {
             return Err(Error::new("shell-input", "acknowledged unsent bytes"));
         }

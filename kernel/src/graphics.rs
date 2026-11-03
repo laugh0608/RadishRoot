@@ -181,28 +181,53 @@ impl Graphics {
         files: Option<&mut crate::file_runtime::Service<'_>>,
     ) -> Result<bool, &'static str> {
         // 上轮已经绘制 Executing 后才执行；服务所有权由运行循环唯一借用。
-        if let Some(view) = &mut self.workbench
-            && view.pending()
-        {
+        if let Some(view) = &mut self.workbench {
             let files = files.ok_or("WORKBENCH_SERVICE_MISSING")?;
-            writeln!(serial, "RR:T10:STEP execute").map_err(|_| "SERIAL")?;
-            let before = view.results.len() as u64 + view.evicted;
-            let detail_before = view.details.as_ref().map(|r| r.command_id);
-            view.execute_pending(files);
-            if view.results.len() as u64 + view.evicted > before
-                && let Some(result) = view.results.back()
-            {
-                write!(serial, "RR:T10:REPLY ").map_err(|_| "SERIAL")?;
-                radishroot_kernel::shell::render::reply(serial, &result.reply)
-                    .map_err(|_| "SERIAL")?;
-                writeln!(serial).map_err(|_| "SERIAL")?;
+            let before_list = view.list_operation;
+            if view.pending() {
+                writeln!(serial, "RR:T10:STEP execute").map_err(|_| "SERIAL")?;
+                let before = view.results.len() as u64 + view.evicted;
+                let detail_before = view.details.as_ref().map(|r| r.command_id);
+                view.execute_pending(files);
+                if view.results.len() as u64 + view.evicted > before
+                    && let Some(result) = view.results.back()
+                {
+                    write!(serial, "RR:T10:REPLY ").map_err(|_| "SERIAL")?;
+                    radishroot_kernel::shell::render::reply(serial, &result.reply)
+                        .map_err(|_| "SERIAL")?;
+                    writeln!(serial).map_err(|_| "SERIAL")?;
+                }
+                if view.details.as_ref().map(|r| r.command_id) != detail_before
+                    && let Some(reply) = &view.details
+                {
+                    write!(serial, "RR:T10:DETAIL ").map_err(|_| "SERIAL")?;
+                    radishroot_kernel::shell::render::reply(serial, reply).map_err(|_| "SERIAL")?;
+                    writeln!(serial).map_err(|_| "SERIAL")?;
+                }
             }
-            if view.details.as_ref().map(|r| r.command_id) != detail_before
-                && let Some(reply) = &view.details
-            {
-                write!(serial, "RR:T10:DETAIL ").map_err(|_| "SERIAL")?;
-                radishroot_kernel::shell::render::reply(serial, reply).map_err(|_| "SERIAL")?;
-                writeln!(serial).map_err(|_| "SERIAL")?;
+            if view.observe_changes(files) {
+                writeln!(serial, "RR:T10:STEP observe").map_err(|_| "SERIAL")?;
+            }
+            if view.list_operation != before_list {
+                let query = view.list_operation.map_or(0, |id| id.sequence);
+                writeln!(
+                    serial,
+                    "RR:T11:PAGE query={query} generation={} source={} update={} ok={}",
+                    view.list_generation,
+                    view.change_operation.map_or(0, |id| id.sequence),
+                    view.update.label(),
+                    u8::from(view.page.is_ok())
+                )
+                .map_err(|_| "SERIAL")?;
+                if let Ok(page) = &view.page {
+                    for entry in &page.entries {
+                        write!(serial, "RR:T11:ITEM query={query} name=").map_err(|_| "SERIAL")?;
+                        for b in entry.name.bytes() {
+                            write!(serial, "{b:02x}").map_err(|_| "SERIAL")?;
+                        }
+                        writeln!(serial).map_err(|_| "SERIAL")?;
+                    }
+                }
             }
         }
         let mut pending = false;
@@ -312,7 +337,7 @@ impl Graphics {
             let count = view.page.as_ref().map_or(0, |p| p.entries.len());
             let _ = writeln!(
                 serial,
-                "RR:T10:FRAME generation={} width={} height={} x={} y={} left={} events={} releases={} button_releases={} resets={} pending={} entries={} list_ok={} results={} evicted={} selected={} input_bytes={} details={} focus={:?} notice={:?} single={} terminal={} frame_bytes={} heap={} elapsed_ns={}",
+                "RR:T10:FRAME generation={} width={} height={} x={} y={} left={} events={} releases={} button_releases={} resets={} pending={} entries={} list_ok={} results={} evicted={} selected={} input_bytes={} details={} focus={:?} notice={:?} single={} terminal={} frame_bytes={} heap={} elapsed_ns={} update={} change={} list_generation={} file_row={} file_scroll={}",
                 self.display.presents,
                 view.geometry().width(),
                 view.geometry().height(),
@@ -337,7 +362,12 @@ impl Graphics {
                 u8::from(view.terminal),
                 platform_memory::stats().allocated_bytes,
                 heap::stats().allocated_bytes,
-                end - start
+                end - start,
+                view.update.label(),
+                view.change_operation.map_or(0, |id| id.sequence),
+                view.list_generation,
+                view.file_row,
+                view.file_scroll
             );
             return Ok(());
         }

@@ -1,4 +1,5 @@
 //! 文件区和图形终端共享状态；只经 FileService / Shell 执行领域请求。
+mod changes;
 mod render;
 pub mod replay;
 mod text;
@@ -12,6 +13,7 @@ use crate::{
     surface::Geometry,
 };
 use alloc::{collections::VecDeque, format, string::String};
+pub use changes::{UpdateReason, UpdateState};
 use core::fmt::Write;
 use embedded_graphics::prelude::Point;
 pub use render::Layout;
@@ -106,6 +108,10 @@ pub struct View {
     pub single: bool,
     pub terminal: bool,
     dirty: bool,
+    subscription: Option<changes::Subscription>,
+    refresh: Option<changes::Refresh>,
+    pub update: UpdateState,
+    pub change_operation: Option<OperationId>,
 }
 impl View {
     pub fn new(geometry: Geometry) -> Self {
@@ -144,6 +150,10 @@ impl View {
             single: geometry.width() < 800 || geometry.height() < 600,
             terminal: true,
             dirty: true,
+            subscription: None,
+            refresh: None,
+            update: UpdateState::Idle,
+            change_operation: None,
         }
     }
     pub fn geometry(&self) -> Geometry {
@@ -153,7 +163,7 @@ impl View {
         self.dirty
     }
     pub fn pending(&self) -> bool {
-        self.pending.is_some()
+        self.pending.is_some() || self.refresh.is_some()
     }
     pub fn unavailable(&mut self) {
         self.event(Event::InputReset);
@@ -169,11 +179,16 @@ impl View {
     /// 调用者必须先绘制 Executing；每轮至多执行一个已有服务界限内的请求。
     pub fn execute_pending<B: Backend>(&mut self, files: &mut FileService<B>) {
         let Some(intent) = self.pending.take() else {
+            self.refresh_step(files);
+            self.observe_changes(files);
             return;
         };
         self.notice = Notice::Ready;
         match intent {
             Intent::List(next) => {
+                self.refresh = None;
+                self.update = UpdateState::Idle;
+                self.change_operation = None;
                 let cursor = if next {
                     self.page.as_ref().ok().and_then(|p| p.next.as_ref())
                 } else {
@@ -253,6 +268,7 @@ impl View {
             }
         }
         self.volume = Some(files.volume());
+        self.observe_changes(files);
         self.dirty = true;
     }
     fn visible(&self, focus: Focus) -> bool {
@@ -279,7 +295,7 @@ impl View {
         match focus {
             Focus::Refresh => self.schedule(Intent::List(false)),
             Focus::NextPage => {
-                if self.page.as_ref().is_ok_and(|p| p.next.is_some()) {
+                if self.refresh.is_none() && self.page.as_ref().is_ok_and(|p| p.next.is_some()) {
                     self.schedule(Intent::List(true));
                 }
             }
@@ -298,7 +314,7 @@ impl View {
             }
             Focus::Files | Focus::Details => {
                 let id = if focus == Focus::Files {
-                    self.list_operation
+                    self.change_operation.or(self.list_operation)
                 } else {
                     self.results
                         .get(self.selected)

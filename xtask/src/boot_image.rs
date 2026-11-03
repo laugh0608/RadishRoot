@@ -150,6 +150,10 @@ pub fn create(
         "t10-write",
         "t10-file-sync",
         "t10-pages",
+        "t11-link",
+        "t11-pages",
+        "t11-file-sync",
+        "t11-external",
     ]
     .contains(&fault)
     {
