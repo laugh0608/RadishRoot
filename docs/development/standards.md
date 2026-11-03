@@ -85,9 +85,9 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `run --serial` 创建镜像并完成一次无窗口 UEFI 启动、只读 GPT / DATA 探测、T08 真实服务根目录读取、T09 串口控制台初始化、T06 循环进展及 T10 工作台首帧 / 静止验证，串口保存到本次 boot-*/serial.log。`test --vm` 对正常镜像启动 10 次，再使用独立 boot-test 构建校验 4 个 T02、3 个 T03、7 个 T04、7 个 T05、7 个 T08、7 个 T09、8 个 T06、9 个 T07、3 个 T10、4 个 T11 和 8 次 T12 电源启动；共 77 次启动、68 张引导 / 源盘及 37 张数据副本，逻辑容量均为 1 GiB，实际稀疏占用另记。T04 覆盖写入 / flush、同盘重新启动读回、单 GPT 损坏降级、双损坏拒绝、有效副本冲突拒绝、请求超时隔离及缺少 flush 能力拒绝。`test --vm --storage-only` 复用同一存储用例实现，只运行 7 个 T04 用例，生成 8 张引导 / 源盘与 4 张数据副本；日志明确未执行 T02 / T03 独立回归，不能冒充完整套件。完整套件按资源授权运行，普通 CI 不自动执行 VM。
 
-每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，无网络，自动套件无 GUI，禁止自动重启。普通盘只读；T04 / T05 / T08 / T09 双盘用例由固件从只读 virtio-scsi / scsi-hd 引导，内核仅操作唯一 VirtIO-blk 数据盘。t04-write 及 T05 / T08 / T09 写入 / 同步失败用例打开各自新建数据副本的写权限，使用 cache=writeback、aio=threads、无 snapshot；T06 timeout 使用独立只读 DATA 副本，其他数据盘只读。所有盘均为任务普通文件，不挂宿主物理盘。固件路径从 QEMU 实体 prefix/share/qemu 派生并核对哈希；实际 VM 环境是 Homebrew macOS，其他安装布局未验证。
+每次复制全新 VARS；固定 TCG、pc-q35-11.1、qemu64、1 vCPU / 512 MiB、VGA、modern VirtIO-blk，无网络，自动套件无 GUI，保留 -no-reboot。普通启动盘只读；双盘存储 / 服务 / 工作台用例由固件从只读 virtio-scsi / scsi-hd 引导，内核仅操作唯一 VirtIO-blk DATA 盘。t04-write、T05 / T08 / T09 写入及同步失败、T10 写入及失败、T11 四例和 T12 除只读例外的场景，均只打开各自专用 DATA 副本的写权限，使用 cache=writeback、aio=threads、无 snapshot；T06 timeout、T10 分页及 T12 只读同步等场景保持 DATA 只读。所有同盘重开用例与 T12 两进程重启链均按各自契约复用原 DATA，不能替换为新盘。所有盘均为任务普通文件，不挂宿主物理盘。固件路径从 QEMU 实体 prefix/share/qemu 派生并核对哈希；实际 VM 环境是 Homebrew macOS，其他安装布局未验证。
 
-单次 QEMU 限时为 `min(--timeout-secs, 60)` 秒。宿主按模式观察终态且串口稳定 250 ms 后停止自己的进程组并回收，再严格校验序列。T06 独立用例等待 T06 READY / FAIL 或更早失败；正常 / T07 路径通过 QMP 等待首帧、指定交互和静止状态，T06 READY 仅是中间证据。T02–T05 独立用例保留原有终态；T08 / T09 独立用例在完成服务 / 终端断言与设备停止后以对应 READY 结束，预期业务失败仍必须有 Failed 操作和原始原因，T02 / T03 READY 只是中间阶段。提前退出、无终态、非预期错误或事实不符均失败；超时返回 124。这是宿主终止：正常路径在 T07 READY 后仍继续循环，预期致命错误则 cli / hlt。重新打开同盘验证不代表正常重启 / 关机验收。没有 UART 或 CPU 无进展时由宿主超时报告。
+单次无窗口 QEMU 限时为 `min(--timeout-secs, 60)` 秒。除 T12 电源成功例外，宿主按模式观察终态、串口稳定或实际图形交互 / 静止证据后停止自己的进程组并回收，再严格校验序列。T06 独立用例等待 T06 READY / FAIL 或更早失败；正常 / T07 路径通过 QMP 等待首帧、指定交互和静止状态，T06 READY 仅是中间证据。T02–T05 独立用例保留原有终态；T08 / T09 独立用例在完成服务 / 终端断言与设备停止后以对应 READY 结束，预期业务失败仍必须有 Failed 操作和原始原因，T02 / T03 READY 只是中间阶段。T12 成功例必须有精确 guest 原因及 code=0 自然退出，失败例由宿主在保留错误证据后停止，详见[电源入口](#t12-正常同步与电源入口)。其他路径提前退出、无终态、非预期错误或事实不符均失败；超时返回 124。普通路径的宿主终止、致命错误后的 cli / hlt 或单纯重新打开同盘，都不代表正常电源验收。没有 UART 或 CPU 无进展时由宿主超时报告。
 
 正常请求需真实 used token 与响应状态成功，flush 单独确认；停止时确认设备 status=0、关闭 bus master 后释放 queue。请求以 HPET 经过时间限制为 2 秒、复位为 100 毫秒，另保留请求 2000000 次、复位 100000 次独立保险；先达到次数上限时报 PollBudgetExhausted，时钟故障另报 Clock，不混称真实超时。配置一致性仍限 64 次。超时用例实际发布请求再隐藏完成观察，保留全部 DMA 与原始缓冲、拒绝释放 / 复用后 halt；不声称制造了设备物理延迟。缺 flush 用例是明确标记的能力拒绝注入；不声称 QEMU 实际未提供该能力。
 
@@ -161,7 +161,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--shell-only` 与其他分组互斥，复用全套七例：外部串口编辑 / 命令写入、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘、6 张专用 DATA 副本；单 VM 60 秒。宿主逐字发送并等待实际接收确认，以防 UART 输入队列溢出；未确认不能当成已输入。文件只由 guest 的共享服务创建，宿主按独立预期读回。成功分组不代表完整 77 次 suite 或 M1 通过。
 
-`kernel::shell` 提供六个内置命令、明确 Command / Reply / Output、1024 字节行编辑器与 UART 输入解码；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
+T09 建立六个基础内置命令，T12 在同一 `kernel::shell::parser::COMMANDS` 增加 sync / reboot / shutdown；当前共九个，help 和所有入口共用该表。Command / Reply / Output、1024 字节行编辑器与 UART 输入解码保持共享；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)，电源扩展见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
 
 默认启动在 T08 服务 Ready 后建立控制台，每轮最多接收 32 字节；COM1 读写保持单 BSP 所有权，UART 库保留的 LSR 接收错误会使当前行拒绝。正常行可用左右 / Home / End / Delete、上下历史、退格、Enter；Esc 等待最多 100 ms 区分方向序列后取消，Ctrl-C 立即取消。UTF-8 / 控制序列 / 容量损坏后只接受换行或 Ctrl-C 恢复，不执行残余文本。当前不提供 ANSI 终端兼容性、PTY 或外部程序。
 
@@ -215,6 +215,8 @@ Shell 命令表是九命令的唯一来源，`sync` / `reboot` / `shutdown` 不�
 电源准备输出为 `power-prepared` / `power_completed=false`，不表示关机已经成功。共享工作台显示 live power 状态及原始错误，终端历史保持准备时快照；explain 查询同一原操作的后续阶段。平台确认固定 FADT / ICH9 端口后，经 Quiesce 确认设备 reset=0、关闭 bus master、回收 DMA，再记录 Requested 并执行一次寄存器请求；寄存器请求后仍运行超过 500 ms 时转为 PowerNotTaken，保留诊断界面。同步、设备停止或平台失败阻断正常电源，没有自动重试或强制关机入口。
 
 `RR:T12:PREPARED` / `STOP` / `REQUEST` 分别记录真实同步边界、设备安全停止和平台请求；独立校验要求顺序及操作 ID 一致。QMP 必须提供 guest=true 且 reason 精确匹配的 SHUTDOWN 事件，进程须自然退出为 0；缺失、重复、host 请求或错误原因均失败。保留 `-no-reboot` 将 guest reset 变为可观察退出，然后编排自动重新打开同一 DATA 副本，以 OS 随机源发放新 boot_id；这是两个进程的受控重启链，不是同进程连续重启。新 boot_id 不依赖时钟或原镜像固定身份。
+
+上述自然退出识别和受控重开属于专用 `--power-only` / `--power-cases` 编排。`run --serial` 仍是首帧 / 静止检查后由宿主结束；`run --gui` 仍使用限时交互监视器，达到交互 / 静止条件后结束，尚未接入 `power_vm` 的自然退出识别和重开流程。该普通监视器可能将提前 guest 电源退出报告为 vm-exited 或 QMP 通道提前关闭，不能把专用分组通过推定为常规窗口电源体验通过。宿主 `ui --host --disk` 只共用只读服务与视图，不执行宿主电源操作。T13 的可重复演示入口应复用已验证的电源、输入和独立读盘编排，明确补齐该入口生命周期。
 
 失败注入仅限 boot-test：卷 / flush 在既有同步适配器明确单次失败，平台例明确拒绝能力，不冒充物理故障。所有盘在 guest 退出后以独立 mtools / dosfstools 只读核对精确路径 / 字节 / 结构及 DATA 外不变；可写场景不宣称宿主像素回放。真实验收结果、候选和资源以 current 指向的报告为准。
 
