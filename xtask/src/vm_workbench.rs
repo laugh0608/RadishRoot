@@ -353,7 +353,13 @@ pub fn verify(
             .guest_exit(reason)?;
         runner.record("power_exit=natural qmp_guest_reason=verified")?;
     }
-    validate(output, session.full && session.mode.is_empty(), session.gui)?;
+    let full = session.full && session.mode.is_empty();
+    let input = match &session.demo {
+        Some(DemoBoot::Reopen { .. }) if session.gui => InputEvidence::Keyboard,
+        _ if full || session.gui => InputEvidence::KeyboardAndPointer,
+        _ => InputEvidence::None,
+    };
+    validate(output, full, input)?;
     if let Some(demo) = &session.demo {
         if session.gui {
             demo::manual::verify(demo, directory, &session.snapshots)?;
@@ -426,7 +432,13 @@ pub fn verify(
     Ok(())
 }
 
-fn validate(output: &str, full: bool, gui: bool) -> Result<()> {
+enum InputEvidence {
+    None,
+    Keyboard,
+    KeyboardAndPointer,
+}
+
+fn validate(output: &str, full: bool, input: InputEvidence) -> Result<()> {
     let frames = output
         .lines()
         .filter(|l| l.starts_with("RR:T10:FRAME "))
@@ -489,8 +501,43 @@ fn validate(output: &str, full: bool, gui: bool) -> Result<()> {
             ));
         }
     }
-    if (full || gui) && (releases < 2 || number(frames.last().unwrap(), "button_releases")? < 1) {
-        return Err(bad("missing actual keyboard / pointer release"));
+    if !matches!(input, InputEvidence::None) && releases < 2 {
+        return Err(bad("missing actual keyboard release"));
+    }
+    if matches!(input, InputEvidence::KeyboardAndPointer)
+        && number(frames.last().unwrap(), "button_releases")? < 1
+    {
+        return Err(bad("missing actual pointer release"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keyboard_only_reopen_requires_keys_while_pointer_check_stays_strict() {
+        let initial = "RR:T10:FRAME generation=1 events=0 releases=0 button_releases=0 heap=0 entries=0 results=0";
+        let keyboard = "RR:T10:FRAME generation=2 events=4 releases=2 button_releases=0 heap=0 entries=1 results=1";
+        let no_input = "RR:T10:FRAME generation=2 events=0 releases=0 button_releases=0 heap=0 entries=1 results=0";
+        let output = format!("{initial}\n{keyboard}\n");
+        validate(&output, false, InputEvidence::Keyboard).unwrap();
+        assert_eq!(
+            validate(&output, false, InputEvidence::KeyboardAndPointer)
+                .unwrap_err()
+                .detail,
+            "missing actual pointer release"
+        );
+        assert_eq!(
+            validate(
+                &format!("{initial}\n{no_input}\n"),
+                false,
+                InputEvidence::Keyboard
+            )
+            .unwrap_err()
+            .detail,
+            "missing actual keyboard release"
+        );
+    }
 }

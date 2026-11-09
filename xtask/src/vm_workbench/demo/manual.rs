@@ -87,7 +87,7 @@ pub(in crate::vm_workbench) fn prompt(demo: &DemoBoot) {
             "Cocoa window 1/2 ready. Use the physical keyboard, including Shift for the quotes. Enter: write {TARGET} \"{PAYLOAD}\". Wait for automatic-list capture."
         ),
         DemoBoot::Reopen { old_operation } => println!(
-            "Cocoa window 2/2 ready. Click the terminal input and enter: ls /data. Wait. The later explain command is: explain {old_operation}"
+            "Cocoa window 2/2 ready. With the terminal input focused, enter: ls /data. Wait. The later explain command is: explain {old_operation}"
         ),
     }
 }

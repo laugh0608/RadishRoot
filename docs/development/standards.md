@@ -245,9 +245,9 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 | 首启与创建 | 确认 1024 × 768 双面板、文字可读且输入区有焦点。键入 `write /data/hello.txt "hello RadishRoot"` 并按 Enter。文件区自动出现并选中新文件。 |
 | 创建详情与焦点 | 点击左侧选中的文件行。核对详情 ID 与写入结果一致，等待取帧。按 Tab 一次，确认详情的 `Up` 获得可见焦点。取帧后按 Shift+Tab 回到 `Close`，释放 Shift，再按 Enter，确认详情关闭、焦点回到输入区。 |
 | 冲突与关机 | 输入 `write /data/hello.txt again`。核对 `AlreadyExists`，点击终端的 `Details`，确认失败阶段和原拒绝 ID。取帧后按 Esc，输入 `shutdown`。等待 guest 退出及宿主独立读盘，校验通过后编排会打开第二个窗口。 |
-| 同盘再启动 | 在第二个窗口点击输入区，输入 `ls /data`，等待取帧。再输入 `cat /data/hello.txt`，核对 `hello RadishRoot`。取帧后用实体 Shift 键输入控制台给出的 `explain <旧操作 ID>`，确认旧引用被拒。取帧后输入 `shutdown`，等待编排输出结果。 |
+| 同盘再启动 | 在第二个窗口确认输入区有焦点，必要时按 Esc 回到输入区。输入 `ls /data`，等待取帧。再输入 `cat /data/hello.txt`，核对 `hello RadishRoot`。取帧后用实体 Shift 键输入控制台给出的 `explain <旧操作 ID>`，确认旧引用被拒。取帧后输入 `shutdown`，等待编排输出结果。 |
 
-每次执行记录候选、操作者是否使用实体键鼠、实际命令与观察、两个启动 ID、操作 ID、检查点帧和独立读盘报告。原始串口、QMP、`.steps` 输入记录和 `workbench-screen-report.json` 随盘保存在当次 `target/xtask-*`。机器断言复核 Shift 组合、鼠标释放、焦点与键盘关闭、两次正常退出及真实盘字节。人工检查记录原生窗口中的可读性、焦点表现和输入来源。AT06 等价、完整 AT07 及资源测量分别登记。
+每次执行记录候选、操作者是否使用实体键鼠、实际命令与观察、两个启动 ID、操作 ID、检查点帧和独立读盘报告。原始串口、QMP、`.steps` 输入记录和 `workbench-screen-report.json` 随盘保存在当次 `target/xtask-*`。机器断言在首窗复核鼠标释放、详情焦点与键盘关闭，在两窗复核键盘释放、对应的 Shift 组合、正常退出和真实盘字节。人工检查记录原生窗口中的可读性、焦点表现和输入来源。AT06 等价、完整 AT07 及资源测量分别登记。
 
 ## 5. 视觉与数据材料
 
