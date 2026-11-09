@@ -24,7 +24,10 @@ REQUIRED = (
     '.github/ISSUE_TEMPLATE/bug-report.md', '.github/ISSUE_TEMPLATE/proposal.md',
     '.github/rulesets/master-protection.json', '.github/rulesets/README.md',
     '.github/workflows/pr-check.yml', 'scripts/check-repo.py',
-    'scripts/tests/test_check_repo.py',
+    'scripts/tests/test_check_repo.py', 'scripts/ci-rust.py',
+    'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml',
+    'kernel/Cargo.toml', 'kernel/src/main.rs', 'kernel/linker.ld', 'kernel/build.rs',
+    'xtask/Cargo.toml', 'xtask/src/main.rs', 'xtask/build.rs',
 )
 BINARY = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.woff2', '.zip'}
 COMMIT = re.compile(r'^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([\w./-]+\))?!?: \S.*$')
@@ -129,13 +132,13 @@ def check_contract(root):
     need(workflow['on'] == {'pull_request': {'branches': ['dev', 'master']}, 'workflow_dispatch': {}}, 'workflow triggers drift')
     need(workflow['permissions'] == {'contents': 'read'}, 'workflow permissions drift')
     jobs = workflow['jobs']
-    need(set(jobs) == {'repo-hygiene', 'candidate-quality'}, 'workflow components drift: update declared baseline together')
+    need(set(jobs) == {'repo-hygiene', 'rust-checks', 'candidate-quality'}, 'workflow components drift: update declared baseline together')
     gate = jobs['candidate-quality']
     need(gate['name'] == 'Candidate Quality' and gate['if'] == '${{ always() }}', 'aggregate name/condition drift')
-    need(gate['needs'] == ['repo-hygiene'], 'aggregate dependencies drift')
+    need(gate['needs'] == ['repo-hygiene', 'rust-checks'], 'aggregate dependencies drift')
     step = gate['steps'][0]
     need(len(gate['steps']) == 1 and step['env'] == {'NEEDS_JSON': '${{ toJSON(needs) }}'}, 'aggregate result binding drift')
-    need('bool(needs) and all(job.get("result") == "success" for job in needs.values())' in step['run'], 'aggregate success-only contract drift')
+    need('set(needs) == {"repo-hygiene", "rust-checks"} and all(job.get("result") == "success" for job in needs.values())' in step['run'], 'aggregate success-only contract drift')
     component = jobs['repo-hygiene']
     need(component['name'] == 'Repo Hygiene', 'component name drift')
     checkout, check, tests = component['steps']
@@ -144,9 +147,16 @@ def check_contract(root):
     need(check['env'] == {'BASE_SHA': '${{ github.event.pull_request.base.sha }}'}, 'PR base binding drift')
     need(check['run'] == 'if [[ -n "$BASE_SHA" ]]; then\n  python3 scripts/check-repo.py --base-ref "$BASE_SHA"\nelse\n  python3 scripts/check-repo.py\nfi', 'check command drift')
     need(tests['run'] == 'python3 -B -m unittest discover -s scripts/tests -v', 'regression command drift')
-    for job in jobs.values():
+    rust = jobs['rust-checks']
+    need(rust['name'] == 'Rust Checks' and 'if' not in rust, 'Rust component name/condition drift')
+    need(rust['steps'] == [checkout,
+                          {'name': 'Install repository toolchain', 'run': 'python3 scripts/ci-rust.py install'},
+                          {'name': 'Check, test and link both profiles', 'run': 'python3 scripts/ci-rust.py verify'}],
+         'Rust check commands/checkout drift')
+    timeouts = {'repo-hygiene': 5, 'rust-checks': 15, 'candidate-quality': 2}
+    for name, job in jobs.items():
         need(job['runs-on'] == 'ubuntu-24.04', 'runner drift')
-        need(type(job['timeout-minutes']) is int and 0 < job['timeout-minutes'] <= 5, 'job timeout missing/invalid')
+        need(type(job['timeout-minutes']) is int and job['timeout-minutes'] == timeouts.get(name), 'job timeout missing/invalid')
         need(not any(k in job for k in ('continue-on-error', 'permissions', 'environment')), 'job bypass/permissions/deployment drift')
         for step in job['steps']:
             need(not any(k in step for k in ('if', 'continue-on-error')), 'step can skip/ignore failure')

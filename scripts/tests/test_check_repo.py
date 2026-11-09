@@ -109,16 +109,29 @@ class RepositoryChecks(unittest.TestCase):
     def test_actual_aggregate_command_rejects_non_success(self):
         workflow = json.loads((self.root / '.github/workflows/pr-check.yml').read_text())
         command = workflow['jobs']['candidate-quality']['steps'][0]['run']
-        cases = [({'repo-hygiene': {'result': 'success'}}, 0)]
-        cases += [({'repo-hygiene': {'result': state}}, 1)
-                  for state in ('failure', 'cancelled', 'skipped', 'neutral', '')]
-        cases += [({}, 1), ({'repo-hygiene': {}}, 1),
-                  ({'repo-hygiene': {'result': 'success'}, 'future': {'result': 'failure'}}, 1)]
+        components = ('repo-hygiene', 'rust-checks')
+        baseline = {name: {'result': 'success'} for name in components}
+        cases = [(baseline, 0), ({}, 1), ({**baseline, 'future': {'result': 'success'}}, 1)]
+        for component in components:
+            cases.append(({k: v for k, v in baseline.items() if k != component}, 1))
+            cases.append(({**baseline, component: {}}, 1))
+            cases.extend(({**baseline, component: {'result': state}}, 1)
+                         for state in ('failure', 'cancelled', 'skipped', 'neutral', ''))
         for needs, expected in cases:
             with self.subTest(needs=needs):
                 result = subprocess.run(['bash', '-c', command], env=dict(os.environ, NEEDS_JSON=json.dumps(needs)),
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, expected, result.stderr)
+
+    def test_rust_component_and_timeouts_are_exact(self):
+        def change(data):
+            data['jobs']['rust-checks']['steps'][2]['run'] = 'true'
+            data['jobs']['rust-checks']['timeout-minutes'] = 16
+            data['jobs']['repo-hygiene']['timeout-minutes'] = 15
+        self.mutate_json('.github/workflows/pr-check.yml', change)
+        errors = self.errors()
+        self.assertIn('Rust check commands/checkout drift', errors)
+        self.assertIn('job timeout missing/invalid', errors)
 
     def test_base_requires_git(self):
         self.assertIn('--base-ref requires a Git repository', self.errors('HEAD'))

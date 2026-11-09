@@ -1,36 +1,41 @@
 # 当前状态
 
-更新日期：2026-10-14（Asia/Shanghai）。
+更新日期：2026-11-03（Asia/Shanghai）。
+
+## 规划阅读链
+
+[产品整体规划](../product-plan.md) → [MVP 五个大专题](../mvp-plan.md#capability-map) → [工程、电源与验收交付](../mvp-plan.md#installation-lifecycle) → [T13 M1 验收入口](../mvp-plan.md#t13-m1-演示入口与首轮真实验收)。任务状态、FR / AT 与完成规则仍以 MVP 原任务为准。
 
 ## 当前结论
 
-RadishRoot 已建立产品文档、通用仓库治理基线及远端保护。产品文档仍为 2.0：第一 MVP、M0–M5、32 项任务和 24 项验收未变，业务工程任务全部未开始。没有 Cargo 工程、内核、镜像或产品运行入口；不能启动系统，没有业务验收证据。
+**T12 正常 sync / shutdown 与两进程受控 reboot 链已实现并通过固定平台本地验收；下一项为 T13 M1 演示入口与首轮真实验收。** 电源请求经唯一服务停写、同步、设备安全停止，再交固定平台执行；同步、设备停止或平台预检失败阻断电源请求，并保留工作台错误与原操作详情。完整 AT05 / AT06 / AT07 / AT14、安装和 M1 尚未完成。
 
 | 层级 | 实际状态 |
 | --- | --- |
-| 本地治理检查 | 30 个正式文件检查、13 项回归通过；两份根入口逐字一致 |
-| Git / 远端 | 已连接 [laugh0608/RadishRoot](https://github.com/laugh0608/RadishRoot)；master 为稳定主线，dev 为日常开发分支；治理晋级与回流的具体提交及检查证据保存在对应 PR |
-| 默认分支与合并 | 默认 master；允许 merge / rebase，禁止 squash；关闭自动合并与自动删除 head branch |
-| master Ruleset | [25073496](https://github.com/laugh0608/RadishRoot/rules/25073496) 为 active，仅覆盖 master；要求 PR、解决讨论、严格最新的 Candidate Quality；禁止删除 / 强推；0 审批，管理员仅 PR 内 bypass |
-| 检查来源与权限 | Candidate Quality 绑定实测 GitHub Actions App 15368；工作流默认只读，不能审批 PR |
-| dev 保护 | 有效 Rulesets 为空，传统保护返回未保护；允许按风险本地验证后直接提交 / push |
-| 实际 Actions | 手动首跑成功；PR 故障候选阻断，修复候选通过；普通 dev push 不触发自动 CI |
-| 产品验证 | Rust / 宿主交互 / QEMU / 读盘 / 安装均未执行 |
+| 候选 / 依赖 | 运行时基于 dev / 66ee826 的冻结工作区，现已本地提交为 9bd922d；无新依赖、下载、lockfile、工具链、CPU 特性或磁盘格式变化。初轮及最终源码候选保存在 evidence/t12-power-20261103-66ee826/ |
+| 本地 Rust | 最终 fmt / check / 严格 clippy、111 项宿主测试（29 xtask、82 kernel）及 dev / release ELF 链接通过；FAT 同步、停写、记录保留、设备停止错误及 QMP 事件负对照均有测试 |
+| 真实 VM | 本批 22 次无窗口通过：T12 七类 / 八进程及最终画面两例，T11 四例、T09 七例和最终默认一次。T11 / T09 来自电源标题修正前候选，最终修正由两例及默认覆盖；未跑最终完整 77 次套件 |
+| 正常电源 | 六个电源进程有匹配的 QMP guest 原因及 code=0 自然退出，其余按终态由宿主停止；同步 / 设备停止 / 请求顺序与同 ID 通过。reboot 由真实 guest-reset 退出后新进程打开同一 DATA 盘，原字节和新 boot_id 独立核验；不宣称同进程连续重启 |
+| 故障 / 界面 | VolumeSync / DeviceFlush 单次适配器失败及平台拒绝保留原阶段 / 原 ID，无硬件电源请求；后续写入被拒，诊断仍工作。停写状态标题已显示 WRITES BLOCKED，Prepared 不伪称关机成功 |
+| 独立证据 | mtools / dosfstools 检查精确清单、长度、字节、结构和 DATA 外不变；只读摘要不变。实际 QMP 帧与负对照通过；最终只读默认逐像素回放通过，可写案例不宣称宿主像素回放 |
+| 未验证面 | 无真实 DMA 停止失败或不响应电源端口证据；专用电源分组的自然退出 / 重开尚未接入常规 run --gui，本批未开原生窗口，Cocoa 物理修饰键补验仍待完成。完整 AT、长文件响应、安装、真机、远端 CI 与 M1 无新增通过结论 |
+| Git | 今日功能提交为 T10 ad150b1、T11 66ee826、T12 9bd922d；日终文档随本次提交保存。日终 dev 相对本地 origin/dev 为 4 ahead / 0 behind（未 fetch），未 push / PR / 发布 / 部署；提交回顾见 11 月 devlog |
 
-## 验证入口与证据
+## 入口与证据
 
-- 本地：`python3 scripts/check-repo.py`；回归：`python3 -B -m unittest discover -s scripts/tests -v`。PR 使用 `--base-ref` 检查提交范围。
-- [master 手动首跑](https://github.com/laugh0608/RadishRoot/actions/runs/38557500889)：Repo Hygiene 与 Candidate Quality 均成功，核对运行 SHA 和 Check Run App ID。
-- [验证 PR #1](https://github.com/laugh0608/RadishRoot/pull/1)：[故障运行](https://github.com/laugh0608/RadishRoot/actions/runs/38557855601)两组件失败、PR blocked；[修复运行](https://github.com/laugh0608/RadishRoot/actions/runs/38557986984)两组件通过、PR clean。PR 已关闭且未合并，临时验证分支已删除。
-- 已读回默认分支、合并选项、Ruleset 详情、master / dev 有效规则及 Actions 权限。未对真实 master 做删除、直接 push、force push 或 bypass 演练。
-- [月度日志](../devlogs/2026-10.md)记录配置、失败 / 成功证据、Git 动作和限制；[Ruleset 手册](../../.github/rulesets/README.md)维护操作流程。
+- 正式边界见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)，入口见[开发规范](../development/standards.md#t12-正常同步与电源入口)。`test --vm --power-only` 执行七类 / 八进程；`--power-cases CASE,...` 选择同一白名单子集，不能冒充完整分组。
+- 终端已有九命令；`sync` / `reboot` / `shutdown` 无参数，串口与图形均经唯一 FileService。`xtask run --serial` 仍验证真实只读工作台首帧 / 静止；T11 / T09 定向入口继续可用。宿主 `ui --host --disk <专用镜像副本>` 只读共用视图，不执行宿主电源操作。
+- 候选、运行路径、失败与资源账目见[环境清单第 2.24 节](../development/environment.md#224-t12-正常同步与电源验收)及忽略目录 `evidence/t12-power-20261103-66ee826/`。此前 T10 窗口、T11 自动联动证据仍按第 2.22 / 2.23 节定位，不改写为本批结果。
 
-本轮只证明仓库治理与远端门禁。现有 checkout pin 在 runner 上产生 Node.js 20 被强制转为 Node.js 24 的兼容提示，检查已成功；后续工具维护时专项评估，不在本批顺带升级依赖。安全报告私密入口未在本批启用或验收，仍按 SECURITY 指引处理。
+## 接下来的事项
 
-## 下一项与停止线
+1. **先完善 T13 的 M1 演示契约。** 严格沿用 MVP 第 9 节六步 Golden Path：固定开发盘 / 合成夹具 → 创建 hello.txt → 自动列表与同 ID 详情 → 同名拒绝且原字节不变 → 正常 shutdown / 独立读盘 → 同一 DATA 副本再次启动、新 boot_id 与旧引用失效。明确候选、成功 / 失败、证据和缺陷门槛，再实施；M2 的目录 / 预览 / 复制及 M5 安装不提前混入本批。
+2. **优先贯通演示入口的电源生命周期。** 复用已有服务、共享视图、键鼠 / UART、专用电源监视器和独立读盘工具，补自然退出识别及同 DATA 重开；当前 run --serial / run --gui 都是限时校验入口，不能直接当作完整电源演示入口。保留两进程受控重启边界；同进程连续重启须先解决每次启动的新身份，不能直接取消 -no-reboot。
+3. **按 M1 基线补真实交互与集成证据。** 除主路径和冲突 / 同步失败外，补适用的焦点、键鼠、详情、Cocoa 物理修饰键以及已有输入延迟 / 内存测量要求；实际 GUI、QEMU 与独立字节证据各自留存。先做定向验证，完整 77 次套件和候选 CI 是否需要在 T13 / 阶段晋级运行，另列范围；不把历史分组累计为最终全套通过。
+4. **运行前另定 T13 预算。** VM 进程数、窗口、专用盘、实际占用、累计时间与清理规则重新确认，不沿用 T10–T12 额度；原创许可与每周投入仍待所有者决定。未满足 T13 通过条件前保持 M1 未完成，不启动 M2 或远端晋级。
 
-后续普通开发继续在 dev。治理更新按用户要求通过 dev → master PR 晋级，检查通过后使用 merge commit，随后先回流并推送 dev；具体完成状态与提交 SHA 记录在该 PR，避免在提交正文嵌入尚未生成的 merge SHA。不直接推送 master，不创建产品 Release 或部署。
+## 已确认范围与停止线
 
-业务实施收到指令后从 T01 开始，只读盘点 Rust、QEMU、固件与镜像工具，列出版本、缺口和安装影响，再建立最小编译入口。T02–T05 先取得写回、重启与宿主独立读盘证据，随后 T06–T13 形成真实图形闭环。实施前记录每周投入；94 人日仅为估算，M0 / M1 后按实测重估。
-
-远端治理配置已完成；本轮新增授权覆盖治理晋级 PR、检查通过后的 merge commit 合并及 master → dev 回流。原创许可、产品工具链 / 依赖版本、Live 来源与性能预算仍待确定；业务实现、依赖安装、VM 和发布未开始。
+- T12 验收阶段授权完善契约、实现和验证；单独批准最多 24 次无窗口 VM（单进程最多 60 秒，reboot 两个进程分别计数）、48 张专用 1 GiB 稀疏 raw，盘及 FAT 新增分配最多 1.5 GiB、其他产物最多 2.5 GiB、自动执行最多 40 分钟，不开窗口；该验收预算本身不含提交、push、PR 或发布。随后所有者另行授权本地提交 T12、回顾今日提交及最后一笔文档提交；今晚不再实施新功能或运行 VM / GUI。
+- 实际 22 次 VM、45 张 raw、71 份 FAT，盘材料约 398.3 MiB，其他材料保守约 1.94 GiB，记录子进程约 416 秒，最长 VM 约 7.7 秒；未清理任务缓存。原始日志、最终 ELF、盘 / VARS、源码候选和帧保留；精确值与计量口径见 resource-audit.json / audit.py。
+- 所有任务子进程均有退出记录，容器与 QMP / console socket 已关闭，无待手动关闭的后台资源。今天止于 T12 本地提交与日终文档收尾，不自动运行 T13；原创许可及每周投入预算仍未提供。

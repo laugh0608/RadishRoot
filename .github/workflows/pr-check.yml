@@ -50,7 +50,8 @@
       "timeout-minutes": 2,
       "if": "${{ always() }}",
       "needs": [
-        "repo-hygiene"
+        "repo-hygiene",
+        "rust-checks"
       ],
       "steps": [
         {
@@ -59,7 +60,30 @@
           "env": {
             "NEEDS_JSON": "${{ toJSON(needs) }}"
           },
-          "run": "python3 - <<'PYTHON'\nimport json\nimport os\nimport sys\nneeds = json.loads(os.environ[\"NEEDS_JSON\"])\nok = bool(needs) and all(job.get(\"result\") == \"success\" for job in needs.values())\nprint(json.dumps({name: job.get(\"result\", \"missing\") for name, job in needs.items()}))\nsys.exit(0 if ok else 1)\nPYTHON"
+          "run": "python3 - <<'PYTHON'\nimport json\nimport os\nimport sys\nneeds = json.loads(os.environ[\"NEEDS_JSON\"])\nok = set(needs) == {\"repo-hygiene\", \"rust-checks\"} and all(job.get(\"result\") == \"success\" for job in needs.values())\nprint(json.dumps({name: job.get(\"result\", \"missing\") for name, job in needs.items()}))\nsys.exit(0 if ok else 1)\nPYTHON"
+        }
+      ]
+    },
+    "rust-checks": {
+      "name": "Rust Checks",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 15,
+      "steps": [
+        {
+          "name": "Checkout candidate merge",
+          "uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+          "with": {
+            "fetch-depth": 0,
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Install repository toolchain",
+          "run": "python3 scripts/ci-rust.py install"
+        },
+        {
+          "name": "Check, test and link both profiles",
+          "run": "python3 scripts/ci-rust.py verify"
         }
       ]
     }

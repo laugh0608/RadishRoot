@@ -52,7 +52,7 @@ PR 写最终行为、实际证据、未验证项、风险与恢复方式。面�
 
 普通 push（含 dev）、tag 不自动触发 CI；面向 dev / master 的 PR 与手动调度运行 PR Checks。不使用 paths 过滤，避免 required context 永不产生；不开自动合并、部署、Release 或 merge queue。
 
-当前组件 Repo Hygiene 执行真实治理检查及检查器回归。Candidate Quality 通过 always() 等待所有组件；非空组件集合且每项均为 success 才通过，failure、cancelled、skipped、缺失结果均失败。Ruleset 只绑定这个稳定 context。组件变化同时更新 workflow needs 和本地契约，不为不存在的业务测试建立空成功 job。
+当前组件 Repo Hygiene 执行真实治理检查及检查器回归；Rust Checks 读取项目工具链配置，执行宿主 / 裸机检查、宿主测试与 dev / release 干净链接。Candidate Quality 通过 always() 等待这两个组件；结果集合必须精确等于 repo-hygiene / rust-checks 且每项均为 success 才通过，failure、cancelled、skipped、缺失结果或未知组件均失败。Ruleset 只绑定这个稳定 context。三个 job 的超时基线分别为 5 / 15 / 2 分钟；组件变化同时更新 workflow needs 和本地契约，不为不存在的业务测试建立空成功 job。
 
 PR 检查 GitHub 的候选 merge checkout，获取完整历史供 diff / commit range 检查；token 只读、不持久化凭据，不以 pull_request_target 执行贡献者代码。只用 GitHub hosted runner，不将外部 PR 放在宿主自托管 runner。checkout 固定上游 commit；Python 使用 runner 现有版本，不等于产品工具链 pin。workflow 使用 JSON 语法的 YAML 文件，标准库可严格解析，无需 YAML 依赖。
 
@@ -66,7 +66,7 @@ master 目标保护：禁止删除 / 强推、必须 PR、解决讨论、严格�
 
 默认相对路径上限 180 字符、单文件 10 MiB。小型合成 fixture 确需例外时在任务中说明并调整具体规则，不用 force add 绕过。秘密扫描不在文本检查能力内；链接只检查目标文件存在及不越出仓库，不验证网页、锚点或完整 Markdown 语法。暂存内容业务正确性仍须提交前 staged diff 审查。
 
-Rust 工程建立时增加真实 fmt / check / clippy / tests、no_std 目标编译；存储 / DMA / 电源接真实 guest 与独立读盘；UI 和安装补交互与介质移除证据。实现新增时同步扩展验证，不能长期用文档 CI 代表内核质量。
+Rust 工程已接入真实 fmt / check / clippy / tests、no_std 目标链接；存储 / DMA / 电源接真实 guest 与独立读盘；UI 和安装补交互与介质移除证据。实现新增时同步扩展验证，不能长期用文档 CI 代表内核质量。
 
 ## 6. 同步与首次引导
 

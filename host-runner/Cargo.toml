@@ -1,0 +1,15 @@
+[package]
+name = "radishroot-host-runner"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+gui = ["embedded-graphics-simulator/with-sdl", "dep:sdl2"]
+
+[dependencies]
+radishroot-kernel = { path = "../kernel" }
+embedded-graphics = { version = "=0.8.2", default-features = false }
+embedded-graphics-simulator = { version = "=0.8.0", default-features = false }
+sdl2 = { version = "=0.38.0", optional = true, default-features = false }

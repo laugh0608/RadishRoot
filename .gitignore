@@ -26,4 +26,4 @@ __pycache__/
 *.iso
 *.fd
 
-# 文档 assets 中的正式插图与以后引入的 Cargo.lock 应纳入版本管理
+# 文档 assets 中的正式插图与 Cargo.lock 应纳入版本管理
