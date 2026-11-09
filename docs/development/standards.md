@@ -242,6 +242,14 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--workbench-equivalence` 单独启动一次无窗口 QEMU，用 QMP 键盘事件驱动 guest 的图形终端。从 guest 解码记录重建相同的命令字节，比较宿主回复并核对图形端额外的三次只读查询。保存超限、Enter 清空、下一条命令恢复三帧及其输入记录，退出后使用同一套独立读盘检查。额度单独确认，运行无需实体键鼠。
 
+### T13 AT07 工作台交互入口
+
+```bash
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --workbench-layout --timeout-secs 60
+```
+
+按 [AT07 工作台复验契约](../mvp-plan.md#t13-at07-工作台交互复验) 单次启动无窗口 QEMU。使用一张只读专用盘，采集双面板、终端铺满、操作详情、文件区铺满、键盘刷新和恢复双面板六帧。通过实际鼠标和 Tab / Enter 切换和激活。核对只读错误及同一操作的详情，使用 guest 输入记录在宿主重放并逐像素对照，再独立核对关键像素、stride 和格式。启动前后比较整盘摘要。额度单独确认，运行无需实体键鼠。
+
 ### T13 Cocoa 人工演示入口与清单
 
 窗口、专用盘和运行额度获准后，在 macOS 固定验收宿主执行下列命令。使用原有 QEMU 与固件，任务目录为每次启动创建独立 Cocoa bundle 和 UEFI VARS。`--timeout-secs` 默认为 120 秒，窗口每次最多 600 秒，示例将每次窗口限为 300 秒。超时返回 124 并回收任务进程。关闭窗口或退出 QEMU 会按实际退出原因判定。

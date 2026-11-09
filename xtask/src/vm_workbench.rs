@@ -1,5 +1,6 @@
 //! 真实键鼠驱动工作台，宿主用实际输入记录和同一只读盘重放；独立像素另行核对。
 pub(super) mod at06;
+pub(super) mod at07;
 mod cases;
 mod demo;
 mod link;
@@ -269,6 +270,8 @@ impl Session {
             self.link_steps()?;
         } else if self.mode == at06::MODE {
             self.at06_steps()?;
+        } else if self.mode == at07::MODE {
+            self.at07_steps()?;
         } else if !self.mode.is_empty() {
             self.case_steps()?;
         } else if self.full {
@@ -366,7 +369,7 @@ pub fn verify(
     let full = session.full && session.mode.is_empty();
     let input = match &session.demo {
         Some(DemoBoot::Reopen { .. }) if session.gui => InputEvidence::Keyboard,
-        _ if full || session.gui => InputEvidence::KeyboardAndPointer,
+        _ if full || session.gui || session.mode == at07::MODE => InputEvidence::KeyboardAndPointer,
         _ => InputEvidence::None,
     };
     validate(output, full, input)?;
@@ -381,6 +384,8 @@ pub fn verify(
         link::validate(output, &session.mode)?;
     } else if session.mode == at06::MODE {
         at06::validate_input(output, boot, &session.snapshots)?;
+    } else if session.mode == at07::MODE {
+        at07::validate(output, &session.snapshots)?;
     } else if !session.mode.is_empty() {
         cases::validate(output, &session.mode)?;
     }
@@ -397,8 +402,11 @@ pub fn verify(
     for snapshot in session.snapshots {
         let image = Ppm::read(&snapshot.path)?;
         independent(&image, &snapshot.frame)?;
-        let compare_host =
-            session.demo.is_none() && (session.mode.is_empty() || session.mode == "t10-pages");
+        let compare_host = session.demo.is_none()
+            && matches!(session.mode.as_str(), "" | "t10-pages" | at07::MODE);
+        if session.mode == at07::MODE {
+            at07::pixels(&image, &snapshot.name)?;
+        }
         if compare_host {
             let dir = process::unique_directory(directory, "workbench-host")?;
             runner.run(

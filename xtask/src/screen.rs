@@ -69,7 +69,7 @@ impl Ppm {
             pixels: bytes[position..].to_vec(),
         })
     }
-    fn pixel(&self, x: usize, y: usize) -> Result<[u8; 3]> {
+    pub(super) fn pixel(&self, x: usize, y: usize) -> Result<[u8; 3]> {
         if x >= self.width || y >= self.height {
             return Err(bad("pixel outside image"));
         }
