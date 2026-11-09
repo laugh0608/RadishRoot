@@ -1,4 +1,5 @@
 //! 真实键鼠驱动工作台，宿主用实际输入记录和同一只读盘重放；独立像素另行核对。
+pub(super) mod at06;
 mod cases;
 mod demo;
 mod link;
@@ -40,6 +41,9 @@ fn last_frame(serial: &str) -> Option<&str> {
         .split_inclusive('\n')
         .rfind(|line| line.ends_with('\n') && line.starts_with("RR:T10:FRAME "))
         .map(str::trim_end)
+}
+fn key_event(key: &str, down: bool) -> Value {
+    json!({"type":"key","data":{"down":down,"key":{"type":"qcode","data":key}}})
 }
 pub struct Session {
     serial: PathBuf,
@@ -117,7 +121,7 @@ impl Session {
         let before = fields(&before)?;
         let counter = if down { "events" } else { "releases" };
         let n = number(&before, counter)?;
-        self.send(json!([{"type":"key","data":{"down":down,"key":{"type":"qcode","data":key}}}]))?;
+        self.send(Value::Array(vec![key_event(key, down)]))?;
         self.wait(|s| Ok(number(&fields(s)?, counter)? > n))?;
         Ok(())
     }
@@ -125,7 +129,7 @@ impl Session {
         self.key(key, true)?;
         self.key(key, false)
     }
-    fn command(&mut self, line: &str, count: u64) -> Result<()> {
+    fn type_text(&mut self, line: &str) -> Result<()> {
         for c in line.chars() {
             let s = c.to_ascii_lowercase().to_string();
             let key = match c {
@@ -146,6 +150,10 @@ impl Session {
                 self.key("shift", false)?;
             }
         }
+        Ok(())
+    }
+    fn command(&mut self, line: &str, count: u64) -> Result<()> {
+        self.type_text(line)?;
         self.tap("ret")?;
         self.wait(|s| {
             let f = fields(s)?;
@@ -259,6 +267,8 @@ impl Session {
             self.snapshot("workbench-window")?;
         } else if self.mode.starts_with("t11-") {
             self.link_steps()?;
+        } else if self.mode == at06::MODE {
+            self.at06_steps()?;
         } else if !self.mode.is_empty() {
             self.case_steps()?;
         } else if self.full {
@@ -369,6 +379,8 @@ pub fn verify(
         power::validate(output, &session.mode)?;
     } else if session.mode.starts_with("t11-") {
         link::validate(output, &session.mode)?;
+    } else if session.mode == at06::MODE {
+        at06::validate_input(output, boot, &session.snapshots)?;
     } else if !session.mode.is_empty() {
         cases::validate(output, &session.mode)?;
     }

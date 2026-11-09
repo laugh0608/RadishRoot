@@ -149,6 +149,7 @@ pub fn create(
         "t09-device-flush",
         "t09-bad-fat",
         "t10-write",
+        "t10-at06",
         "t10-file-sync",
         "t10-pages",
         "t11-link",

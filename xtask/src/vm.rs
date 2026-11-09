@@ -59,6 +59,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
             || matches!(
                 action,
                 Action::TestWorkbenchVm
+                    | Action::TestWorkbenchEquivalence
                     | Action::TestLinkVm
                     | Action::TestPowerVm
                     | Action::TestPowerCases(_)
@@ -68,6 +69,8 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     let shell_equivalence = matches!(action, Action::TestShellEquivalence { vm: true });
     let first_mode = if shell_equivalence {
         crate::vm_shell::at06::MODE
+    } else if *action == Action::TestWorkbenchEquivalence {
+        crate::vm_workbench::at06::MODE
     } else {
         selected.map_or("", |cases| cases[0])
     };
@@ -107,6 +110,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     };
     if shell_equivalence {
         return crate::vm_shell::at06::execute(context, runner, &manifest, &machine, &disk);
+    }
+    if *action == Action::TestWorkbenchEquivalence {
+        return crate::vm_workbench::at06::execute(context, runner, &manifest, &machine, &disk);
     }
     if let Action::Demo { gui } = action {
         return crate::vm_workbench::execute_demo(

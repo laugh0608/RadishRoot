@@ -21,7 +21,7 @@ const CREATE: &str = "write \"at06 note.txt\" ";
 const BODY_LEN: usize = 1024 - CREATE.len();
 const OVERFLOW: &str = "write overflow.txt ";
 
-pub(super) fn input() -> Vec<u8> {
+pub(crate) fn input() -> Vec<u8> {
     format!(
         "ls /data\rwrite bad\runknown-at06\r{CREATE}{}\r{CREATE}again\r{OVERFLOW}{}\rcat \"{NOTE}\"\rls /data\roperations\r",
         "x".repeat(BODY_LEN),
@@ -38,7 +38,7 @@ fn need(ok: bool, field: &str) -> Result<()> {
 }
 
 #[derive(PartialEq)]
-pub(super) enum Event {
+pub(crate) enum Event {
     Reply(Value),
     Capacity,
 }
@@ -54,12 +54,7 @@ pub(super) fn trace(s: &str, id: [u8; 16]) -> Result<Vec<Event>> {
     let volume = one(s, "RR:AT06:VOLUME ")?
         .strip_prefix("RR:AT06:VOLUME ")
         .unwrap();
-    need(
-        volume.len() == 32
-            && u128::from_str_radix(volume, 16)
-                .is_ok_and(|n| n != 0 && format!("{n:032x}") == volume),
-        "volume identity",
-    )?;
+    need(valid_volume(volume), "volume identity")?;
     let mut events = Vec::new();
     for line in s.lines() {
         if let Some(reply) = line.strip_prefix("RR:CONSOLE:REPLY ") {
@@ -171,7 +166,12 @@ pub(super) fn trace(s: &str, id: [u8; 16]) -> Result<Vec<Event>> {
     Ok(events)
 }
 
-fn normalize(value: &mut Value, boot: &str, volume: &str) -> Result<()> {
+pub(crate) fn valid_volume(volume: &str) -> bool {
+    volume.len() == 32
+        && u128::from_str_radix(volume, 16).is_ok_and(|n| n != 0 && format!("{n:032x}") == volume)
+}
+
+pub(crate) fn normalize(value: &mut Value, boot: &str, volume: &str) -> Result<()> {
     match value {
         Value::Array(items) => {
             for item in items {
@@ -211,7 +211,7 @@ fn normalize(value: &mut Value, boot: &str, volume: &str) -> Result<()> {
     Ok(())
 }
 
-fn host_trace(context: &Context, runner: &mut Runner) -> Result<Vec<Event>> {
+pub(crate) fn host_trace(context: &Context, runner: &mut Runner) -> Result<Vec<Event>> {
     let fixture = runner.dir.join("at06-input.bin");
     fs::write(&fixture, input())?;
     let target = runner.dir.join("checks");
@@ -289,11 +289,24 @@ pub(crate) fn execute(
             ),
         ));
     }
+    verify_disk(context, runner, manifest, source, &disk)?;
+    runner.record("at06_equivalence=pass replies=8 capacity_events=2 independent_DATA=pass outside_DATA=unchanged")?;
+    println!("AT06: host and UART guest agree; independent DATA verification passed");
+    Ok(())
+}
+
+pub(crate) fn verify_disk(
+    context: &Context,
+    runner: &mut Runner,
+    manifest: &Manifest,
+    source: &Path,
+    disk: &Path,
+) -> Result<()> {
     vm_fat::tools_with_files(
         context,
         runner,
         manifest,
-        &disk,
+        disk,
         FatCheck {
             mode: "verify",
             files: vec![Expected {
@@ -304,8 +317,5 @@ pub(crate) fn execute(
             directories: Vec::new(),
         },
     )?;
-    vm_fat::outside_unchanged(source, &disk, manifest)?;
-    runner.record("at06_equivalence=pass replies=8 capacity_events=2 independent_DATA=pass outside_DATA=unchanged")?;
-    println!("AT06: host and UART guest agree; independent DATA verification passed");
-    Ok(())
+    vm_fat::outside_unchanged(source, disk, manifest)
 }

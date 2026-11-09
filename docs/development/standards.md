@@ -235,9 +235,12 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 ```bash
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --host --shell-equivalence
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --shell-equivalence --timeout-secs 60
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --workbench-equivalence --timeout-secs 60
 ```
 
 按 [AT06 命令等价契约](../mvp-plan.md#t13-at06-命令等价复验)运行。宿主入口保留输入和宿主轨迹；VM 入口先验宿主，再跑一次无窗口 QEMU，使用 boot-test、只读引导盘和一张可写 DATA 副本。串口逐字节回执、同序的结构化回复、整行丢弃、写入副作用和设备停止都须通过。guest 退出后核对独立 FAT 读盘和 DATA 外字节。原始轨迹、串口输入、负对照和盘保存在当次 `target/xtask-*`。此入口单独确认运行额度，覆盖宿主与串口 guest；图形入口证据与全套 VM 结果分别记录。
+
+`--workbench-equivalence` 单独启动一次无窗口 QEMU，用 QMP 键盘事件驱动 guest 的图形终端。从 guest 解码记录重建相同的命令字节，比较宿主回复并核对图形端额外的三次只读查询。保存超限、Enter 清空、下一条命令恢复三帧及其输入记录，退出后使用同一套独立读盘检查。额度单独确认，运行无需实体键鼠。
 
 ### T13 Cocoa 人工演示入口与清单
 
