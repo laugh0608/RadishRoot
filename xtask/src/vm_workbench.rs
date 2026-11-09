@@ -59,6 +59,7 @@ pub struct Session {
     deadline: Instant,
     initial: bool,
     power_done: bool,
+    manual_prefill_bytes: usize,
     pub(super) demo: Option<DemoBoot>,
     pub snapshots: Vec<Snapshot>,
 }
@@ -84,6 +85,7 @@ impl Session {
             deadline: Instant::now() + Duration::from_secs(if gui { 600 } else { 60 }),
             initial: false,
             power_done: false,
+            manual_prefill_bytes: 0,
             demo: None,
             snapshots: vec![],
         }
