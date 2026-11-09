@@ -1,4 +1,5 @@
 //! T13 的正常演示编排，使用生产内核、实际图形输入和独立 FAT 读盘。
+pub(super) mod manual;
 use super::*;
 use crate::{
     boot_image::Manifest,
@@ -35,6 +36,7 @@ pub fn execute(
     manifest: &Manifest,
     machine: &Machine,
     source: &Path,
+    gui: bool,
 ) -> Result<()> {
     let disk = vm_storage::clone_sparse(source, runner)?;
     let check = |runner: &mut Runner, mode, complete| {
@@ -52,8 +54,18 @@ pub fn execute(
     };
     check(runner, "prepare", false)?;
     check(runner, "verify", false)?;
-    runner.record("demo_stage=create_and_shutdown")?;
-    let first = vm::boot_demo(runner, manifest, machine, source, &disk, DemoBoot::Create)?;
+    runner.record(&format!(
+        "demo_stage=create_and_shutdown manual_cocoa={gui}"
+    ))?;
+    let first = vm::boot_demo(
+        runner,
+        manifest,
+        machine,
+        source,
+        &disk,
+        DemoBoot::Create,
+        gui,
+    )?;
     let replies = json_lines(&first, "RR:T10:REPLY ")?;
     let old_operation = replies
         .first()
@@ -74,6 +86,7 @@ pub fn execute(
         source,
         &disk,
         DemoBoot::Reopen { old_operation },
+        gui,
     )?;
     if vm_fat::sha(&disk, runner)? != saved {
         return Err(bad("demo read-only reopen changed DATA disk"));
@@ -89,23 +102,25 @@ pub fn execute(
 }
 
 impl Session {
-    pub(super) fn demo_poll(&mut self) -> Result<bool> {
+    pub(super) fn demo_poll(&mut self, serial: &str, frame: &str) -> Result<bool> {
+        if (self.gui || self.power_done) && fields(frame)?.get("power") == Some(&"failed") {
+            let cause = serial
+                .lines()
+                .rfind(|line| line.starts_with("RR:T12:BLOCKED "));
+            let reply = serial
+                .lines()
+                .rfind(|line| line.starts_with("RR:T10:REPLY "));
+            return Err(Error::new(
+                "demo-shutdown",
+                cause
+                    .or(reply)
+                    .unwrap_or("guest reported failed power state"),
+            ));
+        }
+        if self.gui {
+            return self.manual_demo_poll(serial, frame);
+        }
         if self.power_done {
-            if fields(&self.state()?)?.get("power") == Some(&"failed") {
-                let serial = read_serial(&self.serial)?;
-                let cause = serial
-                    .lines()
-                    .rfind(|line| line.starts_with("RR:T12:BLOCKED "));
-                let reply = serial
-                    .lines()
-                    .rfind(|line| line.starts_with("RR:T10:REPLY "));
-                return Err(Error::new(
-                    "demo-shutdown",
-                    cause
-                        .or(reply)
-                        .unwrap_or("guest reported failed power state"),
-                ));
-            }
             return Ok(false);
         }
 

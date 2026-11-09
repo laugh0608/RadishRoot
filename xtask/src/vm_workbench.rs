@@ -35,6 +35,12 @@ fn json_lines(output: &str, prefix: &str) -> Result<Vec<Value>> {
         .map(|line| serde_json::from_str(line).map_err(|e| bad(e.to_string())))
         .collect()
 }
+fn last_frame(serial: &str) -> Option<&str> {
+    serial
+        .split_inclusive('\n')
+        .rfind(|line| line.ends_with('\n') && line.starts_with("RR:T10:FRAME "))
+        .map(str::trim_end)
+}
 pub struct Session {
     serial: PathBuf,
     socket: PathBuf,
@@ -77,10 +83,8 @@ impl Session {
         }
     }
     fn state(&self) -> Result<String> {
-        read_serial(&self.serial)?
-            .split_inclusive('\n')
-            .rfind(|l| l.ends_with('\n') && l.starts_with("RR:T10:FRAME "))
-            .map(|s| s.trim_end().into())
+        last_frame(&read_serial(&self.serial)?)
+            .map(str::to_owned)
             .ok_or_else(|| bad("no workbench frame"))
     }
     fn wait(&self, predicate: impl Fn(&str) -> Result<bool>) -> Result<String> {
@@ -174,7 +178,10 @@ impl Session {
     }
     fn snapshot(&mut self, name: &str) -> Result<()> {
         let serial = read_serial(&self.serial)?;
-        let frame = self.state()?;
+        let frame = last_frame(&serial).ok_or_else(|| bad("no workbench frame"))?;
+        self.snapshot_at(name, &serial, frame)
+    }
+    fn snapshot_at(&mut self, name: &str, serial: &str, frame: &str) -> Result<()> {
         let path = self.directory.join(format!("{name}.ppm"));
         if path.exists() {
             return Err(bad("screenshot exists"));
@@ -197,13 +204,14 @@ impl Session {
             .execute("screendump", json!({"filename":path,"format":"ppm"}))?;
         self.snapshots.push(Snapshot {
             name: name.into(),
-            frame,
+            frame: frame.into(),
             path,
         });
         Ok(())
     }
     pub fn poll(&mut self) -> Result<bool> {
-        if Instant::now() >= self.deadline {
+        // 人工演示由进程监视器统一计时，超时保留 124 及进程回收证据。
+        if !(self.gui && self.demo.is_some()) && Instant::now() >= self.deadline {
             return Err(bad("workbench case deadline"));
         }
         let serial = read_serial(&self.serial)?;
@@ -219,24 +227,29 @@ impl Session {
         if !serial.contains("RR:T10:READY ") || self.client.is_none() {
             return Ok(false);
         }
-        let Ok(state) = self.state() else {
+        let Some(state) = last_frame(&serial) else {
             return Ok(false);
         };
-        if number(&fields(&state)?, "pending")? != 0 {
+        if number(&fields(state)?, "pending")? != 0 {
             return Ok(false);
         }
         if !self.initial {
-            self.snapshot("workbench-initial")?;
+            self.snapshot_at("workbench-initial", &serial, state)?;
             self.initial = true;
+            if self.gui
+                && let Some(demo) = &self.demo
+            {
+                demo::manual::prompt(demo);
+            }
         }
         if self.demo.is_some() {
-            return self.demo_poll();
+            return self.demo_poll(&serial, state);
         }
         if self.mode.starts_with("t12-") {
             return self.power_poll();
         }
         if self.gui {
-            let f = fields(&state)?;
+            let f = fields(state)?;
             if number(&f, "releases")? < 2
                 || number(&f, "button_releases")? < 1
                 || number(&f, "results")? < 1
@@ -321,24 +334,15 @@ pub fn verify(
     mut session: Session,
     output: &str,
 ) -> Result<()> {
-    validate(output, session.full && session.mode.is_empty(), session.gui)?;
-    let exit_reason = if let Some(demo) = &session.demo {
-        demo::validate(output, demo, boot)?;
+    let exit_reason = if session.demo.is_some() {
         Some("guest-shutdown")
-    } else if session.mode.starts_with("t12-") {
-        power::validate(output, &session.mode)?;
-        (!power::failure(&session.mode)).then_some(if session.mode == "t12-reboot" {
+    } else if session.mode.starts_with("t12-") && !power::failure(&session.mode) {
+        Some(if session.mode == "t12-reboot" {
             "guest-reset"
         } else {
             "guest-shutdown"
         })
-    } else if session.mode.starts_with("t11-") {
-        link::validate(output, &session.mode)?;
-        None
     } else {
-        if !session.mode.is_empty() {
-            cases::validate(output, &session.mode)?;
-        }
         None
     };
     if let Some(reason) = exit_reason {
@@ -348,6 +352,19 @@ pub fn verify(
             .ok_or_else(|| bad("missing QMP exit observer"))?
             .guest_exit(reason)?;
         runner.record("power_exit=natural qmp_guest_reason=verified")?;
+    }
+    validate(output, session.full && session.mode.is_empty(), session.gui)?;
+    if let Some(demo) = &session.demo {
+        if session.gui {
+            demo::manual::verify(demo, directory, &session.snapshots)?;
+        }
+        demo::validate(output, demo, boot)?;
+    } else if session.mode.starts_with("t12-") {
+        power::validate(output, &session.mode)?;
+    } else if session.mode.starts_with("t11-") {
+        link::validate(output, &session.mode)?;
+    } else if !session.mode.is_empty() {
+        cases::validate(output, &session.mode)?;
     }
     if output
         .lines()

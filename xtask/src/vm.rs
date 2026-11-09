@@ -41,6 +41,9 @@ pub(super) struct BootSpec<'a> {
 }
 
 pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Result<()> {
+    if matches!(action, Action::Demo { gui: true }) && !cfg!(target_os = "macos") {
+        return Err(Error::new("demo-platform", "Cocoa demo requires macOS"));
+    }
     let manifest = Manifest::load(&context.root)?;
     let selected = if let Action::TestGraphicsCases(cases) = action {
         Some(cases)
@@ -95,8 +98,10 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         vars,
         host_view,
     };
-    if *action == Action::Demo {
-        return crate::vm_workbench::execute_demo(context, runner, &manifest, &machine, &disk);
+    if let Action::Demo { gui } = action {
+        return crate::vm_workbench::execute_demo(
+            context, runner, &manifest, &machine, &disk, *gui,
+        );
     }
     if *action == Action::TestWorkbenchVm {
         return crate::vm_workbench::execute(context, runner, &manifest, &machine, &kernel, &disk);
@@ -282,6 +287,7 @@ pub(super) fn boot_demo(
     source: &Path,
     data: &Path,
     demo: crate::vm_workbench::DemoBoot,
+    gui: bool,
 ) -> Result<String> {
     let spec = BootSpec {
         boot_disk: source,
@@ -289,7 +295,7 @@ pub(super) fn boot_demo(
         readonly: matches!(demo, crate::vm_workbench::DemoBoot::Reopen { .. }),
         mode: "",
     };
-    boot_configured(runner, manifest, machine, spec, false, false, Some(demo))
+    boot_configured(runner, manifest, machine, spec, false, gui, Some(demo))
 }
 fn boot_configured(
     runner: &mut Runner,
@@ -460,7 +466,9 @@ fn boot_configured(
     ));
     runner.record(&format!("boot_id={:032x}", u128::from_be_bytes(boot_id)))?;
     let previous = runner.timeout;
-    runner.timeout = if gui {
+    runner.timeout = if gui && is_demo {
+        previous.min(Duration::from_secs(600))
+    } else if gui {
         Duration::from_secs(600)
     } else {
         previous.min(Duration::from_secs(

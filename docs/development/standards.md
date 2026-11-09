@@ -216,7 +216,7 @@ Shell 命令表是九命令的唯一来源，`sync` / `reboot` / `shutdown` 不�
 
 `RR:T12:PREPARED` / `STOP` / `REQUEST` 分别记录真实同步边界、设备安全停止和平台请求；独立校验要求顺序及操作 ID 一致。QMP 必须提供 guest=true 且 reason 精确匹配的 SHUTDOWN 事件，进程须自然退出为 0；缺失、重复、host 请求或错误原因均失败。保留 `-no-reboot` 将 guest reset 变为可观察退出，然后编排自动重新打开同一 DATA 副本，以 OS 随机源发放新 boot_id；这是两个进程的受控重启链，不是同进程连续重启。新 boot_id 不依赖时钟或原镜像固定身份。
 
-上述自然退出识别和受控重开属于专用 `--power-only` / `--power-cases` 编排。`run --serial` 仍是首帧 / 静止检查后由宿主结束；`run --gui` 仍使用限时交互监视器，达到交互 / 静止条件后结束，尚未接入 `power_vm` 的自然退出识别和重开流程。该普通监视器可能将提前 guest 电源退出报告为 vm-exited 或 QMP 通道提前关闭，不能把专用分组通过推定为常规窗口电源体验通过。宿主 `ui --host --disk` 只共用只读服务与视图，不执行宿主电源操作。T13 的可重复演示入口应复用已验证的电源、输入和独立读盘编排，明确补齐该入口生命周期。
+`--power-only` / `--power-cases` 验证专用电源路径，T13 的 [`demo`](#t13-m1-自动演示入口) 复用自然退出识别和同盘重开。`run --serial` 在首帧 / 静止检查后由宿主结束，`run --gui` 在短交互 / 静止检查后由宿主结束。完整 Cocoa 演示使用 [`demo --gui`](#t13-cocoa-人工演示入口与清单)。宿主 `ui --host --disk` 只共用只读服务与视图。
 
 失败注入仅限 boot-test：卷 / flush 在既有同步适配器明确单次失败，平台例明确拒绝能力，不冒充物理故障。所有盘在 guest 退出后以独立 mtools / dosfstools 只读核对精确路径 / 字节 / 结构及 DATA 外不变；可写场景不宣称宿主像素回放。真实验收结果、候选和资源以 current 指向的报告为准。
 
@@ -228,7 +228,26 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 按 [T13 首轮契约](../mvp-plan.md#t13-首轮实施契约)运行两次无窗口 QEMU，使用普通 release 内核、一个只读引导盘和同一份独立 DATA 副本。首启可写，实际键鼠走工作台，完成创建、自动列表、原操作详情、冲突与正常关机；中间独立读盘；次启只读，校验原内容和旧操作引用被拒后正常关机。QMP 帧、串口、独立 FAT 材料、盘、进程退出状态和工具输出保存在当次 `target/xtask-*`。每次启动上限为 `min(--timeout-secs, 60)` 秒，其他子进程沿用 `--timeout-secs`。入口成功返回 0，行为或数据错误返回 1，参数错误返回 2，进程超时返回 124。自动演示与人工 GUI 和完整 M1 验收分别记录。
 
-同步失败对照沿用 `test --vm --power-cases t12-volume-fail`，使用单独 DATA 和 boot-test 注入。人工清单后续核对焦点、鼠标与 Tab / Enter、Cocoa 实体修饰键、成功及冲突详情和退出前状态。运行前确认本批 VM、专用盘、资源与清理额度。
+同步失败对照沿用 `test --vm --power-cases t12-volume-fail`，使用单独 DATA 和 boot-test 注入。运行前确认本批 VM、专用盘、资源与清理额度。
+
+### T13 Cocoa 人工演示入口与清单
+
+窗口、专用盘和运行额度获准后，在 macOS 固定验收宿主执行下列命令。使用原有 QEMU 与固件，任务目录为每次启动创建独立 Cocoa bundle 和 UEFI VARS。`--timeout-secs` 默认为 120 秒，窗口每次最多 600 秒，示例将每次窗口限为 300 秒。超时返回 124 并回收任务进程。关闭窗口或退出 QEMU 会按实际退出原因判定。
+
+```sh
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask demo --gui --timeout-secs 300
+```
+
+使用实体键盘与鼠标。guest 键盘为 US 布局，关闭 Caps Lock，双引号用 Shift 加单引号键，冒号用 Shift 加分号键。按控制台提示操作，每个检查点等待 `Recorded` 后再继续，取帧期间保持指针静止并留在工作区。提交了错误命令、跳过检查点或误关窗口时，记录实际现象并保留当次目录。QMP 仅采集窗口帧和退出事件。
+
+| 阶段 | 操作与人工判据 |
+| --- | --- |
+| 首启与创建 | 确认 1024 × 768 双面板、文字可读且输入区有焦点。键入 `write /data/hello.txt "hello RadishRoot"` 并按 Enter。文件区自动出现并选中新文件。 |
+| 创建详情与焦点 | 点击左侧选中的文件行。核对详情 ID 与写入结果一致，等待取帧。按 Tab 一次，确认详情的 `Up` 获得可见焦点。取帧后按 Shift+Tab 回到 `Close`，释放 Shift，再按 Enter，确认详情关闭、焦点回到输入区。 |
+| 冲突与关机 | 输入 `write /data/hello.txt again`。核对 `AlreadyExists`，点击终端的 `Details`，确认失败阶段和原拒绝 ID。取帧后按 Esc，输入 `shutdown`。等待 guest 退出及宿主独立读盘，校验通过后编排会打开第二个窗口。 |
+| 同盘再启动 | 在第二个窗口点击输入区，输入 `ls /data`，等待取帧。再输入 `cat /data/hello.txt`，核对 `hello RadishRoot`。取帧后用实体 Shift 键输入控制台给出的 `explain <旧操作 ID>`，确认旧引用被拒。取帧后输入 `shutdown`，等待编排输出结果。 |
+
+每次执行记录候选、操作者是否使用实体键鼠、实际命令与观察、两个启动 ID、操作 ID、检查点帧和独立读盘报告。原始串口、QMP、`.steps` 输入记录和 `workbench-screen-report.json` 随盘保存在当次 `target/xtask-*`。机器断言复核 Shift 组合、鼠标释放、焦点与键盘关闭、两次正常退出及真实盘字节。人工检查记录原生窗口中的可读性、焦点表现和输入来源。AT06 等价、完整 AT07 及资源测量分别登记。
 
 ## 5. 视觉与数据材料
 

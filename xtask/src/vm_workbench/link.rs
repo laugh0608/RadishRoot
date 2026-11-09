@@ -199,7 +199,7 @@ pub(super) fn last_page(output: &str) -> Result<std::collections::BTreeMap<&str,
             .ok_or_else(|| bad("missing automatic page report"))?,
     )
 }
-fn visible(output: &str, name: &str) -> Result<()> {
+pub(super) fn visible(output: &str, name: &str) -> Result<()> {
     let page = last_page(output)?;
     let query = number(&page, "query")?;
     let expected = name.bytes().map(|b| format!("{b:02x}")).collect::<String>();

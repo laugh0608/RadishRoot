@@ -10,7 +10,9 @@ pub enum Action {
     },
     TestHost,
     Image,
-    Demo,
+    Demo {
+        gui: bool,
+    },
     Run,
     RunGui,
     TestVm,
@@ -67,7 +69,9 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["check"] => Action::Check,
         ["test", "--host"] => Action::TestHost,
         ["image"] => Action::Image,
-        ["demo"] => Action::Demo,
+        ["demo"] | ["demo", "--gui"] => Action::Demo {
+            gui: args.len() == 2,
+        },
         ["run", "--serial"] => Action::Run,
         ["run", "--gui"] => Action::RunGui,
         ["test", "--vm"] => Action::TestVm,
@@ -112,7 +116,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         }
         _ => {
             return Err(Error::usage(
-                "expected check | build --profile dev|release [--fresh] | test --host | demo | help",
+                "expected check | build --profile dev|release [--fresh] | test --host | demo [--gui] | help",
             ));
         }
     };
@@ -127,7 +131,13 @@ mod tests {
     }
     #[test]
     fn arguments_are_explicit() {
-        assert_eq!(parse(&args("demo")).unwrap().action, Action::Demo);
+        assert_eq!(
+            parse(&args("demo")).unwrap().action,
+            Action::Demo { gui: false }
+        );
+        let manual = parse(&args("demo --gui --timeout-secs 300")).unwrap();
+        assert_eq!(manual.action, Action::Demo { gui: true });
+        assert_eq!(manual.timeout, 300);
         assert_eq!(
             parse(&args("test --vm --runtime-only")).unwrap().action,
             Action::TestRuntimeVm
@@ -157,7 +167,7 @@ mod tests {
         );
         for s in [
             "run",
-            "demo --gui",
+            "demo --gui --gui",
             "test --vm --power-cases unknown",
             "test --vm --power-cases t12-reopen",
             "test --vm --power-cases t12-sync,t12-sync",
