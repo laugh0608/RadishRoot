@@ -157,19 +157,12 @@ impl Session {
         Ok(false)
     }
 }
-fn json_replies(output: &str, prefix: &str) -> Result<Vec<serde_json::Value>> {
-    output
-        .lines()
-        .filter_map(|s| s.strip_prefix(prefix))
-        .map(|s| serde_json::from_str(s).map_err(|e| bad(e.to_string())))
-        .collect()
-}
 pub(super) fn validate(output: &str, mode: &str) -> Result<()> {
     if !CASES.contains(&mode) && mode != "t12-reopen" {
         return Err(bad("unknown power mode"));
     }
     cases::live_device(output, mode == "t12-readonly")?;
-    let replies = json_replies(output, "RR:T10:REPLY ")?;
+    let replies = json_lines(output, "RR:T10:REPLY ")?;
     let power = replies
         .iter()
         .find(|r| {
@@ -212,7 +205,7 @@ pub(super) fn validate(output: &str, mode: &str) -> Result<()> {
                 "failed power did not keep writes blocked and diagnostics working",
             ));
         }
-        let details = json_replies(output, "RR:T10:DETAIL ")?;
+        let details = json_lines(output, "RR:T10:DETAIL ")?;
         let expected = match mode {
             "t12-volume-fail" => "VolumeSync",
             "t12-flush-fail" => "DeviceFlush",
@@ -226,44 +219,55 @@ pub(super) fn validate(output: &str, mode: &str) -> Result<()> {
             return Err(bad("power failure lost original operation/stage"));
         }
     } else {
-        if power["ok"] != true || power["output"]["power_completed"] != false {
-            return Err(bad("prepared power claimed completion"));
-        }
-        let prepared = output
-            .find("RR:T12:PREPARED ")
-            .ok_or_else(|| bad("no synchronized prepare"))?;
-        let stop = output
-            .find("RR:T12:STOP reset=confirmed bus_master=0 allocations=0 shared=0")
-            .ok_or_else(|| bad("device not safely stopped"))?;
-        let request = output
-            .find("RR:T12:REQUEST ")
-            .ok_or_else(|| bad("no platform request"))?;
-        if !(prepared < stop && stop < request)
-            || output.contains("RR:T12:BLOCKED ")
-            || output.matches("RR:T12:REQUEST ").count() != 1
-        {
-            return Err(bad("power ordering/failure"));
-        }
-        let request_line = output[request..].lines().next().unwrap();
-        let fields = fields(request_line)?;
-        let sequence = power["operation_id"]
-            .as_str()
-            .unwrap()
-            .rsplit(':')
-            .next()
-            .unwrap()
-            .parse::<u64>()
-            .map_err(|_| bad("power ID"))?;
-        if number(&fields, "operation")? != sequence
-            || fields.get("action")
-                != Some(&if mode == "t12-reboot" {
-                    "Reboot"
-                } else {
-                    "Shutdown"
-                })
-        {
-            return Err(bad("power platform ID/action"));
-        }
+        validate_request(
+            output,
+            power,
+            if mode == "t12-reboot" {
+                "Reboot"
+            } else {
+                "Shutdown"
+            },
+        )?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_request(output: &str, power: &Value, action: &str) -> Result<()> {
+    if power["ok"] != true
+        || power["output"]["kind"] != "power-prepared"
+        || power["output"]["power_completed"] != false
+    {
+        return Err(bad("missing power prepare or prepare claimed completion"));
+    }
+    let prepared = output
+        .find("RR:T12:PREPARED ")
+        .ok_or_else(|| bad("no synchronized prepare"))?;
+    let stop = output
+        .find("RR:T12:STOP reset=confirmed bus_master=0 allocations=0 shared=0")
+        .ok_or_else(|| bad("device not safely stopped"))?;
+    let request = output
+        .find("RR:T12:REQUEST ")
+        .ok_or_else(|| bad("no platform request"))?;
+    if !(prepared < stop && stop < request)
+        || output.contains("RR:T12:BLOCKED ")
+        || output.matches("RR:T12:REQUEST ").count() != 1
+    {
+        return Err(bad("power ordering/failure"));
+    }
+    let sequence = power["operation_id"]
+        .as_str()
+        .and_then(|id| id.rsplit_once(':'))
+        .and_then(|(_, sequence)| sequence.parse::<u64>().ok())
+        .filter(|sequence| *sequence != 0)
+        .ok_or_else(|| bad("power ID"))?;
+    let prepare = fields(output[prepared..].lines().next().unwrap())?;
+    let request = fields(output[request..].lines().next().unwrap())?;
+    if prepare.get("sync_confirmed") != Some(&"1")
+        || [&prepare, &request].iter().any(|f| {
+            f.get("action") != Some(&action) || number(f, "operation").ok() != Some(sequence)
+        })
+    {
+        return Err(bad("power prepare or platform ID/action"));
     }
     Ok(())
 }

@@ -220,6 +220,16 @@ Shell 命令表是九命令的唯一来源，`sync` / `reboot` / `shutdown` 不�
 
 失败注入仅限 boot-test：卷 / flush 在既有同步适配器明确单次失败，平台例明确拒绝能力，不冒充物理故障。所有盘在 guest 退出后以独立 mtools / dosfstools 只读核对精确路径 / 字节 / 结构及 DATA 外不变；可写场景不宣称宿主像素回放。真实验收结果、候选和资源以 current 指向的报告为准。
 
+### T13 M1 自动演示入口
+
+```sh
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask demo
+```
+
+按 [T13 首轮契约](../mvp-plan.md#t13-首轮实施契约)运行两次无窗口 QEMU，使用普通 release 内核、一个只读引导盘和同一份独立 DATA 副本。首启可写，实际键鼠走工作台，完成创建、自动列表、原操作详情、冲突与正常关机；中间独立读盘；次启只读，校验原内容和旧操作引用被拒后正常关机。QMP 帧、串口、独立 FAT 材料、盘、进程退出状态和工具输出保存在当次 `target/xtask-*`。每次启动上限为 `min(--timeout-secs, 60)` 秒，其他子进程沿用 `--timeout-secs`。入口成功返回 0，行为或数据错误返回 1，参数错误返回 2，进程超时返回 124。自动演示与人工 GUI 和完整 M1 验收分别记录。
+
+同步失败对照沿用 `test --vm --power-cases t12-volume-fail`，使用单独 DATA 和 boot-test 注入。人工清单后续核对焦点、鼠标与 Tab / Enter、Cocoa 实体修饰键、成功及冲突详情和退出前状态。运行前确认本批 VM、专用盘、资源与清理额度。
+
 ## 5. 视觉与数据材料
 
 采用 RadishX family-ui v26.7.3 的 Workbench 方向，项目映射以 MVP 规划为准。参考规则而非搬运外部截图、品牌或整包 UI；具体设计资产若使用 .pen，只通过支持的 Pencil 工具读写。

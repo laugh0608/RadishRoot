@@ -83,15 +83,15 @@ pub fn execute(
     r.record("T11 four automatic-link cases complete; no manual refresh, full suite or normal power claim")
 }
 impl Session {
-    fn visible_target(&self, mode: &str) -> Result<()> {
+    pub(super) fn wait_for_visible(&self, name: &str) -> Result<()> {
         self.wait(|s| {
             let f = fields(s)?;
             Ok(number(&f, "pending")? == 0 && f.get("update") == Some(&"refreshed"))
         })?;
         let text = read_serial(&self.serial)?;
-        visible(&text, target(mode))
+        visible(&text, name)
     }
-    fn source_details(&mut self, name: &str) -> Result<()> {
+    pub(super) fn source_details(&mut self, name: &str) -> Result<()> {
         self.click(40, 170)?;
         self.wait(|s| Ok(number(&fields(s)?, "details")? == 1))?;
         self.snapshot(name)
@@ -120,7 +120,7 @@ impl Session {
             "t11-link" => {
                 self.command("ls", 1)?;
                 self.command("write linked.txt payload", 2)?;
-                self.visible_target("t11-link")?;
+                self.wait_for_visible(target("t11-link"))?;
                 self.snapshot("automatic-created")?;
                 self.source_details("original-write-details")?;
                 self.tap("esc")?;
@@ -146,7 +146,7 @@ impl Session {
             "t11-pages" => {
                 self.command("ls", 1)?;
                 self.command("write later.txt payload", 2)?;
-                self.visible_target("t11-pages")?;
+                self.wait_for_visible(target("t11-pages"))?;
                 self.snapshot("automatic-last-page")?;
                 self.source_details("paged-write-details")?;
                 self.tap("esc")?;
@@ -182,7 +182,7 @@ impl Session {
             "t11-external" => {
                 self.command("ls", 1)?;
                 self.external_write()?;
-                self.visible_target("t11-external")?;
+                self.wait_for_visible(target("t11-external"))?;
                 self.snapshot("external-write-visible")?;
                 self.source_details("external-original-operation")?;
             }
@@ -191,7 +191,7 @@ impl Session {
         Ok(())
     }
 }
-fn last_page(output: &str) -> Result<std::collections::BTreeMap<&str, &str>> {
+pub(super) fn last_page(output: &str) -> Result<std::collections::BTreeMap<&str, &str>> {
     fields(
         output
             .lines()
@@ -238,13 +238,6 @@ fn visible(output: &str, name: &str) -> Result<()> {
         return Err(bad("new file not selected / visible"));
     }
     Ok(())
-}
-fn json_lines(output: &str, prefix: &str) -> Result<Vec<serde_json::Value>> {
-    output
-        .lines()
-        .filter_map(|l| l.strip_prefix(prefix))
-        .map(|s| serde_json::from_str(s).map_err(|e| bad(e.to_string())))
-        .collect()
 }
 pub fn validate(output: &str, mode: &str) -> Result<()> {
     if !CASES.contains(&mode) {

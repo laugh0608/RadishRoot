@@ -10,6 +10,7 @@ pub enum Action {
     },
     TestHost,
     Image,
+    Demo,
     Run,
     RunGui,
     TestVm,
@@ -66,6 +67,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["check"] => Action::Check,
         ["test", "--host"] => Action::TestHost,
         ["image"] => Action::Image,
+        ["demo"] => Action::Demo,
         ["run", "--serial"] => Action::Run,
         ["run", "--gui"] => Action::RunGui,
         ["test", "--vm"] => Action::TestVm,
@@ -110,7 +112,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         }
         _ => {
             return Err(Error::usage(
-                "expected check | build --profile dev|release [--fresh] | test --host | help",
+                "expected check | build --profile dev|release [--fresh] | test --host | demo | help",
             ));
         }
     };
@@ -125,6 +127,7 @@ mod tests {
     }
     #[test]
     fn arguments_are_explicit() {
+        assert_eq!(parse(&args("demo")).unwrap().action, Action::Demo);
         assert_eq!(
             parse(&args("test --vm --runtime-only")).unwrap().action,
             Action::TestRuntimeVm
@@ -154,6 +157,7 @@ mod tests {
         );
         for s in [
             "run",
+            "demo --gui",
             "test --vm --power-cases unknown",
             "test --vm --power-cases t12-reopen",
             "test --vm --power-cases t12-sync,t12-sync",

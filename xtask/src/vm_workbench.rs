@@ -1,5 +1,6 @@
 //! 真实键鼠驱动工作台，宿主用实际输入记录和同一只读盘重放；独立像素另行核对。
 mod cases;
+mod demo;
 mod link;
 mod power;
 use crate::{
@@ -11,10 +12,12 @@ use crate::{
     vm_graphics::read_serial,
 };
 pub use cases::execute;
+pub(super) use demo::DemoBoot;
+pub use demo::execute as execute_demo;
 pub use link::execute as execute_link;
 pub use power::CASES as POWER_CASES;
 pub use power::execute as execute_power;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -24,6 +27,13 @@ use std::{
 };
 fn bad(s: impl Into<String>) -> Error {
     Error::new("workbench-contract", s)
+}
+fn json_lines(output: &str, prefix: &str) -> Result<Vec<Value>> {
+    output
+        .lines()
+        .filter_map(|line| line.strip_prefix(prefix))
+        .map(|line| serde_json::from_str(line).map_err(|e| bad(e.to_string())))
+        .collect()
 }
 pub struct Session {
     serial: PathBuf,
@@ -37,6 +47,7 @@ pub struct Session {
     deadline: Instant,
     initial: bool,
     power_done: bool,
+    pub(super) demo: Option<DemoBoot>,
     pub snapshots: Vec<Snapshot>,
 }
 impl Session {
@@ -61,6 +72,7 @@ impl Session {
             deadline: Instant::now() + Duration::from_secs(if gui { 600 } else { 60 }),
             initial: false,
             power_done: false,
+            demo: None,
             snapshots: vec![],
         }
     }
@@ -111,15 +123,24 @@ impl Session {
     }
     fn command(&mut self, line: &str, count: u64) -> Result<()> {
         for c in line.chars() {
-            let s = c.to_string();
+            let s = c.to_ascii_lowercase().to_string();
             let key = match c {
                 ' ' => "spc",
                 '.' => "dot",
                 '-' => "minus",
                 '/' => "slash",
+                '"' => "apostrophe",
+                ':' => "semicolon",
                 _ => s.as_str(),
             };
+            let shifted = c.is_ascii_uppercase() || matches!(c, '"' | ':');
+            if shifted {
+                self.key("shift", true)?;
+            }
             self.tap(key)?;
+            if shifted {
+                self.key("shift", false)?;
+            }
         }
         self.tap("ret")?;
         self.wait(|s| {
@@ -207,6 +228,9 @@ impl Session {
         if !self.initial {
             self.snapshot("workbench-initial")?;
             self.initial = true;
+        }
+        if self.demo.is_some() {
+            return self.demo_poll();
         }
         if self.mode.starts_with("t12-") {
             return self.power_poll();
@@ -298,27 +322,32 @@ pub fn verify(
     output: &str,
 ) -> Result<()> {
     validate(output, session.full && session.mode.is_empty(), session.gui)?;
-    if session.mode.starts_with("t12-") {
+    let exit_reason = if let Some(demo) = &session.demo {
+        demo::validate(output, demo, boot)?;
+        Some("guest-shutdown")
+    } else if session.mode.starts_with("t12-") {
         power::validate(output, &session.mode)?;
-        if !power::failure(&session.mode) {
-            session
-                .client
-                .as_mut()
-                .ok_or_else(|| bad("missing QMP exit observer"))?
-                .guest_exit(if session.mode == "t12-reboot" {
-                    "guest-reset"
-                } else {
-                    "guest-shutdown"
-                })?;
-            runner.record("power_exit=natural qmp_guest_reason=verified")?;
-        }
-    }
-    if session.mode.starts_with("t12-") {
-        // T12 独立验证器已核对同步 / 停机 / 平台与自然退出。
+        (!power::failure(&session.mode)).then_some(if session.mode == "t12-reboot" {
+            "guest-reset"
+        } else {
+            "guest-shutdown"
+        })
     } else if session.mode.starts_with("t11-") {
         link::validate(output, &session.mode)?;
-    } else if !session.mode.is_empty() {
-        cases::validate(output, &session.mode)?;
+        None
+    } else {
+        if !session.mode.is_empty() {
+            cases::validate(output, &session.mode)?;
+        }
+        None
+    };
+    if let Some(reason) = exit_reason {
+        session
+            .client
+            .as_mut()
+            .ok_or_else(|| bad("missing QMP exit observer"))?
+            .guest_exit(reason)?;
+        runner.record("power_exit=natural qmp_guest_reason=verified")?;
     }
     if output
         .lines()
@@ -333,7 +362,8 @@ pub fn verify(
     for snapshot in session.snapshots {
         let image = Ppm::read(&snapshot.path)?;
         independent(&image, &snapshot.frame)?;
-        let compare_host = session.mode.is_empty() || session.mode == "t10-pages";
+        let compare_host =
+            session.demo.is_none() && (session.mode.is_empty() || session.mode == "t10-pages");
         if compare_host {
             let dir = process::unique_directory(directory, "workbench-host")?;
             runner.run(

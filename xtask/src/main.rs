@@ -34,7 +34,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | run --serial | test --vm [--storage-only|--fat-only|--service-only|--shell-only|--workbench-only|--link-only|--power-only|--power-cases CASE,...|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\nui --host [--disk IMAGE] [--gui] | run --gui (bounded native windows)."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | demo | run --serial | test --vm [--storage-only|--fat-only|--service-only|--shell-only|--workbench-only|--link-only|--power-only|--power-cases CASE,...|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\nui --host [--disk IMAGE] [--gui] | run --gui (bounded native windows)."
         );
         return Ok(());
     }
@@ -179,6 +179,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
             println!("verified static ELF: {}", artifact.display());
         }
         Action::Image
+        | Action::Demo
         | Action::Run
         | Action::RunGui
         | Action::TestVm
