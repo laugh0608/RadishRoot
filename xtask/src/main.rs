@@ -34,7 +34,7 @@ fn main() {
 fn execute(options: Options) -> Result<()> {
     if options.action == Action::Help {
         println!(
-            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | demo | run --serial | test --vm [--storage-only|--fat-only|--service-only|--shell-only|--workbench-only|--link-only|--power-only|--power-cases CASE,...|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\ndemo --gui (manual Cocoa, capped at 600 seconds per boot).\nui --host [--disk IMAGE] [--gui] | run --gui (bounded native windows)."
+            "cargo +<project channel> xtask check | build --profile dev|release [--fresh] | test --host [--shell-equivalence]\nOptional: --timeout-secs 1..3600 (default 120 per child).\nOutputs: target/xtask-*/; exit: 0 success, 1 failure, 2 usage, 124 timeout.\nimage | demo | run --serial | test --vm [--storage-only|--fat-only|--service-only|--shell-only|--shell-equivalence|--workbench-only|--link-only|--power-only|--power-cases CASE,...|--runtime-only|--graphics-only|--graphics-cases CASE,...] (headless UEFI).\ndemo --gui (manual Cocoa, capped at 600 seconds per boot).\nui --host [--disk IMAGE] [--gui] | run --gui (bounded native windows)."
         );
         return Ok(());
     }
@@ -178,6 +178,9 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
             fs::write(runner.dir.join("metadata.json"), metadata)?;
             println!("verified static ELF: {}", artifact.display());
         }
+        Action::TestShellEquivalence { vm: false } => {
+            vm_shell::at06::host(&context, runner)?;
+        }
         Action::Image
         | Action::Demo { .. }
         | Action::Run
@@ -187,6 +190,7 @@ fn perform(root: &Path, options: &Options, runner: &mut Runner) -> Result<()> {
         | Action::TestFatVm
         | Action::TestServiceVm
         | Action::TestShellVm
+        | Action::TestShellEquivalence { vm: true }
         | Action::TestWorkbenchVm
         | Action::TestPowerCases(_)
         | Action::TestPowerVm

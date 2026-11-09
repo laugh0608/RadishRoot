@@ -242,6 +242,7 @@ pub fn run(serial: &mut Serial) -> Result<Facts, BootError> {
         "t08-device-flush",
         "t08-bad-fat",
         "t09-write",
+        "t09-at06",
         "t09-reopen",
         "t09-readonly",
         "t09-file-sync",

@@ -10,7 +10,7 @@ fn bad(detail: &str) -> Error {
 fn require(ok: bool, detail: &str) -> Result<()> {
     if ok { Ok(()) } else { Err(bad(detail)) }
 }
-fn one<'a>(s: &'a str, p: &str) -> Result<&'a str> {
+pub(super) fn one<'a>(s: &'a str, p: &str) -> Result<&'a str> {
     let lines: Vec<_> = s.lines().filter(|l| l.starts_with(p)).collect();
     if lines.len() != 1 {
         return Err(bad(p));
@@ -31,7 +31,7 @@ pub fn validate_default(s: &str, id: [u8; 16]) -> Result<()> {
         "console failed",
     )
 }
-fn bytes(r: &Value, expected: &[u8]) -> Result<()> {
+pub(super) fn bytes(r: &Value, expected: &[u8]) -> Result<()> {
     let o = &r["output"];
     let hex: String = expected.iter().map(|b| format!("{b:02x}")).collect();
     require(
@@ -47,7 +47,7 @@ fn bytes(r: &Value, expected: &[u8]) -> Result<()> {
         "file text projection",
     )
 }
-fn error(r: &Value, code: &str, stage: &str) -> Result<()> {
+pub(super) fn error(r: &Value, code: &str, stage: &str) -> Result<()> {
     require(
         r["ok"] == false
             && r["error"]["kind"] == "service"
@@ -109,6 +109,19 @@ pub fn validate(s: &str, mode: &str, id: [u8; 16]) -> Result<()> {
         acknowledgements == (1..=input.len()).collect::<Vec<_>>(),
         "all physical input bytes acknowledged",
     )?;
+    let stop = fields(one(s, "RR:T09:STOP ")?)?;
+    require(
+        stop.get("reset") == Some(&"confirmed")
+            && ["bus_master", "allocations", "shared"]
+                .iter()
+                .all(|k| number(&stop, k).is_ok_and(|n| n == 0))
+            && number(&stop, "requests")? > 0,
+        "device stop",
+    )?;
+    if mode == super::at06::MODE {
+        super::at06::trace(s, id)?;
+        return Ok(());
+    }
     let replies = s
         .lines()
         .filter_map(|l| l.strip_prefix("RR:CONSOLE:REPLY "))
@@ -147,15 +160,6 @@ pub fn validate(s: &str, mode: &str, id: [u8; 16]) -> Result<()> {
             "expected command success/failure",
         )?;
     }
-    let stop = fields(one(s, "RR:T09:STOP ")?)?;
-    require(
-        stop.get("reset") == Some(&"confirmed")
-            && ["bus_master", "allocations", "shared"]
-                .iter()
-                .all(|k| number(&stop, k).is_ok_and(|n| n == 0))
-            && number(&stop, "requests")? > 0,
-        "device stop",
-    )?;
     if matches!(mode, "t09-readonly" | "t09-reopen" | "t09-bad-fat") {
         require(number(&stop, "flushes")? == 0, "readonly flush")?;
     }

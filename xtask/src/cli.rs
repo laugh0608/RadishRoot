@@ -20,6 +20,9 @@ pub enum Action {
     TestFatVm,
     TestServiceVm,
     TestShellVm,
+    TestShellEquivalence {
+        vm: bool,
+    },
     TestWorkbenchVm,
     TestLinkVm,
     TestPowerVm,
@@ -79,6 +82,11 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["test", "--vm", "--fat-only"] => Action::TestFatVm,
         ["test", "--vm", "--service-only"] => Action::TestServiceVm,
         ["test", "--vm", "--shell-only"] => Action::TestShellVm,
+        ["test", target @ ("--host" | "--vm"), "--shell-equivalence"] => {
+            Action::TestShellEquivalence {
+                vm: *target == "--vm",
+            }
+        }
         ["test", "--vm", "--workbench-only"] => Action::TestWorkbenchVm,
         ["test", "--vm", "--link-only"] => Action::TestLinkVm,
         ["test", "--vm", "--power-only"] => Action::TestPowerVm,

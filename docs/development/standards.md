@@ -230,6 +230,15 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 同步失败对照沿用 `test --vm --power-cases t12-volume-fail`，使用单独 DATA 和 boot-test 注入。运行前确认本批 VM、专用盘、资源与清理额度。
 
+### T13 AT06 命令等价入口
+
+```bash
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --host --shell-equivalence
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --shell-equivalence --timeout-secs 60
+```
+
+按 [AT06 命令等价契约](../mvp-plan.md#t13-at06-命令等价复验)运行。宿主入口保留输入和宿主轨迹；VM 入口先验宿主，再跑一次无窗口 QEMU，使用 boot-test、只读引导盘和一张可写 DATA 副本。串口逐字节回执、同序的结构化回复、整行丢弃、写入副作用和设备停止都须通过。guest 退出后核对独立 FAT 读盘和 DATA 外字节。原始轨迹、串口输入、负对照和盘保存在当次 `target/xtask-*`。此入口单独确认运行额度，覆盖宿主与串口 guest；图形入口证据与全套 VM 结果分别记录。
+
 ### T13 Cocoa 人工演示入口与清单
 
 窗口、专用盘和运行额度获准后，在 macOS 固定验收宿主执行下列命令。使用原有 QEMU 与固件，任务目录为每次启动创建独立 Cocoa bundle 和 UEFI VARS。`--timeout-secs` 默认为 120 秒，窗口每次最多 600 秒，示例将每次窗口限为 300 秒。超时返回 124 并回收任务进程。关闭窗口或退出 QEMU 会按实际退出原因判定。

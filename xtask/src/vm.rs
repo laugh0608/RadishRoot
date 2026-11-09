@@ -62,9 +62,15 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
                     | Action::TestLinkVm
                     | Action::TestPowerVm
                     | Action::TestPowerCases(_)
+                    | Action::TestShellEquivalence { vm: true }
             ),
     )?;
-    let first_mode = selected.map_or("", |cases| cases[0]);
+    let shell_equivalence = matches!(action, Action::TestShellEquivalence { vm: true });
+    let first_mode = if shell_equivalence {
+        crate::vm_shell::at06::MODE
+    } else {
+        selected.map_or("", |cases| cases[0])
+    };
     let disk = boot_image::create(&context.root, runner, &manifest, &kernel, first_mode)?;
     if *action == Action::Image {
         return Ok(());
@@ -84,10 +90,11 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     let vars = share.join(manifest.get("firmware_vars")?);
     manifest.hash(runner, &code, "firmware_code_sha256")?;
     manifest.hash(runner, &vars, "firmware_vars_sha256")?;
-    let host_view = if matches!(
-        action,
-        Action::TestStorageVm | Action::TestFatVm | Action::TestServiceVm | Action::TestShellVm
-    ) {
+    let host_view = if shell_equivalence
+        || matches!(
+            action,
+            Action::TestStorageVm | Action::TestFatVm | Action::TestServiceVm | Action::TestShellVm
+        ) {
         None
     } else {
         Some(crate::ui::build(context, runner, false)?)
@@ -98,6 +105,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         vars,
         host_view,
     };
+    if shell_equivalence {
+        return crate::vm_shell::at06::execute(context, runner, &manifest, &machine, &disk);
+    }
     if let Action::Demo { gui } = action {
         return crate::vm_workbench::execute_demo(
             context, runner, &manifest, &machine, &disk, *gui,

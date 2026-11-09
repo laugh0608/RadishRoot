@@ -35,8 +35,17 @@ pub fn run(serial: &mut Serial, device: pci::Device, mode: &str) {
             let mut files = FileService::new(backend, id).map_err(|_| "SERVICE")?;
             let mut console = Console::new();
             console.announce(serial, &files)?;
+            if mode == "t09-at06" {
+                writeln!(
+                    serial,
+                    "RR:AT06:VOLUME {:032x}",
+                    u128::from_be_bytes(files.volume().id.0)
+                )
+                .map_err(|_| "SERIAL")?;
+            }
             let expected = match mode {
                 "t09-write" => 20,
+                "t09-at06" => 8,
                 "t09-reopen" => 6,
                 _ => 4,
             };

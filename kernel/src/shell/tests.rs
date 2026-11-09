@@ -408,3 +408,50 @@ fn host_equivalence_trace_preserves_success_conflict_and_detail() {
         std::println!("RR:HOST:{label} {json}");
     }
 }
+
+#[test]
+#[ignore = "由 xtask 提供 AT06 公用字节输入"]
+fn at06_console_trace() {
+    extern crate std;
+    let path = std::env::var_os("RADISHROOT_AT06_INPUT").expect("AT06 input fixture");
+    let bytes = std::fs::read(path).expect("AT06 input bytes");
+    let (mut disk, layout) = crate::services::tests::formatted();
+    let mut files = FileService::new(
+        crate::services::fat::FatBackend::new(&mut disk, layout),
+        BootId([1; 16]),
+    )
+    .unwrap();
+    std::println!(
+        "\nRR:CONSOLE:READY boot_id={:032x} line_bytes={LINE_BYTES} history=16 cwd=/data",
+        u128::from_be_bytes(files.boot_id().0)
+    );
+    std::println!(
+        "RR:AT06:VOLUME {:032x}",
+        u128::from_be_bytes(files.volume().id.0)
+    );
+    let mut input = Input::new();
+    let mut shell = Shell::new();
+    let mut completed = 0;
+    for byte in bytes {
+        match input.receive(byte) {
+            Action::Submitted(line) => {
+                let reply = shell.execute(&line, &mut files).unwrap();
+                let mut json = String::new();
+                render::reply(&mut json, &reply).unwrap();
+                std::println!("RR:CONSOLE:REPLY {json}");
+                completed += 1;
+            }
+            Action::Rejected(error) => {
+                std::println!("RR:CONSOLE:INPUT_ERROR code={error:?} line_discarded=1");
+            }
+            Action::None | Action::Changed => (),
+        }
+    }
+    std::println!(
+        "RR:T09:RESULT commands={completed} records={} generation={} changes={} state={:?}",
+        files.operations.iter().count(),
+        files.generation(),
+        files.changes.iter().count(),
+        files.volume().mount_state
+    );
+}

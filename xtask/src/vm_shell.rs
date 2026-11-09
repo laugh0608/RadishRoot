@@ -1,4 +1,5 @@
 //! T09 外部串口输入与独立期望；不调用 guest parser / renderer 生成预期。
+pub(super) mod at06;
 mod console;
 mod validate;
 use crate::{
@@ -142,6 +143,7 @@ pub(super) fn execute(
 pub(super) fn script(mode: &str, id: [u8; 16]) -> Result<Vec<u8>> {
     let boot = format!("{:032x}", u128::from_be_bytes(id));
     let commands = match mode {
+        at06::MODE => return Ok(at06::input()),
         "t09-write" => vec![
             "helx\x1b[D\x1b[3~p\r".into(),
             "ls /data\r".into(),
