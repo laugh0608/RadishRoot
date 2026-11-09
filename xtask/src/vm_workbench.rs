@@ -4,6 +4,7 @@ pub(super) mod at07;
 mod cases;
 mod demo;
 mod link;
+pub(super) mod measurement;
 mod power;
 use crate::{
     error::{Error, Result},
@@ -272,6 +273,8 @@ impl Session {
             self.at06_steps()?;
         } else if self.mode == at07::MODE {
             self.at07_steps()?;
+        } else if self.mode == measurement::MODE {
+            self.measurement_steps()?;
         } else if !self.mode.is_empty() {
             self.case_steps()?;
         } else if self.full {
@@ -370,6 +373,7 @@ pub fn verify(
     let input = match &session.demo {
         Some(DemoBoot::Reopen { .. }) if session.gui => InputEvidence::Keyboard,
         _ if full || session.gui || session.mode == at07::MODE => InputEvidence::KeyboardAndPointer,
+        _ if session.mode == measurement::MODE => InputEvidence::Keyboard,
         _ => InputEvidence::None,
     };
     validate(output, full, input)?;
@@ -386,6 +390,8 @@ pub fn verify(
         at06::validate_input(output, boot, &session.snapshots)?;
     } else if session.mode == at07::MODE {
         at07::validate(output, &session.snapshots)?;
+    } else if session.mode == measurement::MODE {
+        measurement::verify_frames(&session.snapshots)?;
     } else if !session.mode.is_empty() {
         cases::validate(output, &session.mode)?;
     }
@@ -403,7 +409,10 @@ pub fn verify(
         let image = Ppm::read(&snapshot.path)?;
         independent(&image, &snapshot.frame)?;
         let compare_host = session.demo.is_none()
-            && matches!(session.mode.as_str(), "" | "t10-pages" | at07::MODE);
+            && matches!(
+                session.mode.as_str(),
+                "" | "t10-pages" | at07::MODE | measurement::MODE
+            );
         if session.mode == at07::MODE {
             at07::pixels(&image, &snapshot.name)?;
         }

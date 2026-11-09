@@ -61,6 +61,7 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
                 Action::TestWorkbenchVm
                     | Action::TestWorkbenchEquivalence
                     | Action::TestWorkbenchLayout
+                    | Action::TestM1Measurement
                     | Action::TestLinkVm
                     | Action::TestPowerVm
                     | Action::TestPowerCases(_)
@@ -74,6 +75,8 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
         crate::vm_workbench::at06::MODE
     } else if *action == Action::TestWorkbenchLayout {
         crate::vm_workbench::at07::MODE
+    } else if *action == Action::TestM1Measurement {
+        crate::vm_workbench::measurement::MODE
     } else {
         selected.map_or("", |cases| cases[0])
     };
@@ -119,6 +122,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     }
     if *action == Action::TestWorkbenchLayout {
         return crate::vm_workbench::at07::execute(runner, &manifest, &machine, &disk);
+    }
+    if *action == Action::TestM1Measurement {
+        return crate::vm_workbench::measurement::execute(runner, &manifest, &machine, &disk);
     }
     if let Action::Demo { gui } = action {
         return crate::vm_workbench::execute_demo(

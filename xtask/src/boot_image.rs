@@ -151,6 +151,7 @@ pub fn create(
         "t10-write",
         "t10-at06",
         "t10-at07",
+        "t10-m1-measure",
         "t10-file-sync",
         "t10-pages",
         "t11-link",

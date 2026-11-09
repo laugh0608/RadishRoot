@@ -250,6 +250,14 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 按 [AT07 工作台复验契约](../mvp-plan.md#t13-at07-工作台交互复验) 单次启动无窗口 QEMU。使用一张只读专用盘，采集双面板、终端铺满、操作详情、文件区铺满、键盘刷新和恢复双面板六帧。通过实际鼠标和 Tab / Enter 切换和激活。核对只读错误及同一操作的详情，使用 guest 输入记录在宿主重放并逐像素对照，再独立核对关键像素、stride 和格式。启动前后比较整盘摘要。额度单独确认，运行无需实体键鼠。
 
+### T13 M1 空闲输入与内存测量入口
+
+```bash
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --m1-measure --timeout-secs 60
+```
+
+按 [M1 空闲测量契约](../mvp-plan.md#t13-m1-空闲输入与内存测量) 启动一次无窗口 QEMU，使用一张只读专用盘。测量模式在 guest 的 PS/2 接收路径和 framebuffer 写入完成处取同一 HPET 时钟，通过输入长度及帧代次配对 100 个样本。保留第 99 与 100 次输入的画面，独立检查输入行发生变化，并对照宿主重放。原始串口、输入记录、截图与 `m1-measurement.json` 保存在当次 `target/xtask-*`。报告记录 P95、主机负载及各内存统计口径。真实运行额度单独确认。
+
 ### T13 Cocoa 人工演示入口与清单
 
 窗口、专用盘和运行额度获准后，在 macOS 固定验收宿主执行下列命令。使用原有 QEMU 与固件，任务目录为每次启动创建独立 Cocoa bundle 和 UEFI VARS。`--timeout-secs` 默认为 120 秒，窗口每次最多 600 秒，示例将每次窗口限为 300 秒。超时返回 124 并回收任务进程。关闭窗口或退出 QEMU 会按实际退出原因判定。

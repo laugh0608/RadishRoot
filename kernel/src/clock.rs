@@ -1,4 +1,4 @@
-//! 固定平台 HPET：ACPI 只读发现、独占 UC 映射，IRQ 不读取此模块。
+//! 固定平台 HPET：ACPI 只读发现、独占 UC 映射。测量模式允许输入 IRQ 取短时间戳。
 use crate::{boot::Facts, exclusive::Exclusive, platform_memory};
 use radishroot_kernel::{
     acpi,

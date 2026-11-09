@@ -626,3 +626,21 @@ pub fn allocations() -> (usize, usize) {
         m.shared.iter().flatten().count(),
     )
 }
+#[cfg(feature = "boot-test")]
+pub fn dma_pages() -> (usize, usize) {
+    let memory = MEMORY.lock();
+    (
+        memory
+            .blocks
+            .iter()
+            .flatten()
+            .map(|block| block.pages)
+            .sum(),
+        memory
+            .shared
+            .iter()
+            .flatten()
+            .map(|share| share.block.pages)
+            .sum(),
+    )
+}

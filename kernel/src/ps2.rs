@@ -13,6 +13,8 @@ pub struct Error {
     pub port: InputPort,
 }
 static mut RAW: input::RawQueue = input::RawQueue::new();
+#[cfg(feature = "boot-test")]
+pub mod measurement;
 fn read(port: u16) -> u8 {
     // SAFETY: 固定 i8042 状态/数据 PIO，唯一 BSP；调用处通过 IF=0 或屏蔽输入 IRQ 保证互斥。
     unsafe { Port::<u8>::new(port).read() }
@@ -42,6 +44,8 @@ fn capture() {
         let Some(raw) = receive() else {
             break;
         };
+        #[cfg(feature = "boot-test")]
+        measurement::capture(raw);
         state.push(raw);
     }
 }

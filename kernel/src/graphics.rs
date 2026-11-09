@@ -29,6 +29,10 @@ pub struct Graphics {
     last_report: u64,
     initial_frames: u64,
     initial_heap: u64,
+    #[cfg(feature = "boot-test")]
+    measurement_stamp: Option<ps2::measurement::Stamp>,
+    #[cfg(feature = "boot-test")]
+    measurement_samples: usize,
 }
 impl Graphics {
     pub fn new(serial: &mut Serial, facts: &Facts) -> Result<Self, &'static str> {
@@ -80,6 +84,10 @@ impl Graphics {
             last_report: 0,
             initial_frames: platform_memory::stats().allocated_bytes,
             initial_heap: heap::stats().allocated_bytes,
+            #[cfg(feature = "boot-test")]
+            measurement_stamp: None,
+            #[cfg(feature = "boot-test")]
+            measurement_samples: 0,
         };
         let _ = writeln!(
             serial,
@@ -109,6 +117,21 @@ impl Graphics {
             serial,
             "RR:T07:PS2 keyboard_set=2 translation=0 mouse_id=0 packet_bytes=3 scale=1 irq_keyboard=1 irq_mouse=12"
         );
+        #[cfg(feature = "boot-test")]
+        if facts.mode == "t10-m1-measure" {
+            use radishroot_kernel::{shell, workbench};
+            writeln!(
+                serial,
+                "RR:M1:CONFIG ui_inline_bytes={} ui_result_limit={} ui_result_bytes={} input_limit={} raw_capacity={}",
+                core::mem::size_of::<workbench::View>(),
+                workbench::COMMANDS,
+                workbench::RESULT_BYTES,
+                shell::LINE_BYTES,
+                radishroot_kernel::input::RAW_CAPACITY,
+            )
+            .map_err(|_| "SERIAL")?;
+            ps2::measurement::enable();
+        }
         state.draw(serial)?;
         let _ = writeln!(
             serial,
@@ -240,7 +263,7 @@ impl Graphics {
                     "RR:T07:PAUSE raw_consumption=1 software_capacity=256"
                 );
             }
-            let batch = ps2::drain(self.paused);
+            let batch = self.drain_input()?;
             self.raw_received = batch.received;
             self.raw_dropped = batch.dropped;
             pending = batch.pending;
@@ -307,6 +330,10 @@ impl Graphics {
         {
             self.draw(serial)?;
         }
+        #[cfg(feature = "boot-test")]
+        if self.measurement_stamp.is_some() {
+            return Err("M1_INPUT_WITHOUT_FRAME");
+        }
         let now = clock::now().map_err(|e| e.code())?;
         if now.saturating_sub(self.last_report) >= 250_000_000 {
             self.last_report = now;
@@ -327,6 +354,15 @@ impl Graphics {
             || !self.events.is_empty()
             || self.workbench.as_ref().is_some_and(|v| v.pending()))
     }
+    fn drain_input(&mut self) -> Result<radishroot_kernel::input::RawBatch, &'static str> {
+        #[cfg(feature = "boot-test")]
+        if self.mode == "t10-m1-measure" {
+            let (batch, stamp) = ps2::measurement::drain()?;
+            self.measurement_stamp = stamp;
+            return Ok(batch);
+        }
+        Ok(ps2::drain(self.paused))
+    }
     fn draw(&mut self, serial: &mut Serial) -> Result<(), &'static str> {
         let start = clock::now().map_err(|e| e.code())?;
         let clipping = self.mode == "t07-clipping";
@@ -334,6 +370,27 @@ impl Graphics {
             view.render(&mut self.display.surface());
             self.display.present()?;
             let end = clock::now().map_err(|e| e.code())?;
+            #[cfg(feature = "boot-test")]
+            if let Some(stamp) = self.measurement_stamp.take() {
+                self.measurement_samples += 1;
+                let seq = self.measurement_samples;
+                let input = view.editor.text().as_bytes();
+                if seq > 100
+                    || input.len() != seq
+                    || input.last() != Some(&stamp.byte)
+                    || end <= stamp.received_ns
+                    || view.pending()
+                {
+                    return Err("M1_INPUT_FRAME_PAIR");
+                }
+                let (queue, shared) = platform_memory::dma_pages();
+                writeln!(
+                    serial,
+                    "RR:M1:INPUT seq={seq} frame={} byte={} received_ns={} presented_ns={end} dma_queue_pages={queue} dma_shared_pages={shared}",
+                    self.display.presents, stamp.byte, stamp.received_ns
+                )
+                .map_err(|_| "SERIAL")?;
+            }
             let count = view.page.as_ref().map_or(0, |p| p.entries.len());
             let _ = writeln!(
                 serial,

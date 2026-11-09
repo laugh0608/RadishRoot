@@ -26,6 +26,7 @@ pub enum Action {
     TestWorkbenchVm,
     TestWorkbenchEquivalence,
     TestWorkbenchLayout,
+    TestM1Measurement,
     TestLinkVm,
     TestPowerVm,
     TestPowerCases(Vec<&'static str>),
@@ -92,6 +93,7 @@ pub fn parse(args: &[String]) -> Result<Options> {
         ["test", "--vm", "--workbench-only"] => Action::TestWorkbenchVm,
         ["test", "--vm", "--workbench-equivalence"] => Action::TestWorkbenchEquivalence,
         ["test", "--vm", "--workbench-layout"] => Action::TestWorkbenchLayout,
+        ["test", "--vm", "--m1-measure"] => Action::TestM1Measurement,
         ["test", "--vm", "--link-only"] => Action::TestLinkVm,
         ["test", "--vm", "--power-only"] => Action::TestPowerVm,
         ["test", "--vm", "--power-cases", selected] => {
