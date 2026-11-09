@@ -12,10 +12,10 @@
 
 | 层级 | 实际状态 |
 | --- | --- |
-| Git 与 CI | [PR #3](https://github.com/laugh0608/RadishRoot/pull/3) 的 Candidate Quality 通过，已以 `c55ff01` 合入 master 并回流。origin/master 与 origin/dev 均指向该提交，祖先关系已复核。T13 自动演示实现与首轮验收记录已在本地 dev 提交为 `408bac8`。 |
+| Git 与 CI | [PR #3](https://github.com/laugh0608/RadishRoot/pull/3) 的 Candidate Quality 通过，已以 `c55ff01` 合入 master 并回流，回流后读回的远端 master 与 dev 均为该提交。此后的 M1 工作在本地 dev 验收，Cocoa 预填工具及验收记录提交为 `a15a76a`。 |
 | 入口 | [`xtask demo`](../development/standards.md#t13-m1-自动演示入口) 运行普通 release 内核。首启创建 `hello.txt` 后自动刷新，详情与写入同 ID，同名被拒。两次 QMP `guest-shutdown` 均自然退出为 0。宿主独立读回 16 字节，次启只读打开同一 DATA，内容一致，旧操作返回 `ForeignBoot`，整盘摘要一致。 |
 | 故障对照 | `t12-volume-fail` 用独立 DATA 注入卷同步失败，界面保留原阶段与原 ID，后续写入被拒，诊断仍可执行。宿主回收该进程，独立读盘通过。 |
-| 人工入口 | [`xtask demo --gui`](../development/standards.md#t13-cocoa-人工演示入口与清单) 以 `45a8903` 为基线按窗验收。首窗通过实体鼠标、焦点和冲突，次窗通过键盘、同盘只读读回、原 ID 的 `ForeignBoot` 拒绝与 Shift 冒号。两窗自然关机及 10 帧像素检查通过。实现和记录已在本地 dev 提交为 `b8974ff`。 |
+| 人工入口 | [`xtask demo --gui`](../development/standards.md#t13-cocoa-人工演示入口与清单) 在 `bc27a11` 内核候选上完成实体键鼠复验。首窗以鼠标打开原写入详情并核对焦点及冲突；次窗在宿主预填后用实体键盘追加 `:3`，完整 ID 与首窗一致，返回 `ForeignBoot`。两窗均正常关机，独立读回 16 字节，只读重开前后整盘摘要一致，11 帧像素检查通过。 |
 | AT06 | 宿主与真实串口 guest 的 2151 字节输入相同，8 条结构化回复和 2 条超限通知逐项一致。独立读盘核对了唯一文件、精确 1002 字节、FAT 结构及 DATA 外字节。实现和记录已在本地 dev 提交为 `11e91f9`，候选与资源见[环境清单第 2.29 节](../development/environment.md#229-t13-at06-宿主与串口-guest-等价)。 |
 | 图形补验 | `test --vm --workbench-equivalence` 在真实 QEMU 通过。guest 解码字节与同一宿主夹具一致，8 条命令回复匹配。超限提示、Enter 清空、后续读回、4 帧像素及独立读盘均通过。图形实现和记录已在本地 dev 提交为 `1c4c795`。 |
 | AT07 工作台 | `test --vm --workbench-layout` 在真实 QEMU 通过。鼠标和 Tab / Enter 完成单双面板切换、详情与刷新，六帧独立像素验证和宿主重放一致，只读整盘摘要一致。实现和记录已在本地 dev 提交为 `bcab8dd`。 |
@@ -23,12 +23,13 @@
 | 候选与本地验证 | M1 内部预览候选锁定为 `bc27a11`。已在干净工作区通过 116 项常规宿主测试、AT06 定向宿主测试、fmt、宿主和裸机 check / 严格 Clippy、dev / release 与 boot-test 链接。普通 release 摘要与旧演示不同，定向复验清单见[环境清单第 2.33 节](../development/environment.md#233-m1-内部预览候选核对)。 |
 | 候选无窗口复验 | `bc27a11` 的七组定向复验通过，共 10 次启动。自动主路径、写回失败、AT06、AT07、输入恢复与裁剪及正式空闲测量均通过，最新 P95 为 16.302 ms。见[环境清单第 2.34 节](../development/environment.md#234-m1-候选无窗口复验与空间盘点)。 |
 | 空间清理 | 已清理历史 Rust 编译中间产物，`target/` 实占减少 25.69 GiB，宿主数据卷可用空间增加 25.56 GiB。活跃缓存、内核成品、测试盘和验收证据已核对保留。 |
-| 候选 Cocoa 复验 | 两窗均正常关机，16 字节独立读回通过，次启前后整盘摘要一致。次窗预填 `explain` 前缀后，实体键盘追加 `:3` 并提交，完整 ID 与首窗一致，返回 `ForeignBoot`。11 帧像素检查通过。 |
 | 后续验证 | 复制负载由 T25 / AT18 验证，完整 MVP 与安装交付由各自后续阶段验收。 |
 
 ## 接下来的事项
 
-提交 M1 本地验收记录和 Cocoa 验收工具后，准备 [T14 目录导航与新增 / 删除流程](../mvp-plan.md#t14-目录导航与新增--删除流程) 的实施契约。
+1. 起草 [T14 目录导航与新增 / 删除流程](../mvp-plan.md#t14-目录导航与新增--删除流程) 的实施契约。先核对现有 `Path::resolve`、`FileService`、终端当前目录与工作台列表刷新，明确两侧如何各自导航、何时显式同步目录。
+2. 明确 `cd`、`pwd`、`mkdir`、`rm` 与文件区路径栏、上级导航和删除确认的成功及失败行为。优先确定卷外路径、只读卷、根目录、非空目录与取消确认的处理，确认框打开时检查背景操作的输入隔离。
+3. 将 T14 对应的 AT08 子项拆成宿主服务与命令检查、真实 QEMU 交互和关机后独立 FAT 读盘。复制、重命名和显式覆盖接续 T15；实跑时按本轮目标另定资源额度。
 
 ## 已确认范围与停止线
 

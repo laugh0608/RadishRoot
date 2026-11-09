@@ -226,7 +226,7 @@ Shell 命令表是九命令的唯一来源，`sync` / `reboot` / `shutdown` 不�
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask demo
 ```
 
-按 [T13 首轮契约](../mvp-plan.md#t13-首轮实施契约)运行两次无窗口 QEMU，使用普通 release 内核、一个只读引导盘和同一份独立 DATA 副本。首启可写，实际键鼠走工作台，完成创建、自动列表、原操作详情、冲突与正常关机；中间独立读盘；次启只读，校验原内容和旧操作引用被拒后正常关机。QMP 帧、串口、独立 FAT 材料、盘、进程退出状态和工具输出保存在当次 `target/xtask-*`。每次启动上限为 `min(--timeout-secs, 60)` 秒，其他子进程沿用 `--timeout-secs`。入口成功返回 0，行为或数据错误返回 1，参数错误返回 2，进程超时返回 124。自动演示与人工 GUI 和完整 M1 验收分别记录。
+按 [T13 首轮契约](../mvp-plan.md#t13-首轮实施契约)运行两次无窗口 QEMU，使用普通 release 内核、一个只读引导盘和同一份独立 DATA 副本。首启可写，QMP 驱动 guest 键鼠完成创建、自动列表、原操作详情、冲突与正常关机；中间独立读盘；次启只读，校验原内容和旧操作引用被拒后正常关机。QMP 帧、串口、独立 FAT 材料、盘、进程退出状态和工具输出保存在当次 `target/xtask-*`。每次启动上限为 `min(--timeout-secs, 60)` 秒，其他子进程沿用 `--timeout-secs`。入口成功返回 0，行为或数据错误返回 1，参数错误返回 2，进程超时返回 124。自动演示与人工 GUI 和完整 M1 验收分别记录。
 
 同步失败对照沿用 `test --vm --power-cases t12-volume-fail`，使用单独 DATA 和 boot-test 注入。运行前确认本批 VM、专用盘、资源与清理额度。
 
@@ -240,7 +240,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 按 [AT06 命令等价契约](../mvp-plan.md#t13-at06-命令等价复验)运行。宿主入口保留输入和宿主轨迹；VM 入口先验宿主，再跑一次无窗口 QEMU，使用 boot-test、只读引导盘和一张可写 DATA 副本。串口逐字节回执、同序的结构化回复、整行丢弃、写入副作用和设备停止都须通过。guest 退出后核对独立 FAT 读盘和 DATA 外字节。原始轨迹、串口输入、负对照和盘保存在当次 `target/xtask-*`。此入口单独确认运行额度，覆盖宿主与串口 guest；图形入口证据与全套 VM 结果分别记录。
 
-`--workbench-equivalence` 单独启动一次无窗口 QEMU，用 QMP 键盘事件驱动 guest 的图形终端。从 guest 解码记录重建相同的命令字节，比较宿主回复并核对图形端额外的三次只读查询。保存超限、Enter 清空、下一条命令恢复三帧及其输入记录，退出后使用同一套独立读盘检查。额度单独确认，运行无需实体键鼠。
+`--workbench-equivalence` 单独启动一次无窗口 QEMU，用 QMP 键盘事件驱动 guest 的图形终端。从 guest 解码记录重建相同的命令字节，比较宿主回复并核对图形端额外的三次只读查询。保存初始、超限、Enter 清空及下一条命令恢复共四帧及其输入记录，退出后使用同一套独立读盘检查。额度单独确认，运行无需实体键鼠。
 
 ### T13 AT07 工作台交互入口
 
@@ -248,7 +248,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --workbench-layout --timeout-secs 60
 ```
 
-按 [AT07 工作台复验契约](../mvp-plan.md#t13-at07-工作台交互复验) 单次启动无窗口 QEMU。使用一张只读专用盘，采集双面板、终端铺满、操作详情、文件区铺满、键盘刷新和恢复双面板六帧。通过实际鼠标和 Tab / Enter 切换和激活。核对只读错误及同一操作的详情，使用 guest 输入记录在宿主重放并逐像素对照，再独立核对关键像素、stride 和格式。启动前后比较整盘摘要。额度单独确认，运行无需实体键鼠。
+按 [AT07 工作台复验契约](../mvp-plan.md#t13-at07-工作台交互复验) 单次启动无窗口 QEMU。使用一张只读专用盘，采集双面板、终端铺满、操作详情、文件区铺满、键盘刷新和恢复双面板六帧。QMP 发送鼠标和 Tab / Enter 事件，guest 核对实际接收与焦点。核对只读错误及同一操作的详情，使用 guest 输入记录在宿主重放并逐像素对照，再独立核对关键像素、stride 和格式。启动前后比较整盘摘要。额度单独确认，运行无需实体键鼠。
 
 ### T13 M1 空闲输入与内存测量入口
 
