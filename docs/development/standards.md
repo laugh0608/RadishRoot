@@ -279,7 +279,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 ## 5. 视觉与数据材料
 
-采用 RadishX family-ui v26.7.3 的 Workbench 方向，项目映射以 MVP 规划为准。参考规则而非搬运外部截图、品牌或整包 UI；具体设计资产若使用 .pen，只通过支持的 Pencil 工具读写。
+采用 RadishX family-ui v26.7.3 的 Workbench 方向，项目映射以 MVP 规划为准。参考规则而非搬运外部截图、品牌或整包 UI。新结构可用 Penpot 代表稿或可编辑原型评审，记录对应视口、关键状态和预览，实际交互在运行态核验。
 
 UI 状态随着真实行为扩展，优先可读性、焦点、错误、长内容与资源上限。产品语言与文档语言分别处理，英文界面不允许损坏 UTF-8 路径。
 
