@@ -1,0 +1,53 @@
+RadishRoot Source-Available License
+Version 1.0, November 14, 2026
+
+Copyright (c) 2026 RadishRoot Project Owner. All rights reserved.
+
+1. Scope
+
+This license covers only the original RadishRoot software, build tools, and
+documentation that the copyright owner makes available under these terms
+(the Project). Third-party crates, firmware, bootloaders, Linux components,
+fonts, and other separately licensed materials remain under their respective
+terms, including when included in a build or disk image. Existing separate
+permissions and rights available under applicable law or hosting-platform
+terms continue to apply.
+
+2. Study, development, and evaluation
+
+The copyright owner grants individuals and organizations a worldwide,
+non-exclusive, royalty-free license to download, copy, build, and privately
+modify the Project for study, development, and internal evaluation. This
+includes creating and keeping local backups and running your own builds on
+emulators, virtual machines, or physical devices under your control. Retain
+copyright, attribution, and license notices in permitted copies and builds.
+
+3. Uses requiring separate permission
+
+You must obtain prior written permission from the copyright owner for
+production deployment, for providing the Project as a service to others, or
+for redistributing or mirroring the Project or modified versions, including
+source, binaries, boot media, and disk images that contain Project material.
+These requirements do not extend to components separately licensed by
+their own rights holders. This license grants no trademark rights.
+
+4. Contributions
+
+By submitting material for inclusion in the Project, you represent that you
+have the right to submit it and, unless otherwise agreed in writing, grant
+the copyright owner a worldwide, perpetual, irrevocable, non-exclusive,
+royalty-free license to use, reproduce, modify, distribute, and relicense the
+contribution. You retain copyright in your contribution.
+
+5. Warranty and liability
+
+THE PROJECT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, AND NON-INFRINGEMENT. TO THE EXTENT PERMITTED BY APPLICABLE LAW,
+THE COPYRIGHT OWNER AND CONTRIBUTORS ARE NOT LIABLE FOR CLAIMS, DAMAGES,
+OR OTHER LIABILITY ARISING FROM THE PROJECT OR ITS USE.
+
+6. Licensing contact
+
+For production use, redistribution, or other permissions, contact
+luobo@radishx.com.

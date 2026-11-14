@@ -16,7 +16,7 @@
 | .github/workflows/pr-check.yml | 组件检查与稳定聚合结果 |
 | .github/rulesets/ | 远端声明及启用 / 读回步骤 |
 
-不建立装饰性 CODEOWNERS、虚假 LICENSE、空 Cargo 工程或自动发布入口。原创许可由所有者另行决定，见[许可与来源](licensing-and-sources.md)。
+原创内容采用[根 LICENSE](../../LICENSE)，第三方材料按[许可与来源](licensing-and-sources.md)核对。不建立装饰性 CODEOWNERS、空 Cargo 工程或未授权的自动发布入口。
 
 ## 2. 分支与提交
 

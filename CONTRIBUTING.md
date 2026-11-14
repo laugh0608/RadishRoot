@@ -10,8 +10,8 @@
 
 不为单纯文案改动要求所有业务测试；重要行为不能只用编译或文档检查证明。不得把真实个人数据、虚拟机大镜像、依赖缓存、第三方参考截图混入提交。
 
-原创许可和对外贡献授权机制尚未选定，相关边界见[许可与来源](docs/governance/licensing-and-sources.md)。
+提交前确认你有权提交相关内容。提交的贡献按[根 LICENSE](LICENSE)第 4 节授权，另有书面约定的除外。第三方材料的来源与分发要求见[许可与来源](docs/governance/licensing-and-sources.md)。
 
 仓库检查运行 `python3 scripts/check-repo.py`，检查器变更另跑 `python3 -B -m unittest discover -s scripts/tests -v`；无 Git 时只检查文件并明确提示，不跳过文档检查。实际产品行为仍按开发规范取得证据。
 
-普通贡献 PR 显式以 `dev` 为目标；目标默认分支 `master` 只收阶段晋级或必要 hotfix。PR 使用仓库模板，主线合并后完成回流再继续开发。安全问题遵循 [SECURITY.md](SECURITY.md)，讨论与评审遵循[行为规范](CODE_OF_CONDUCT.md)。这些入口不代表已开放公共仓库或已选择开源许可。
+普通贡献 PR 显式以 `dev` 为目标；目标默认分支 `master` 只收阶段晋级或必要 hotfix。PR 使用仓库模板，主线合并后完成回流再继续开发。安全问题遵循 [SECURITY.md](SECURITY.md)，讨论与评审遵循[行为规范](CODE_OF_CONDUCT.md)。对外协作的实际开放范围以维护者公告为准。
