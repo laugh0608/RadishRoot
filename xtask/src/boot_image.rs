@@ -166,6 +166,7 @@ pub fn create(
         "t12-flush-fail",
         "t12-platform-fail",
         "t12-readonly",
+        "t15-copy-fail",
     ]
     .contains(&fault)
     {

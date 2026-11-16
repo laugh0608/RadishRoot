@@ -299,6 +299,14 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `xtask test --host` 用合成 FAT 核对同目录与跨目录重命名、二进制分块复制、空文件、大小写及短名别名、目标字节、只读、取消、过期引用、失败阶段及列表刷新。覆盖故障注入在首个 4 KiB 写入之后拒绝下一次写入，要求目标已截断、已写字节 4096、无持久化确认且保留首错。真实 QEMU 证据按[T15 实施契约](../mvp-plan.md#t15-实施契约与验证方案)取得。
 
+```sh
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --workbench-transfers
+```
+
+三次无窗口启动各限 60 秒。普通 release 内核先运行可写路径，再只读重开同一专用 DATA 盘。QMP 驱动 guest 键鼠，核对终端和文件区的复制、跨目录重命名、显式覆盖、取消和输入隔离。两次均要求 `guest-shutdown` 与 QEMU 自然退出。可写盘退出后用 mtools 和 dosfstools 核对完整路径、原始字节、FAT 结构及 DATA 外区域，只读重开前后比对整盘摘要。
+
+独立 `boot-test` 启动在另一张 DATA 盘注入覆盖中途写入失败，核对截断、已写字节、首错、原操作 ID 及关机拒绝。宿主回收故障进程后只读观察 FAT，保留目标读取和 `fsck.fat -n` 的实际结果。这一路径覆盖 T15 对应的 AT12 故障子项，正常关机证据由前两次启动提供。
+
 ## 5. 视觉与数据材料
 
 采用 RadishX family-ui v26.7.3 的 Workbench 方向，项目映射以 MVP 规划为准。参考规则而非搬运外部截图、品牌或整包 UI。新界面和新交互可选用本机自部署 Penpot（界面或 MCP），也可用可编辑原型。已有设计稿、预览和评审记录原样留在原位置。

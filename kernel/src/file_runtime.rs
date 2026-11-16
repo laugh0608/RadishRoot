@@ -31,6 +31,13 @@ pub fn run(serial: &mut Serial, mut disk: Driver, facts: &Facts) -> ! {
                 "RR:T10:INJECTION stage=FileSync mechanism=adapter-once"
             );
         }
+        if facts.mode == "t15-copy-fail" {
+            backend.inject(radishroot_kernel::services::Stage::Copy);
+            let _ = writeln!(
+                serial,
+                "RR:T15:INJECTION stage=Copy after_first_chunk=1 mechanism=adapter-once"
+            );
+        }
         let sync_failure = match facts.mode {
             "t12-volume-fail" => Some(radishroot_kernel::services::Stage::VolumeSync),
             "t12-flush-fail" => Some(radishroot_kernel::services::Stage::DeviceFlush),

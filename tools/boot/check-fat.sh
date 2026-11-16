@@ -14,7 +14,7 @@ case "$mode" in
       mcopy -i "$disk" "/inputs/$id.bin" "::/$name"
     done < /inputs/files.tsv
     ;;
-  verify|observe|observe-file)
+  verify|observe|observe-file|observe-copy)
     mdir -b -s -i "$disk" ::/ > paths.txt
     while IFS="$(printf '\t')" read -r id name; do
         test ! -e "$id.bin"
@@ -24,6 +24,11 @@ case "$mode" in
     if [ "$mode" = observe-file ]; then
       mcopy -i "$disk" ::/failed.txt failed.bin
       test ! -s failed.bin
+    fi
+    if [ "$mode" = observe-copy ]; then
+      result=0
+      mcopy -i "$disk" ::/replace.bin observed-copy.bin > observe-copy.txt 2>&1 || result=$?
+      printf '%s\n' "$result" > observe-copy-exit.txt
     fi
     test ! -e data.fat
     dd if=/disk/disk.raw of=data.fat bs=4M skip="$offset" count="$length" \

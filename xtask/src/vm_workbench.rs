@@ -7,6 +7,7 @@ mod demo;
 mod link;
 pub(super) mod measurement;
 mod power;
+pub(super) mod transfers;
 use crate::{
     error::{Error, Result},
     process::{self, Runner},
@@ -113,6 +114,25 @@ impl Session {
             }
             thread::sleep(Duration::from_millis(5));
         }
+    }
+    fn wait_for_focus(&self, focus: &str) -> Result<()> {
+        self.wait(|state| Ok(fields(state)?.get("focus") == Some(&focus)))?;
+        Ok(())
+    }
+    fn wait_for_file_count(&self, entries: u64) -> Result<()> {
+        self.wait(|state| {
+            let frame = fields(state)?;
+            Ok(number(&frame, "pending")? == 0
+                && number(&frame, "list_ok")? == 1
+                && number(&frame, "entries")? == entries)
+        })?;
+        Ok(())
+    }
+    fn snapshot_file_details(&mut self, name: &str) -> Result<()> {
+        self.click(27, 687)?;
+        self.wait_for_focus("CloseDetails")?;
+        self.snapshot(name)?;
+        self.tap("esc")
     }
     fn send(&mut self, events: serde_json::Value) -> Result<()> {
         self.client
@@ -261,6 +281,9 @@ impl Session {
         if at08::is_directory_case(&self.mode) {
             return self.directory_poll(state);
         }
+        if transfers::is_transfer_case(&self.mode) {
+            return self.transfer_poll(state);
+        }
         if self.mode.starts_with("t12-") {
             return self.power_poll();
         }
@@ -356,7 +379,10 @@ pub fn verify(
     mut session: Session,
     output: &str,
 ) -> Result<()> {
-    let exit_reason = if session.demo.is_some() || at08::is_directory_case(&session.mode) {
+    let exit_reason = if session.demo.is_some()
+        || at08::is_directory_case(&session.mode)
+        || transfers::normal_shutdown(&session.mode)
+    {
         Some("guest-shutdown")
     } else if session.mode.starts_with("t12-") && !power::failure(&session.mode) {
         Some(if session.mode == "t12-reboot" {
@@ -385,6 +411,7 @@ pub fn verify(
         {
             InputEvidence::KeyboardAndPointer
         }
+        _ if transfers::is_transfer_case(&session.mode) => InputEvidence::KeyboardAndPointer,
         _ if session.mode == measurement::MODE => InputEvidence::Keyboard,
         _ => InputEvidence::None,
     };
@@ -404,6 +431,8 @@ pub fn verify(
         at07::validate(output, &session.snapshots)?;
     } else if at08::is_directory_case(&session.mode) {
         at08::validate(output, &session.mode, boot, &session.snapshots)?;
+    } else if transfers::is_transfer_case(&session.mode) {
+        transfers::validate(output, &session.mode, boot, &session.snapshots)?;
     } else if session.mode == measurement::MODE {
         measurement::verify_frames(&session.snapshots)?;
     } else if !session.mode.is_empty() {
@@ -432,6 +461,9 @@ pub fn verify(
         }
         if at08::is_directory_case(&session.mode) {
             at08::pixels(&image, &snapshot.name)?;
+        }
+        if transfers::is_transfer_case(&session.mode) {
+            transfers::pixels(&image, &snapshot.name)?;
         }
         if compare_host {
             let dir = process::unique_directory(directory, "workbench-host")?;

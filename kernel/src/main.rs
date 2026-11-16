@@ -63,6 +63,7 @@ pub extern "C" fn _start() -> ! {
                     || facts.mode.starts_with("t07-")
                     || facts.mode.starts_with("t10-")
                     || (facts.mode.starts_with("t11-") || facts.mode.starts_with("t12-"))
+                    || facts.mode == "t15-copy-fail"
                 {
                     match t04::probe(&mut serial, device) {
                         Ok(disk) => file_runtime::run(&mut serial, disk, &facts),

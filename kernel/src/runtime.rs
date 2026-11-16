@@ -20,7 +20,8 @@ pub fn initialize(serial: &mut Serial, facts: &Facts) -> Result<(), &'static str
                 || facts.mode.starts_with("t08-")
                 || facts.mode.starts_with("t09-")
                 || facts.mode.starts_with("t10-")
-                || (facts.mode.starts_with("t11-") || facts.mode.starts_with("t12-")))
+                || (facts.mode.starts_with("t11-") || facts.mode.starts_with("t12-"))
+                || facts.mode == "t15-copy-fail")
         {
             "normal"
         } else {

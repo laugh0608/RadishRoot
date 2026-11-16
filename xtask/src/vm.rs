@@ -126,6 +126,11 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     if *action == Action::TestWorkbenchDirectories {
         return crate::vm_workbench::at08::execute(context, runner, &manifest, &machine, &disk);
     }
+    if *action == Action::TestWorkbenchTransfers {
+        return crate::vm_workbench::transfers::execute(
+            context, runner, &manifest, &machine, &disk,
+        );
+    }
     if *action == Action::TestM1Measurement {
         return crate::vm_workbench::measurement::execute(runner, &manifest, &machine, &disk);
     }
@@ -345,6 +350,26 @@ pub(super) fn boot_directories(
     data: &Path,
     readonly: bool,
 ) -> Result<String> {
+    boot_workbench(
+        runner,
+        manifest,
+        machine,
+        source,
+        data,
+        readonly,
+        crate::vm_workbench::at08::mode(readonly),
+    )
+}
+
+pub(super) fn boot_workbench(
+    runner: &mut Runner,
+    manifest: &Manifest,
+    machine: &Machine,
+    source: &Path,
+    data: &Path,
+    readonly: bool,
+    scenario: &'static str,
+) -> Result<String> {
     let spec = BootSpec {
         boot_disk: source,
         data_disk: Some(data),
@@ -358,13 +383,13 @@ pub(super) fn boot_directories(
         spec,
         false,
         false,
-        Some(WorkbenchBoot::Directories),
+        Some(WorkbenchBoot::Scenario(scenario)),
     )
 }
 
 enum WorkbenchBoot {
     Demo(crate::vm_workbench::DemoBoot),
-    Directories,
+    Scenario(&'static str),
 }
 
 fn boot_configured(
@@ -379,11 +404,14 @@ fn boot_configured(
     let fault = spec.mode;
     let is_demo = matches!(workbench, Some(WorkbenchBoot::Demo(_)));
     let scripted_shutdown = workbench.is_some();
-    let workbench_mode = if matches!(workbench, Some(WorkbenchBoot::Directories)) {
-        crate::vm_workbench::at08::mode(spec.readonly)
-    } else {
-        fault
+    let workbench_mode = match workbench {
+        Some(WorkbenchBoot::Scenario(mode)) => mode,
+        _ => fault,
     };
+    let workbench_fault = fault.starts_with("t10-")
+        || fault.starts_with("t11-")
+        || fault.starts_with("t12-")
+        || fault == crate::vm_workbench::transfers::FAILURE;
     let disk = spec.data_disk.unwrap_or(spec.boot_disk);
     let qemu = &machine.qemu;
     let code = &machine.code;
@@ -405,8 +433,7 @@ fn boot_configured(
     let console_dir = if fault.is_empty()
         || fault.starts_with("t07-")
         || fault.starts_with("t09-")
-        || fault.starts_with("t10-")
-        || (fault.starts_with("t11-") || fault.starts_with("t12-"))
+        || workbench_fault
     {
         let path = process::unique_directory(Path::new("/private/tmp"), "rr-console")?;
         use std::os::unix::fs::PermissionsExt;
@@ -506,10 +533,7 @@ fn boot_configured(
         disk.display(),
         spec.readonly
     ))?;
-    let graphics = fault.is_empty()
-        || fault.starts_with("t07-")
-        || fault.starts_with("t10-")
-        || (fault.starts_with("t11-") || fault.starts_with("t12-"));
+    let graphics = fault.is_empty() || fault.starts_with("t07-") || workbench_fault;
     let socket_dir = if graphics {
         Some(process::unique_directory(
             Path::new("/private/tmp"),
@@ -559,11 +583,7 @@ fn boot_configured(
         });
     let mut workbench_session = socket
         .as_ref()
-        .filter(|_| {
-            fault.is_empty()
-                || fault.starts_with("t10-")
-                || (fault.starts_with("t11-") || fault.starts_with("t12-"))
-        })
+        .filter(|_| fault.is_empty() || workbench_fault)
         .map(|socket| {
             let mut session = crate::vm_workbench::Session::new(
                 &serial,
@@ -639,8 +659,7 @@ fn boot_configured(
             || fault.starts_with("t07-")
             || fault.starts_with("t08-")
             || fault.starts_with("t09-")
-            || fault.starts_with("t10-")
-            || (fault.starts_with("t11-") || fault.starts_with("t12-"))
+            || workbench_fault
         {
             ""
         } else {
@@ -660,8 +679,7 @@ fn boot_configured(
         || fault.starts_with("t07-")
         || fault.starts_with("t08-")
         || fault.starts_with("t09-")
-        || fault.starts_with("t10-")
-        || (fault.starts_with("t11-") || fault.starts_with("t12-"))
+        || workbench_fault
     {
         crate::vm_platform::validate(
             &output,
@@ -671,8 +689,7 @@ fn boot_configured(
                 || fault.starts_with("t07-")
                 || fault.starts_with("t08-")
                 || fault.starts_with("t09-")
-                || fault.starts_with("t10-")
-                || (fault.starts_with("t11-") || fault.starts_with("t12-"))
+                || workbench_fault
             {
                 ""
             } else {
@@ -694,18 +711,11 @@ fn boot_configured(
     if fault.starts_with("t05-") {
         crate::vm_fat::validate(&output, fault)?;
     }
-    if fault.is_empty()
-        || fault.starts_with("t06-")
-        || fault.starts_with("t07-")
-        || fault.starts_with("t10-")
-        || (fault.starts_with("t11-") || fault.starts_with("t12-"))
+    if fault.is_empty() || fault.starts_with("t06-") || fault.starts_with("t07-") || workbench_fault
     {
         crate::vm_runtime::validate(
             &output,
-            if fault.starts_with("t07-")
-                || fault.starts_with("t10-")
-                || (fault.starts_with("t11-") || fault.starts_with("t12-"))
-            {
+            if fault.starts_with("t07-") || workbench_fault {
                 ""
             } else {
                 fault

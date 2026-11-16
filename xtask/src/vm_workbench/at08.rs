@@ -92,46 +92,24 @@ impl Session {
         Ok(false)
     }
 
-    fn t14_focus(&self, focus: &str) -> Result<()> {
-        self.wait(|s| Ok(fields(s)?.get("focus") == Some(&focus)))?;
-        Ok(())
-    }
-
-    fn t14_page(&self, entries: u64) -> Result<()> {
-        self.wait(|s| {
-            let frame = fields(s)?;
-            Ok(number(&frame, "pending")? == 0
-                && number(&frame, "list_ok")? == 1
-                && number(&frame, "entries")? == entries)
-        })?;
-        Ok(())
-    }
-
-    fn t14_details(&mut self, name: &str) -> Result<()> {
-        self.click(27, 687)?;
-        self.t14_focus("CloseDetails")?;
-        self.snapshot(name)?;
-        self.tap("esc")
-    }
-
     fn t14_write(&mut self) -> Result<()> {
         self.click(40, 138)?;
-        self.t14_focus("DialogInput")?;
+        self.wait_for_focus("DialogInput")?;
         self.type_text("work")?;
         self.tap("ret")?;
         self.wait_for_visible("work", 1)?;
-        self.t14_details("t14-created-details")?;
+        self.snapshot_file_details("t14-created-details")?;
 
         self.click(50, 91)?;
-        self.t14_focus("FilePath")?;
+        self.wait_for_focus("FilePath")?;
         self.type_text("/work")?;
         self.tap("ret")?;
-        self.t14_page(0)?;
+        self.wait_for_file_count(0)?;
         self.snapshot("t14-path-navigation")?;
         self.click(450, 688)?;
         self.command("pwd", 1)?;
         self.click(330, 714)?;
-        self.t14_focus("Input")?;
+        self.wait_for_focus("Input")?;
         self.command("pwd", 2)?;
         self.command("mkdir empty", 3)?;
         self.wait_for_visible("empty", 2)?;
@@ -148,10 +126,10 @@ impl Session {
         self.click(36, 713)?;
         self.wait(|s| Ok(number(&fields(s)?, "file_row")? == 1))?;
         self.click(150, 139)?;
-        self.t14_focus("DialogCancel")?;
+        self.wait_for_focus("DialogCancel")?;
         self.click(450, 688)?;
         self.type_text("x")?;
-        self.t14_focus("DialogCancel")?;
+        self.wait_for_focus("DialogCancel")?;
         self.snapshot(CANCEL)?;
         self.tap("ret")?;
         self.wait(|s| {
@@ -168,19 +146,19 @@ impl Session {
         self.click(121, 713)?;
         self.wait(|s| Ok(number(&fields(s)?, "file_row")? == 2))?;
         self.click(150, 139)?;
-        self.t14_focus("DialogCancel")?;
+        self.wait_for_focus("DialogCancel")?;
         self.tap("tab")?;
-        self.t14_focus("DialogConfirm")?;
+        self.wait_for_focus("DialogConfirm")?;
         self.snapshot(CONFIRM)?;
         self.tap("ret")?;
-        self.t14_page(2)?;
-        self.t14_details("t14-removed-details")?;
+        self.wait_for_file_count(2)?;
+        self.snapshot_file_details("t14-removed-details")?;
 
         self.command("rm empty", 9)?;
-        self.t14_page(1)?;
+        self.wait_for_file_count(1)?;
         self.wait_for_visible("keep.txt", 6)?;
         self.click(208, 115)?;
-        self.t14_page(2)?;
+        self.wait_for_file_count(2)?;
         self.snapshot("t14-parent-navigation")?;
         self.click(450, 688)?;
         self.command("pwd", 10)
@@ -188,15 +166,15 @@ impl Session {
 
     fn t14_reopen(&mut self) -> Result<()> {
         self.command("cd work", 1)?;
-        self.t14_page(2)?;
+        self.wait_for_file_count(2)?;
         self.command("cd keep.txt", 2)?;
         self.command("cd /data", 3)?;
         self.click(39, 183)?;
-        self.t14_focus("Files")?;
+        self.wait_for_focus("Files")?;
         self.tap("ret")?;
-        self.t14_page(1)?;
+        self.wait_for_file_count(1)?;
         self.click(330, 714)?;
-        self.t14_focus("Input")?;
+        self.wait_for_focus("Input")?;
         self.command("pwd", 4)?;
         self.command("cat keep.txt", 5)?;
         self.command("mkdir denied", 6)?;
