@@ -134,7 +134,7 @@ impl Session {
             let (complete, _) = serial
                 .rsplit_once('\n')
                 .ok_or_else(|| bad("manual frame"))?;
-            link::visible(complete, NAME)?;
+            link::visible(complete, NAME, 1)?;
         }
         if step.name == PREFILLED
             && let DemoBoot::Reopen { old_operation } = demo

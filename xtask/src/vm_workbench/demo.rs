@@ -127,7 +127,7 @@ impl Session {
         let shutdown = match self.demo.as_ref().expect("demo session") {
             DemoBoot::Create => {
                 self.command(&format!("write {TARGET} \"{PAYLOAD}\""), 1)?;
-                self.wait_for_visible(NAME)?;
+                self.wait_for_visible(NAME, 1)?;
                 self.snapshot("demo-automatic-file")?;
                 self.source_details("demo-original-write-details")?;
                 self.tap("esc")?;

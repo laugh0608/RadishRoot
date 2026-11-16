@@ -83,13 +83,13 @@ pub fn execute(
     r.record("T11 four automatic-link cases complete; no manual refresh, full suite or normal power claim")
 }
 impl Session {
-    pub(super) fn wait_for_visible(&self, name: &str) -> Result<()> {
+    pub(super) fn wait_for_visible(&self, name: &str, generation: u64) -> Result<()> {
         self.wait(|s| {
             let f = fields(s)?;
             Ok(number(&f, "pending")? == 0 && f.get("update") == Some(&"refreshed"))
         })?;
         let text = read_serial(&self.serial)?;
-        visible(&text, name)
+        visible(&text, name, generation)
     }
     pub(super) fn source_details(&mut self, name: &str) -> Result<()> {
         self.click(40, 170)?;
@@ -120,7 +120,7 @@ impl Session {
             "t11-link" => {
                 self.command("ls", 1)?;
                 self.command("write linked.txt payload", 2)?;
-                self.wait_for_visible(target("t11-link"))?;
+                self.wait_for_visible(target("t11-link"), 1)?;
                 self.snapshot("automatic-created")?;
                 self.source_details("original-write-details")?;
                 self.tap("esc")?;
@@ -146,7 +146,7 @@ impl Session {
             "t11-pages" => {
                 self.command("ls", 1)?;
                 self.command("write later.txt payload", 2)?;
-                self.wait_for_visible(target("t11-pages"))?;
+                self.wait_for_visible(target("t11-pages"), 1)?;
                 self.snapshot("automatic-last-page")?;
                 self.source_details("paged-write-details")?;
                 self.tap("esc")?;
@@ -182,7 +182,7 @@ impl Session {
             "t11-external" => {
                 self.command("ls", 1)?;
                 self.external_write()?;
-                self.wait_for_visible(target("t11-external"))?;
+                self.wait_for_visible(target("t11-external"), 1)?;
                 self.snapshot("external-write-visible")?;
                 self.source_details("external-original-operation")?;
             }
@@ -199,13 +199,13 @@ pub(super) fn last_page(output: &str) -> Result<std::collections::BTreeMap<&str,
             .ok_or_else(|| bad("missing automatic page report"))?,
     )
 }
-pub(super) fn visible(output: &str, name: &str) -> Result<()> {
+pub(super) fn visible(output: &str, name: &str, generation: u64) -> Result<()> {
     let page = last_page(output)?;
     let query = number(&page, "query")?;
     let expected = name.bytes().map(|b| format!("{b:02x}")).collect::<String>();
     if page.get("update") != Some(&"refreshed")
         || number(&page, "ok")? != 1
-        || number(&page, "generation")? != 1
+        || number(&page, "generation")? != generation
         || number(&page, "source")? == 0
         || number(&page, "source")? == query
     {
@@ -312,7 +312,7 @@ pub fn validate(output: &str, mode: &str) -> Result<()> {
         {
             return Err(bad("write target/result"));
         }
-        visible(output, target(mode))?;
+        visible(output, target(mode), 1)?;
     }
     let expected_details = if mode == "t11-link" { 2 } else { 1 };
     if details.len() != expected_details

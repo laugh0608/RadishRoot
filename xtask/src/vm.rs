@@ -123,6 +123,9 @@ pub fn execute(context: &Context, runner: &mut Runner, action: &Action) -> Resul
     if *action == Action::TestWorkbenchLayout {
         return crate::vm_workbench::at07::execute(runner, &manifest, &machine, &disk);
     }
+    if *action == Action::TestWorkbenchDirectories {
+        return crate::vm_workbench::at08::execute(context, runner, &manifest, &machine, &disk);
+    }
     if *action == Action::TestM1Measurement {
         return crate::vm_workbench::measurement::execute(runner, &manifest, &machine, &disk);
     }
@@ -323,8 +326,47 @@ pub(super) fn boot_demo(
         readonly: matches!(demo, crate::vm_workbench::DemoBoot::Reopen { .. }),
         mode: "",
     };
-    boot_configured(runner, manifest, machine, spec, false, gui, Some(demo))
+    boot_configured(
+        runner,
+        manifest,
+        machine,
+        spec,
+        false,
+        gui,
+        Some(WorkbenchBoot::Demo(demo)),
+    )
 }
+
+pub(super) fn boot_directories(
+    runner: &mut Runner,
+    manifest: &Manifest,
+    machine: &Machine,
+    source: &Path,
+    data: &Path,
+    readonly: bool,
+) -> Result<String> {
+    let spec = BootSpec {
+        boot_disk: source,
+        data_disk: Some(data),
+        readonly,
+        mode: "",
+    };
+    boot_configured(
+        runner,
+        manifest,
+        machine,
+        spec,
+        false,
+        false,
+        Some(WorkbenchBoot::Directories),
+    )
+}
+
+enum WorkbenchBoot {
+    Demo(crate::vm_workbench::DemoBoot),
+    Directories,
+}
+
 fn boot_configured(
     runner: &mut Runner,
     manifest: &Manifest,
@@ -332,10 +374,16 @@ fn boot_configured(
     spec: BootSpec<'_>,
     full: bool,
     gui: bool,
-    demo: Option<crate::vm_workbench::DemoBoot>,
+    workbench: Option<WorkbenchBoot>,
 ) -> Result<String> {
     let fault = spec.mode;
-    let is_demo = demo.is_some();
+    let is_demo = matches!(workbench, Some(WorkbenchBoot::Demo(_)));
+    let scripted_shutdown = workbench.is_some();
+    let workbench_mode = if matches!(workbench, Some(WorkbenchBoot::Directories)) {
+        crate::vm_workbench::at08::mode(spec.readonly)
+    } else {
+        fault
+    };
     let disk = spec.data_disk.unwrap_or(spec.boot_disk);
     let qemu = &machine.qemu;
     let code = &machine.code;
@@ -523,10 +571,12 @@ fn boot_configured(
                 &directory,
                 full,
                 gui,
-                fault,
+                workbench_mode,
                 console_socket.as_deref(),
             );
-            session.demo = demo;
+            if let Some(WorkbenchBoot::Demo(demo)) = workbench {
+                session.demo = Some(demo);
+            }
             session
         });
     let mut shell_session = if fault.starts_with("t09-") {
@@ -540,7 +590,7 @@ fn boot_configured(
     } else {
         None
     };
-    let output = if is_demo || fault.starts_with("t12-") {
+    let output = if scripted_shutdown || fault.starts_with("t12-") {
         let session = workbench_session
             .as_mut()
             .ok_or_else(|| Error::new("power-session", "missing workbench"))?;
@@ -630,7 +680,9 @@ fn boot_configured(
             },
         )?;
     }
-    if !is_demo && (fault.is_empty() || fault.starts_with("t04-") || fault.starts_with("t07-")) {
+    if !scripted_shutdown
+        && (fault.is_empty() || fault.starts_with("t04-") || fault.starts_with("t07-"))
+    {
         crate::vm_storage::validate(&output, if fault.starts_with("t07-") { "" } else { fault })?;
     }
     if fault.starts_with("t09-") {
@@ -660,7 +712,7 @@ fn boot_configured(
             },
         )?;
     }
-    if !is_demo && (fault.is_empty() || fault.starts_with("t07-")) {
+    if !scripted_shutdown && (fault.is_empty() || fault.starts_with("t07-")) {
         crate::vm_service::validate_default(&output, boot_id)?;
         crate::vm_shell::validate_default(&output, boot_id)?;
     }

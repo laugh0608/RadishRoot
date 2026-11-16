@@ -46,6 +46,8 @@ impl Layout {
         controls.push((Focus::Panels, rect(w - cw * 10 - 8, 6, cw * 10, row)));
         if let Some(f) = files {
             let (x, y, fw, fh) = parts(f);
+            let mutation_y = y + row * 2 + 4;
+            let mutation_height = row - 4;
             controls.extend([
                 (Focus::FilePath, rect(x + 8, y + 4, fw - 16, row)),
                 (Focus::Refresh, rect(x + 6, y + row + 4, cw * 9, row)),
@@ -68,13 +70,13 @@ impl Layout {
                 ),
                 (
                     Focus::NewDirectory,
-                    rect(x + 6, y + row * 2 + 1, cw * 11, row - 2),
+                    rect(x + 6, mutation_y, cw * 11, mutation_height),
                 ),
             ]);
             if view.selected_entry().is_some() {
                 controls.push((
                     Focus::DeleteEntry,
-                    rect(x + cw * 12 + 8, y + row * 2 + 1, cw * 7, row - 2),
+                    rect(x + cw * 12 + 8, mutation_y, cw * 7, mutation_height),
                 ));
             }
             if !view.directory.is_root() {

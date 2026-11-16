@@ -287,6 +287,12 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `xtask test --host` 还用预置 FAT 夹具核对 `mkdir`、`rm` 和文件区的 `New folder`、`Delete`。验证创建与删除、冲突、越卷、只读、根目录、非空目录、写回故障、取消、输入重置、过期引用和进入已删目录的上级。宿主确认测试向同一视图投递键鼠事件，并核对后台草稿、服务操作数和代次。T14 真实 QEMU 交互及正常关机后独立 FAT 读盘按 [T14 实施契约](../mvp-plan.md#t14-实施契约与验证方案)验收。
 
+```sh
+env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask test --vm --workbench-directories
+```
+
+该入口使用未开启 `boot-test` 的 release 内核，运行两次限时 60 秒的无窗口 QEMU。首启在专用可写 DATA 盘上经 QMP 驱动 guest 键鼠，核对路径栏、上级导航、两侧独立目录和显式同步、创建、删除、失败详情，以及确认框打开时背景草稿、焦点和列表代次。两次启动都要求 QMP `guest-shutdown` 与进程自然退出。首启退出后独立核对目录、保留文件字节、取消与拒绝结果、FAT 结构和 DATA 外字节。次启只读打开同盘，核对保留内容、只读拒绝和整盘摘要。此入口覆盖 T14 对应的 AT08 子项。
+
 ## 5. 视觉与数据材料
 
 采用 RadishX family-ui v26.7.3 的 Workbench 方向，项目映射以 MVP 规划为准。参考规则而非搬运外部截图、品牌或整包 UI。新界面和新交互可选用本机自部署 Penpot（界面或 MCP），也可用可编辑原型。已有设计稿、预览和评审记录原样留在原位置。

@@ -1,6 +1,7 @@
 //! 真实键鼠驱动工作台，宿主用实际输入记录和同一只读盘重放；独立像素另行核对。
 pub(super) mod at06;
 pub(super) mod at07;
+pub(super) mod at08;
 mod cases;
 mod demo;
 mod link;
@@ -257,6 +258,9 @@ impl Session {
         if self.demo.is_some() {
             return self.demo_poll(&serial, state);
         }
+        if at08::is_directory_case(&self.mode) {
+            return self.directory_poll(state);
+        }
         if self.mode.starts_with("t12-") {
             return self.power_poll();
         }
@@ -352,7 +356,7 @@ pub fn verify(
     mut session: Session,
     output: &str,
 ) -> Result<()> {
-    let exit_reason = if session.demo.is_some() {
+    let exit_reason = if session.demo.is_some() || at08::is_directory_case(&session.mode) {
         Some("guest-shutdown")
     } else if session.mode.starts_with("t12-") && !power::failure(&session.mode) {
         Some(if session.mode == "t12-reboot" {
@@ -374,7 +378,13 @@ pub fn verify(
     let full = session.full && session.mode.is_empty();
     let input = match &session.demo {
         Some(DemoBoot::Reopen { .. }) if session.gui => InputEvidence::Keyboard,
-        _ if full || session.gui || session.mode == at07::MODE => InputEvidence::KeyboardAndPointer,
+        _ if full
+            || session.gui
+            || session.mode == at07::MODE
+            || at08::is_directory_case(&session.mode) =>
+        {
+            InputEvidence::KeyboardAndPointer
+        }
         _ if session.mode == measurement::MODE => InputEvidence::Keyboard,
         _ => InputEvidence::None,
     };
@@ -392,6 +402,8 @@ pub fn verify(
         at06::validate_input(output, boot, &session.snapshots)?;
     } else if session.mode == at07::MODE {
         at07::validate(output, &session.snapshots)?;
+    } else if at08::is_directory_case(&session.mode) {
+        at08::validate(output, &session.mode, boot, &session.snapshots)?;
     } else if session.mode == measurement::MODE {
         measurement::verify_frames(&session.snapshots)?;
     } else if !session.mode.is_empty() {
@@ -417,6 +429,9 @@ pub fn verify(
             );
         if session.mode == at07::MODE {
             at07::pixels(&image, &snapshot.name)?;
+        }
+        if at08::is_directory_case(&session.mode) {
+            at08::pixels(&image, &snapshot.name)?;
         }
         if compare_host {
             let dir = process::unique_directory(directory, "workbench-host")?;
