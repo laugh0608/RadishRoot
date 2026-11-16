@@ -18,6 +18,8 @@ pub enum ParseError {
 pub enum Command {
     Power(crate::services::power::Action),
     Help,
+    ChangeDirectory(String),
+    PrintDirectory,
     List(String),
     Next,
     Write { path: String, text: String },
@@ -31,7 +33,7 @@ pub struct CommandSpec {
     pub modifies: bool,
     pub result: &'static str,
 }
-pub const COMMANDS: [CommandSpec; 9] = [
+pub const COMMANDS: [CommandSpec; 11] = [
     CommandSpec {
         name: "sync",
         usage: "sync",
@@ -55,6 +57,18 @@ pub const COMMANDS: [CommandSpec; 9] = [
         usage: "help",
         modifies: false,
         result: "help",
+    },
+    CommandSpec {
+        name: "cd",
+        usage: "cd <path>",
+        modifies: false,
+        result: "directory",
+    },
+    CommandSpec {
+        name: "pwd",
+        usage: "pwd",
+        modifies: false,
+        result: "directory",
     },
     CommandSpec {
         name: "ls",
@@ -186,7 +200,9 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
         ["reboot"] => Command::Power(crate::services::power::Action::Reboot),
         ["shutdown"] => Command::Power(crate::services::power::Action::Shutdown),
         ["help"] => Command::Help,
-        ["ls"] => Command::List(String::from("/data")),
+        ["cd", path] => Command::ChangeDirectory(String::from(*path)),
+        ["pwd"] => Command::PrintDirectory,
+        ["ls"] => Command::List(String::from(".")),
         ["ls", "--next"] => Command::Next,
         ["ls", path] => Command::List(String::from(*path)),
         ["write", path, text] => Command::Write {

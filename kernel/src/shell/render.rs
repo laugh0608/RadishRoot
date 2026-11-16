@@ -147,6 +147,11 @@ pub fn reply(w: &mut impl Write, r: &Reply) -> fmt::Result {
                     w,
                     "{{\"kind\":\"power-prepared\",\"action\":\"{a:?}\",\"power_completed\":false}}"
                 )?,
+                Output::Directory(path) => {
+                    w.write_str("{\"kind\":\"directory\",\"path\":")?;
+                    string(w, path.as_str())?;
+                    w.write_char('}')?;
+                }
                 Output::Files(page) => {
                     write!(
                         w,

@@ -310,6 +310,7 @@ impl<B: Backend> FileService<B> {
                         });
                     }
                     Output::List(ListPage {
+                        directory: path.clone(),
                         entries: files,
                         next: next.map(|offset| ListCursor {
                             directory: self.reference(path.clone()),

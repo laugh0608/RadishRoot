@@ -46,6 +46,7 @@ impl Layout {
         if let Some(f) = files {
             let (x, y, fw, fh) = parts(f);
             controls.extend([
+                (Focus::FilePath, rect(x + 8, y + 4, fw - 16, row)),
                 (Focus::Refresh, rect(x + 6, y + row + 4, cw * 9, row)),
                 (
                     Focus::NextPage,
@@ -60,7 +61,29 @@ impl Layout {
                     Focus::FilesDown,
                     rect(x + cw * 8 + 8, y + fh - row - 4, cw * 7, row),
                 ),
+                (
+                    Focus::OpenTerminal,
+                    rect(x + fw - cw * 12 - 6, y + fh - row - 4, cw * 12, row),
+                ),
             ]);
+            if !view.directory.is_root() {
+                controls.push((
+                    Focus::ParentDirectory,
+                    rect(x + cw * 17 + 8, y + row + 4, cw * 7, row),
+                ));
+            }
+            if view.selected_directory().is_some() {
+                controls.push((
+                    Focus::OpenDirectory,
+                    rect(x + cw * 25 + 8, y + row + 4, cw * 4, row),
+                ));
+            }
+            if view.file_detail_operation().is_some() {
+                controls.push((
+                    Focus::FileDetails,
+                    rect(x + 8, y + fh - row * 2 - 4, fw - 16, row),
+                ));
+            }
         }
         let mut output = rect(0, 0, 1, 1);
         let mut input = rect(0, 0, 1, 1);
@@ -132,6 +155,16 @@ impl Layout {
             .find(|(f, _)| *f == Focus::Files)
             .map_or(1, |(_, r)| (r.size.height / self.row).max(1) as usize)
     }
+    pub(super) fn file_row_at(&self, view: &View, point: Point) -> Option<usize> {
+        let (_, body) = self.controls.iter().find(|(f, _)| *f == Focus::Files)?;
+        if !body.contains(point) {
+            return None;
+        }
+        let visible_row = (point.y - body.top_left.y) as usize / self.row as usize;
+        let row = view.file_scroll + visible_row;
+        (visible_row < self.file_rows() && row < view.page.as_ref().ok()?.entries.len())
+            .then_some(row)
+    }
     pub fn output_columns(&self) -> usize {
         (self.output.size.width / self.cw).max(1) as usize
     }
@@ -195,6 +228,31 @@ fn lines(s: &mut Surface<'_>, r: Rectangle, text: &Text, scroll: usize, l: &Layo
             line,
             style::TEXT,
             l.cw,
+        );
+    }
+}
+fn editor_line(s: &mut Surface<'_>, r: Rectangle, editor: &Editor, focused: bool, l: &Layout) {
+    let cursor = editor.text()[..editor.cursor()].chars().count();
+    let width = (r.size.width / l.cw).saturating_sub(3) as usize;
+    let start = cursor.saturating_sub(width.saturating_sub(1));
+    let display = editor
+        .text()
+        .chars()
+        .skip(start)
+        .take(width)
+        .collect::<String>();
+    fill(s, r, style::BACKGROUND);
+    label(s, r, &format!("> {display}"), style::TEXT, l.cw);
+    if focused {
+        fill(
+            s,
+            rect(
+                r.top_left.x as u32 + (2 + cursor - start) as u32 * l.cw,
+                r.top_left.y as u32 + l.row - 3,
+                l.cw,
+                2,
+            ),
+            style::FOCUS,
         );
     }
 }
@@ -268,23 +326,48 @@ impl View {
                         | Focus::NextPage
                         | Focus::FilesUp
                         | Focus::FilesDown
+                        | Focus::FilePath
+                        | Focus::ParentDirectory
+                        | Focus::OpenDirectory
+                        | Focus::OpenTerminal
+                        | Focus::FileDetails
                 ),
             );
             let (x, y, fw, fh) = parts(f);
-            label(
-                s,
-                rect(x + 8, y + 4, fw - 16, l.row),
-                &format!("Files /data [{}]", self.update.label()),
-                if matches!(
-                    self.update,
-                    UpdateState::Failed(_) | UpdateState::Unstable | UpdateState::ScanLimit
-                ) {
-                    style::ERROR
+            let path_bar = rect(x + 8, y + 4, fw - 16, l.row);
+            if self.focus == Focus::FilePath {
+                editor_line(s, path_bar, &self.path_editor, true, &l);
+            } else {
+                let state = self.update.label();
+                let path = self.directory.as_str();
+                let width = ((fw - 16) / l.cw) as usize;
+                let chars = path.chars().count();
+                let visible = width.saturating_sub(state.len() + "Files  []".len());
+                let path = if chars > visible {
+                    format!(
+                        "~{}",
+                        path.chars()
+                            .skip(chars - visible.saturating_sub(1))
+                            .collect::<String>()
+                    )
                 } else {
-                    style::TEXT
-                },
-                l.cw,
-            );
+                    String::from(path)
+                };
+                label(
+                    s,
+                    path_bar,
+                    &format!("Files {path} [{state}]"),
+                    if matches!(
+                        self.update,
+                        UpdateState::Failed(_) | UpdateState::Unstable | UpdateState::ScanLimit
+                    ) {
+                        style::ERROR
+                    } else {
+                        style::TEXT
+                    },
+                    l.cw,
+                );
+            }
             let body = l
                 .controls
                 .iter()
@@ -344,15 +427,36 @@ impl View {
                     }
                 }
             }
+            let snapshot = self.navigation_error.as_ref().map_or_else(
+                || {
+                    format!(
+                        "Details gen={}  more={}",
+                        self.list_generation,
+                        self.page.as_ref().is_ok_and(|p| p.next.is_some())
+                    )
+                },
+                |(_, error)| match error {
+                    shell::Error::Service(error) => {
+                        format!("{:?} ({:?})  Details", error.code, error.stage)
+                    }
+                    _ => format!("Directory: {error:?}"),
+                },
+            );
+            let file_status = rect(x + 8, y + fh - l.row * 2 - 4, fw - 16, l.row);
+            if self.focus == Focus::FileDetails {
+                fill(s, file_status, style::FOCUS);
+            }
             label(
                 s,
-                rect(x + 8, y + fh - l.row * 2 - 4, fw - 16, l.row),
-                &format!(
-                    "Snapshot gen={}  more={}",
-                    self.list_generation,
-                    self.page.as_ref().is_ok_and(|p| p.next.is_some())
-                ),
-                style::MUTED,
+                file_status,
+                &snapshot,
+                if self.focus == Focus::FileDetails {
+                    style::SURFACE
+                } else if self.navigation_error.is_some() {
+                    style::ERROR
+                } else {
+                    style::MUTED
+                },
                 l.cw,
             );
         }
@@ -375,45 +479,22 @@ impl View {
                 s,
                 rect(x + 8, y + 4, tw - 16, l.row),
                 &format!(
-                    "Terminal {}/{}  evicted={}",
+                    "Terminal {}/{}  evicted={}  {}",
                     if self.results.is_empty() {
                         0
                     } else {
                         self.selected + 1
                     },
                     self.results.len(),
-                    self.evicted
+                    self.evicted,
+                    self.shell.directory().as_str(),
                 ),
                 style::TEXT,
                 l.cw,
             );
             let text = self.output_text();
             lines(s, l.output, &text, self.output_scroll, &l);
-            let prefix = &self.editor.text()[..self.editor.cursor()];
-            let cursor = prefix.chars().count();
-            let width = (l.input.size.width / l.cw).saturating_sub(3) as usize;
-            let start = cursor.saturating_sub(width.saturating_sub(1));
-            let display = self
-                .editor
-                .text()
-                .chars()
-                .skip(start)
-                .take(width)
-                .collect::<String>();
-            fill(s, l.input, style::BACKGROUND);
-            label(s, l.input, &format!("> {display}"), style::TEXT, l.cw);
-            if self.focus == Focus::Input {
-                fill(
-                    s,
-                    rect(
-                        l.input.top_left.x as u32 + (2 + cursor - start) as u32 * l.cw,
-                        l.input.top_left.y as u32 + l.row - 3,
-                        l.cw,
-                        2,
-                    ),
-                    style::FOCUS,
-                );
-            }
+            editor_line(s, l.input, &self.editor, self.focus == Focus::Input, &l);
             label(
                 s,
                 Rectangle::new(
@@ -451,7 +532,10 @@ impl View {
             );
         }
         for (focus, r) in &l.controls {
-            if matches!(focus, Focus::Files | Focus::Input) {
+            if matches!(
+                focus,
+                Focus::Files | Focus::Input | Focus::FilePath | Focus::FileDetails
+            ) {
                 continue;
             }
             fill(
@@ -466,6 +550,9 @@ impl View {
             let name = match focus {
                 Focus::Refresh => "Refresh",
                 Focus::NextPage => "Next",
+                Focus::ParentDirectory => "Parent",
+                Focus::OpenDirectory => "Open",
+                Focus::OpenTerminal => "To terminal",
                 Focus::FilesUp | Focus::OutputUp | Focus::DetailsUp => "Up",
                 Focus::FilesDown | Focus::OutputDown | Focus::DetailsDown => "Down",
                 Focus::PreviousResult => "Prev",

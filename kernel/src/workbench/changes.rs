@@ -1,4 +1,4 @@
-//! 固定目录的有界变更订阅与分页刷新；历史结果保持原快照。
+//! 当前目录的有界变更订阅与分页刷新；历史结果保持原快照。
 use super::*;
 const RESTARTS: u8 = 4;
 const PAGES: u32 = services::MAX_ENTRIES / services::PAGE_SIZE as u32;
@@ -6,6 +6,7 @@ const PAGES: u32 = services::MAX_ENTRIES / services::PAGE_SIZE as u32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UpdateReason {
     Operation(OperationId),
+    CheckPathAlias,
     MissedEvents,
     NewService,
     ServiceOffline,
@@ -23,6 +24,7 @@ impl UpdateState {
     pub fn label(self) -> &'static str {
         match self {
             Self::Idle => "idle",
+            Self::Refreshing(UpdateReason::CheckPathAlias) => "checking-path",
             Self::Refreshing(_) => "refreshing",
             Self::Refreshed(_) => "refreshed",
             Self::Failed(_) => "failed",
@@ -77,6 +79,7 @@ impl View {
         self.volume = Some(files.volume());
         self.dirty |= identity || old.state != now.state;
         let mut latest = None;
+        let mut check_alias = false;
         let mut expected = old.generation.saturating_add(1);
         let mut gap = false;
         if !identity && old.generation != now.generation {
@@ -92,8 +95,17 @@ impl View {
                     gap = true;
                 }
                 expected = event.generation.saturating_add(1);
-                if event.paths.iter().any(|p| p.is_root()) {
+                let [_, parent] = &event.paths;
+                if parent == &self.directory {
                     latest = Some(event);
+                    check_alias = false;
+                } else if !parent.is_root()
+                    && !self.directory.is_root()
+                    && parent.relative().split('/').count()
+                        == self.directory.relative().split('/').count()
+                {
+                    // FAT 长短名和大小写别名可能指向同一目录。未核实归属时只刷新当前快照。
+                    check_alias = true;
                 }
             }
             gap |= expected != now.generation.saturating_add(1);
@@ -102,6 +114,8 @@ impl View {
             Some(UpdateReason::NewService)
         } else if gap {
             Some(UpdateReason::MissedEvents)
+        } else if check_alias {
+            Some(UpdateReason::CheckPathAlias)
         } else if let Some(event) = latest {
             Some(UpdateReason::Operation(event.operation_id))
         } else if old.state != now.state && now.state == MountState::Offline && self.page.is_ok() {
@@ -161,33 +175,9 @@ impl View {
         let Some(mut job) = self.refresh.take() else {
             return;
         };
-        let reply = files.execute(
-            &Path::root(),
-            Request::List {
-                path: "/data",
-                cursor: job.cursor.as_ref(),
-            },
-        );
+        let (operation, page) = navigation::list(files, &self.directory, ".", job.cursor.as_ref());
         job.pages += 1;
-        self.page = match reply {
-            Ok(reply) => {
-                self.list_operation = Some(reply.operation_id);
-                reply
-                    .result
-                    .map(|r| match r {
-                        Output::List(p) => p,
-                        _ => unreachable!("list reply"),
-                    })
-                    .map_err(shell::Error::Service)
-            }
-            Err(code) => {
-                self.list_operation = None;
-                Err(shell::Error::ServiceIdentity(code))
-            }
-        };
-        self.list_generation = files.generation();
-        self.file_row = 0;
-        self.file_scroll = 0;
+        self.install_page(operation, page, files.generation());
         self.update = match &self.page {
             Err(_) => UpdateState::Failed(job.reason),
             Ok(page) => {

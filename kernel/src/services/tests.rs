@@ -368,6 +368,19 @@ pub(crate) fn formatted() -> (Disk, gpt::Layout) {
     .unwrap();
     (d, layout)
 }
+
+pub(crate) fn with_directories(paths: &[&str]) -> (Disk, gpt::Layout) {
+    let (mut disk, layout) = formatted();
+    let state = State::default();
+    let mut stream = Stream::new(block::Partition::open(&mut disk, &layout).unwrap(), &state);
+    let fs = fatfs::FileSystem::new(&mut stream, fatfs::FsOptions::new()).unwrap();
+    for path in paths {
+        fs.root_dir().create_dir(path).unwrap();
+    }
+    fs.unmount().unwrap();
+    state.check().unwrap();
+    (disk, layout)
+}
 #[test]
 fn real_fat_backend_persists_reopens_and_rejects_alias_without_mutation() {
     let (mut d, layout) = formatted();

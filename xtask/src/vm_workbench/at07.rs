@@ -97,7 +97,15 @@ impl Session {
             Ok(number(&f, "pending")? == 0 && f.get("focus") == Some(&"Refresh"))
         })?;
         self.snapshot(REFRESH)?;
-        for focus in ["NextPage", "FilesUp", "FilesDown", "Panels"] {
+        for focus in [
+            "NextPage",
+            "FilesUp",
+            "FilesDown",
+            "FilePath",
+            "OpenTerminal",
+            "FileDetails",
+            "Panels",
+        ] {
             self.at07_tab(focus)?;
         }
         self.tap("ret")?;

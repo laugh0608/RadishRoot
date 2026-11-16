@@ -1,6 +1,9 @@
 use super::*;
 use crate::{
-    services::{fat::FatBackend, tests::formatted},
+    services::{
+        fat::FatBackend,
+        tests::{formatted, with_directories},
+    },
     surface::Surface,
 };
 use alloc::{vec, vec::Vec};
@@ -36,6 +39,164 @@ fn settle<B: Backend>(v: &mut View, files: &mut FileService<B>) {
         v.execute_pending(files);
     }
     panic!("bounded workbench refresh did not settle");
+}
+
+fn click(view: &mut View, control: Focus, row: usize) {
+    let layout = Layout::new(view);
+    let (_, rect) = layout
+        .controls
+        .iter()
+        .find(|(focus, _)| *focus == control)
+        .unwrap();
+    let to = rect.top_left + Point::new(2, (row as u32 * layout.row + 2) as i32);
+    let delta = to - view.pointer;
+    view.event(Event::PointerMove {
+        dx: delta.x as i16,
+        dy: delta.y as i16,
+    });
+    view.event(Event::PointerButton { down: true });
+    view.event(Event::PointerButton { down: false });
+}
+
+#[test]
+fn directory_navigation_is_independent_and_explicit_sync_preserves_draft() {
+    let (mut disk, mut layout) = with_directories(&["Drop", "Projects", "Projects/Empty"]);
+    layout.data_readonly = true;
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut v = view();
+    v.execute_pending(&mut files);
+    assert!(!v.visible(Focus::ParentDirectory));
+    command(&mut v, &mut files, "cd Drop");
+    assert_eq!(v.shell.directory().as_str(), "/data/Drop");
+    assert!(v.directory.is_root());
+
+    click(&mut v, Focus::Files, 1);
+    assert_eq!(v.file_row, 1);
+    assert!(!v.pending());
+    click(&mut v, Focus::OpenDirectory, 0);
+    v.execute_pending(&mut files);
+    assert_eq!(v.directory.as_str(), "/data/Projects");
+    assert_eq!(v.shell.directory().as_str(), "/data/Drop");
+    assert_eq!(v.page.as_ref().unwrap().entries[0].name, "Empty");
+
+    let list = v.list_operation;
+    click(&mut v, Focus::FilePath, 0);
+    for c in "/missing".chars() {
+        v.event(Event::Text(c));
+    }
+    key(&mut v, KeyCode::Return);
+    v.execute_pending(&mut files);
+    assert_eq!(v.directory.as_str(), "/data/Projects");
+    assert_eq!(v.list_operation, list);
+    assert_eq!(v.page.as_ref().unwrap().entries[0].name, "Empty");
+    let Some((
+        Some(failed),
+        shell::Error::Service(SystemError {
+            code: Code::NotFound,
+            ..
+        }),
+    )) = v.navigation_error.as_ref()
+    else {
+        panic!("missing original navigation failure");
+    };
+    let failed = *failed;
+    key(&mut v, KeyCode::Escape);
+    click(&mut v, Focus::FileDetails, 0);
+    v.execute_pending(&mut files);
+    assert!(matches!(&v.details.as_ref().unwrap().result,
+        Ok(shell::Output::Explanation { record, .. }) if record.id == failed && record.status == Status::Failed
+    ));
+    key(&mut v, KeyCode::Return);
+    click(&mut v, Focus::Files, 0);
+    key(&mut v, KeyCode::Return);
+    v.execute_pending(&mut files);
+    assert_eq!(v.directory.as_str(), "/data/Projects/Empty");
+    assert!(v.page.as_ref().unwrap().entries.is_empty());
+
+    click(&mut v, Focus::ParentDirectory, 0);
+    v.execute_pending(&mut files);
+    assert_eq!(v.directory.as_str(), "/data/Projects");
+    click(&mut v, Focus::Panels, 0);
+    assert!(v.single && v.terminal);
+    for c in "pwd".chars() {
+        v.event(Event::Text(c));
+    }
+    click(&mut v, Focus::Panels, 0);
+    assert!(v.single && !v.terminal);
+    click(&mut v, Focus::OpenTerminal, 0);
+    v.execute_pending(&mut files);
+    assert!(v.single && v.terminal && v.focus == Focus::Input);
+    assert_eq!(v.editor.text(), "pwd");
+    key(&mut v, KeyCode::Return);
+    v.execute_pending(&mut files);
+    assert!(
+        matches!(&v.results.back().unwrap().reply.result, Ok(shell::Output::Directory(path)) if path.as_str() == "/data/Projects")
+    );
+    assert_eq!(v.directory.as_str(), "/data/Projects");
+    assert_eq!(files.generation(), 0);
+}
+
+#[test]
+fn subdirectory_refresh_uses_current_path_and_checks_case_aliases_without_attribution() {
+    let (mut disk, layout) = with_directories(&["Projects"]);
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut v = view();
+    v.execute_pending(&mut files);
+    click(&mut v, Focus::FilePath, 0);
+    for c in "/Projects".chars() {
+        v.event(Event::Text(c));
+    }
+    key(&mut v, KeyCode::Return);
+    v.execute_pending(&mut files);
+    assert_eq!(v.directory.as_str(), "/data/Projects");
+
+    command(&mut v, &mut files, "write outside.txt x");
+    assert!(!v.pending());
+    assert!(v.page.as_ref().unwrap().entries.is_empty());
+    command(&mut v, &mut files, "write Projects/inside.txt x");
+    let source = v.results.back().unwrap().reply.operation_id;
+    settle(&mut v, &mut files);
+    assert_eq!(v.change_operation, source);
+    assert_eq!(v.page.as_ref().unwrap().entries[0].name, "inside.txt");
+
+    command(&mut v, &mut files, "write PROJECTS/alias.txt x");
+    assert_eq!(
+        v.update,
+        UpdateState::Refreshing(UpdateReason::CheckPathAlias)
+    );
+    settle(&mut v, &mut files);
+    assert!(v.change_operation.is_none());
+    assert_eq!(v.page.as_ref().unwrap().entries[1].name, "alias.txt");
+    click(&mut v, Focus::Refresh, 0);
+    v.execute_pending(&mut files);
+    assert_eq!(
+        v.page.as_ref().unwrap().directory.as_str(),
+        "/data/Projects"
+    );
+    assert_eq!(v.page.as_ref().unwrap().entries.len(), 2);
+
+    for i in 0..31 {
+        files
+            .execute(
+                &Path::root(),
+                Request::CreateText {
+                    path: &format!("Projects/page{i:02}.txt"),
+                    text: "x",
+                },
+            )
+            .unwrap()
+            .result
+            .unwrap();
+    }
+    click(&mut v, Focus::Refresh, 0);
+    v.execute_pending(&mut files);
+    assert_eq!(v.page.as_ref().unwrap().entries.len(), PAGE_SIZE);
+    click(&mut v, Focus::NextPage, 0);
+    v.execute_pending(&mut files);
+    let page = v.page.as_ref().unwrap();
+    assert_eq!(page.directory.as_str(), "/data/Projects");
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].name, "page30.txt");
 }
 #[test]
 fn real_fat_list_and_graphical_commands_share_operation_and_conflict() {

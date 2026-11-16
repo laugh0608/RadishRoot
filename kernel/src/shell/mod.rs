@@ -21,6 +21,7 @@ pub enum Output {
     Synced,
     PowerPrepared(services::power::Action),
     Help,
+    Directory(Path),
     Files(ListPage),
     Bytes {
         bytes: Vec<u8>,
@@ -61,9 +62,30 @@ impl Shell {
             next_page: None,
         }
     }
+    pub(crate) fn open_directory(&mut self, page: ListPage) {
+        self.cwd = page.directory;
+        self.next_page = None;
+    }
+    pub(crate) fn directory(&self) -> &Path {
+        &self.cwd
+    }
     pub fn execute<B: Backend>(
         &mut self,
         line: &str,
+        files: &mut FileService<B>,
+    ) -> Result<Reply, Code> {
+        self.execute_parsed(parser::parse(line), files)
+    }
+    pub(crate) fn explain<B: Backend>(
+        &mut self,
+        id: OperationId,
+        files: &mut FileService<B>,
+    ) -> Result<Reply, Code> {
+        self.execute_parsed(Ok(Command::Explain(id)), files)
+    }
+    fn execute_parsed<B: Backend>(
+        &mut self,
+        command: Result<Command, ParseError>,
         files: &mut FileService<B>,
     ) -> Result<Reply, Code> {
         if self.next_command == u64::MAX {
@@ -73,10 +95,11 @@ impl Shell {
         self.next_command += 1;
         let mut operation_id = None;
         let result = (|| {
-            let command = parser::parse(line).map_err(Error::Parse)?;
+            let command = command.map_err(Error::Parse)?;
             let request = match command {
                 Command::Power(action) => Request::Power(action),
                 Command::Help => return Ok(Output::Help),
+                Command::PrintDirectory => return Ok(Output::Directory(self.cwd.clone())),
                 Command::Operations => {
                     return Ok(Output::Operations {
                         records: files.operations.iter().cloned().collect(),
@@ -110,6 +133,7 @@ impl Shell {
                     self.next_page = None;
                     Request::List { path, cursor: None }
                 }
+                Command::ChangeDirectory(ref path) => Request::List { path, cursor: None },
                 Command::Next => {
                     let (path, cursor) = self.next_page.as_ref().ok_or(Error::NoNextPage)?;
                     Request::List {
@@ -133,6 +157,10 @@ impl Shell {
             Ok(match result {
                 services::Output::Synced => Output::Synced,
                 services::Output::PowerPrepared(a) => Output::PowerPrepared(a),
+                services::Output::List(page) if matches!(command, Command::ChangeDirectory(_)) => {
+                    self.open_directory(page);
+                    Output::Directory(self.cwd.clone())
+                }
                 services::Output::List(page) => {
                     self.next_page = page
                         .next

@@ -33,6 +33,8 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
         ("write a x;ls", ParseError::Operator),
         ("ls | cat", ParseError::Operator),
         ("help extra", ParseError::Arguments),
+        ("cd", ParseError::Arguments),
+        ("pwd extra", ParseError::Arguments),
         ("external", ParseError::UnknownCommand),
         ("cat a -1", ParseError::Number),
         ("cat a 18446744073709551616", ParseError::Number),
@@ -43,6 +45,68 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
     }
     assert_eq!(parse(&"x".repeat(1025)), Err(ParseError::Length));
     assert_eq!(parse("help a b c d e f g h"), Err(ParseError::Arguments));
+}
+
+#[test]
+fn directory_commands_validate_fat_and_keep_pagination_after_failed_cd() {
+    use crate::services::{fat::FatBackend, tests::with_directories};
+
+    let (mut disk, layout) = with_directories(&["Project Files", "Project Files/empty"]);
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut shell = Shell::new();
+    let reply = shell.execute("pwd", &mut files).unwrap();
+    assert!(reply.operation_id.is_none());
+    assert!(matches!(reply.result, Ok(Output::Directory(path)) if path.is_root()));
+    let reply = shell.execute("cd 'Project Files'", &mut files).unwrap();
+    assert!(reply.operation_id.is_some());
+    assert!(
+        matches!(reply.result, Ok(Output::Directory(path)) if path.as_str() == "/data/Project Files")
+    );
+
+    for i in 0..32 {
+        assert!(matches!(
+            shell.execute(&format!("write f{i:02}.txt x"), &mut files).unwrap().result,
+            Ok(Output::Created(reference)) if reference.path.as_str() == format!("/data/Project Files/f{i:02}.txt")
+        ));
+    }
+    let reply = shell.execute("ls", &mut files).unwrap();
+    assert!(
+        matches!(reply.result, Ok(Output::Files(page)) if page.entries[0].name == "empty" && page.next.is_some())
+    );
+    for (line, code) in [
+        ("cd absent", Code::NotFound),
+        ("cd f00.txt", Code::WrongKind),
+        ("cd ../../outside", Code::InvalidPath),
+    ] {
+        let reply = shell.execute(line, &mut files).unwrap();
+        assert!(matches!(reply.result, Err(Error::Service(error)) if error.code == code));
+        assert_eq!(
+            files.operations.iter().last().unwrap().id,
+            reply.operation_id.unwrap()
+        );
+        assert_eq!(shell.directory().as_str(), "/data/Project Files");
+    }
+    assert!(matches!(
+        shell.execute("ls --next", &mut files).unwrap().result,
+        Ok(Output::Files(page)) if page.entries.len() == 1 && page.entries[0].name == "f31.txt"
+    ));
+    shell.execute("ls", &mut files).unwrap().result.unwrap();
+    shell
+        .execute("cd empty", &mut files)
+        .unwrap()
+        .result
+        .unwrap();
+    assert!(matches!(
+        shell.execute("ls --next", &mut files).unwrap().result,
+        Err(Error::NoNextPage)
+    ));
+    let reply = shell.execute("pwd", &mut files).unwrap();
+    let mut json = String::new();
+    render::reply(&mut json, &reply).unwrap();
+    assert!(json.contains(r#""output":{"kind":"directory","path":"/data/Project Files/empty"}"#));
+    assert!(
+        matches!(shell.execute("cd ../..", &mut files).unwrap().result, Ok(Output::Directory(path)) if path.is_root())
+    );
 }
 #[test]
 fn editor_uses_unicode_boundaries_and_restores_draft_with_history_limits() {
@@ -319,7 +383,7 @@ fn partial_failure_explanation_keeps_original_effect_and_stale_pages_are_rejecte
     }
     let r = shell.execute("ls", &mut files).unwrap();
     assert!(
-        matches!(r.result,Ok(Output::Files(ListPage{entries,next:Some(_)}))if entries.len()==32)
+        matches!(r.result,Ok(Output::Files(ListPage{entries,next:Some(_),..}))if entries.len()==32)
     );
     shell.execute("write new data", &mut files).unwrap();
     assert!(matches!(
@@ -331,7 +395,7 @@ fn partial_failure_explanation_keeps_original_effect_and_stale_pages_are_rejecte
     ));
     shell.execute("ls", &mut files).unwrap();
     assert!(
-        matches!(shell.execute("ls --next",&mut files).unwrap().result,Ok(Output::Files(ListPage{entries,next:None}))if entries.len()==3)
+        matches!(shell.execute("ls --next",&mut files).unwrap().result,Ok(Output::Files(ListPage{entries,next:None,..}))if entries.len()==3)
     );
     let r = shell.execute("operations", &mut files).unwrap();
     assert!(

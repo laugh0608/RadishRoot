@@ -161,7 +161,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--shell-only` 与其他分组互斥，复用全套七例：外部串口编辑 / 命令写入、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘、6 张专用 DATA 副本；单 VM 60 秒。宿主逐字发送并等待实际接收确认，以防 UART 输入队列溢出；未确认不能当成已输入。文件只由 guest 的共享服务创建，宿主按独立预期读回。成功分组不代表完整 77 次 suite 或 M1 通过。
 
-T09 建立六个基础内置命令，T12 在同一 `kernel::shell::parser::COMMANDS` 增加 sync / reboot / shutdown；当前共九个，help 和所有入口共用该表。Command / Reply / Output、1024 字节行编辑器与 UART 输入解码保持共享；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)，电源扩展见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
+T09 建立六个基础内置命令，T12 在同一 `kernel::shell::parser::COMMANDS` 增加 sync / reboot / shutdown，T14 增加 cd / pwd。help 和所有入口共用该表。Command / Reply / Output、1024 字节行编辑器与 UART 输入解码保持共享；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)，电源扩展见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
 
 默认启动在 T08 服务 Ready 后建立控制台，每轮最多接收 32 字节；COM1 读写保持单 BSP 所有权，UART 库保留的 LSR 接收错误会使当前行拒绝。正常行可用左右 / Home / End / Delete、上下历史、退格、Enter；Esc 等待最多 100 ms 区分方向序列后取消，Ctrl-C 立即取消。UTF-8 / 控制序列 / 容量损坏后只接受换行或 Ctrl-C 恢复，不执行残余文本。当前不提供 ANSI 终端兼容性、PTY 或外部程序。
 
@@ -180,7 +180,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--workbench-only` 复用完整套件同一三例：图形创建 / 冲突 / 原始字节读取、FileSync 单次失败 / 部分修改 / 离线、201 项真实目录跨七页。生成 4 张引导 / 源盘和 3 张 DATA 副本，单 VM 60 秒；可写盘仅为本批专用 DATA 副本。默认盘仍只读，写入被真实拒绝。`check-fat.sh prepare` 按同一合成材料清单逐项预置，重复材料标签由工具分配唯一输出名；guest 退出后按路径、字节、只读摘要及 DATA 外不变独立复核。不代表完整 77 次套件或 M1 通过。
 
-共享 `kernel::workbench::View` 提供固定 `/data`、显式刷新 / 下一页、本页行选择 / 滚动、图形行编辑、最近结果与操作详情；点击或 Tab / Enter 激活同一动作。Panels 在终端铺满、文件区铺满和双面板间切换，小屏保持单面板。终端复用 Shell / Editor，文件区直接发 FileService 请求；T10 的显式快照行为由 T11 自动联动扩展；当前列表按变更重新查询，终端历史仍保留原快照。详情 Drawer 可关闭、独立滚动；解析错误没有伪造操作 ID，过期游标和记录淘汰保留真实错误。
+T10 的共享 `kernel::workbench::View` 从固定 `/data` 列表起步，提供显式刷新 / 下一页、本页行选择 / 滚动、图形行编辑、最近结果与操作详情。T14 将固定列表扩展为当前目录导航。Panels 在终端铺满、文件区铺满和双面板间切换，小屏保持单面板。终端复用 Shell / Editor，文件区直接发 FileService 请求。T11 增加自动联动，当前列表按变更重新查询，终端历史仍保留原快照。详情 Drawer 可关闭、独立滚动。解析错误没有伪造操作 ID，过期游标和记录淘汰保留真实错误。
 
 行输入最多 1024 字节，溢出整行拒绝，Enter / Esc 清除；失焦 / InputReset 取消未提交草稿并重置按键和按钮。结果保留最多 16 条且保守计量不超过 256 KiB，展示最多 512 行 / 64 KiB；显示截断不改原始类型与字节。非 ASCII 使用 `?` 并说明字形限制，Bytes 同时保留 hex，不能推断文件损坏。
 
@@ -196,7 +196,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--link-only` 与其他分组互斥，复用完整套件同一四例：图形创建 / 冲突 / 原历史、201 项目录中新文件的自动跨页查找、FileSync 失败后的自动列表错误、串口创建到图形列表 / 原操作详情的联动。生成 5 张引导 / 源盘及 4 张 DATA 副本，均为任务普通文件；单 VM 60 秒，结束后独立 FAT / DATA 外检查。不发送 Refresh 动作冒充自动联动，不代表完整 77 次套件或 AT05 / M1 通过。
 
-`workbench::observe_changes` 只检查有界服务变更历史，按启动 / 卷 / 代次订阅，直接子项事件才触发固定 `/data` 重查；无关子目录和无修改拒绝不查询。目标跨页时每轮只读一页，最多 128 页；命令和详情优先，草稿不被刷新清空。代次变化合并并最多重启 4 次，超过显式停止；事件缺口重查第一页并显示原因，不猜测已丢目标。原列表读取错误保留真实阶段和原因，不能再用一次 Offline 查询覆盖它。
+`workbench::observe_changes` 只检查有界服务变更历史，按启动 / 卷 / 代次订阅。T11 初版从固定 `/data` 的子项事件触发，T14 扩展到当前目录。目标跨页时每轮只读一页，最多 128 页。命令和详情优先，草稿不被刷新清空。代次变化合并并最多重启 4 次，超过显式停止。事件缺口重查第一页并显示原因。原列表读取错误保留真实阶段和原因，避免再次 Offline 查询覆盖它。
 
 文件区显示刷新状态与原变更操作来源，Enter / 点击文件区打开该原操作；列表查询自身仍有独立 ID。终端历史保持类型与字节快照，详情按所选原 ID 查询，淘汰 / 异启动显式报错。`RR:T11:PAGE` / `ITEM` 记录实际页、来源和 UTF-8 名称 hex，配合原 `FRAME` / `REPLY` / `DETAIL` 及独立磁盘预期核验；不能把新的列表操作当成原写入。
 
@@ -276,6 +276,12 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 | 同盘再启动 | 在第二个窗口确认输入区有焦点，必要时按 Esc 回到输入区。输入 `ls /data`，等待取帧。再输入 `cat /data/hello.txt`，核对 `hello RadishRoot`。等待 `Recorded demo-explain-prefilled`，此时输入栏已显示 `explain` 和首窗的 32 位启动 ID。只追加首窗成功写入的冒号和序号，例如 `:3`，再按 Enter。确认 `ForeignBoot` 并等待取帧，然后输入 `shutdown`。 |
 
 每次执行记录候选、操作者是否使用实体键鼠、实际命令与观察、两个启动 ID、操作 ID、检查点帧和独立读盘报告。原始串口、QMP、`.steps` 输入记录和 `workbench-screen-report.json` 随盘保存在当次 `target/xtask-*`。机器断言在首窗复核鼠标释放、详情焦点与键盘关闭，在两窗复核键盘释放、对应的 Shift 组合、正常退出和真实盘字节。次窗按预填检查点分开核对宿主前缀与实体键盘后缀，重建提交内容并对照首窗完整 ID。人工检查记录原生窗口中的可读性、焦点表现和输入来源。AT06 等价、完整 AT07 及资源测量分别登记。
+
+### T14 目录导航入口
+
+`xtask test --host` 通过共享终端和工作台输入事件运行目录导航回归。宿主夹具使用锁定 `fatfs` 在合成块设备上格式化并预置子目录。验证 `cd` / `pwd`、当前目录下 `ls` 与分页、路径拒绝后的状态、鼠标选中与 `Open`、键盘 Enter、路径栏、`Parent`、失败详情及 `To terminal` 草稿保留。服务和工作台仍用同一只读目录查询。子目录变更刷新按 [T14 实施契约](../mvp-plan.md#t14-实施契约与验证方案)处理当前目录与 FAT 路径别名。
+
+既有 `--shell-only` 帮助回归识别新增命令，`--workbench-layout` 焦点回归经过路径栏、`To terminal` 和文件区详情。T14 的新增、删除、确认框、真实 QEMU 目录导航与关机后独立 FAT 验证需取得对应证据后再登记。
 
 ## 5. 视觉与数据材料
 

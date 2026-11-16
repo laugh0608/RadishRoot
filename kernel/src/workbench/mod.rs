@@ -1,5 +1,6 @@
 //! 文件区和图形终端共享状态；只经 FileService / Shell 执行领域请求。
 mod changes;
+mod navigation;
 mod render;
 pub mod replay;
 mod text;
@@ -29,6 +30,11 @@ pub enum Focus {
     NextPage,
     FilesUp,
     FilesDown,
+    FilePath,
+    ParentDirectory,
+    OpenDirectory,
+    OpenTerminal,
+    FileDetails,
     Input,
     PreviousResult,
     NextResult,
@@ -40,12 +46,17 @@ pub enum Focus {
     DetailsUp,
     DetailsDown,
 }
-const FOCUS: [Focus; 15] = [
+const FOCUS: [Focus; 20] = [
     Focus::Files,
     Focus::Refresh,
     Focus::NextPage,
+    Focus::ParentDirectory,
+    Focus::OpenDirectory,
     Focus::FilesUp,
     Focus::FilesDown,
+    Focus::FilePath,
+    Focus::OpenTerminal,
+    Focus::FileDetails,
     Focus::Input,
     Focus::PreviousResult,
     Focus::NextResult,
@@ -66,9 +77,11 @@ pub enum Notice {
     InputUnavailable,
     IdentityExhausted,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum Intent {
     List(bool),
+    Navigate(String),
+    OpenTerminal,
     Command,
     Details(OperationId),
 }
@@ -80,6 +93,10 @@ pub struct View {
     geometry: Geometry,
     pub editor: Editor,
     shell: Shell,
+    directory: Path,
+    path_editor: Editor,
+    path_rejected: bool,
+    navigation_error: Option<(Option<OperationId>, shell::Error)>,
     pub page: Result<ListPage, shell::Error>,
     pub list_operation: Option<OperationId>,
     pub list_generation: u64,
@@ -97,7 +114,7 @@ pub struct View {
     pub pointer: Point,
     pub left: bool,
     pub modifiers: Modifiers,
-    pressed: Option<Focus>,
+    pressed: Option<(Focus, Option<usize>)>,
     pending: Option<Intent>,
     submitted: Option<String>,
     input_rejected: bool,
@@ -121,7 +138,12 @@ impl View {
             geometry,
             editor: Editor::new(),
             shell: Shell::new(),
+            directory: Path::root(),
+            path_editor: Editor::new(),
+            path_rejected: false,
+            navigation_error: None,
             page: Ok(ListPage {
+                directory: Path::root(),
                 entries: alloc::vec![],
                 next: None,
             }),
@@ -193,38 +215,17 @@ impl View {
                 self.refresh = None;
                 self.update = UpdateState::Idle;
                 self.change_operation = None;
+                self.navigation_error = None;
                 let cursor = if next {
                     self.page.as_ref().ok().and_then(|p| p.next.as_ref())
                 } else {
                     None
                 };
-                let reply = files.execute(
-                    &Path::root(),
-                    Request::List {
-                        path: "/data",
-                        cursor,
-                    },
-                );
-                self.page = match reply {
-                    Ok(reply) => {
-                        self.list_operation = Some(reply.operation_id);
-                        reply
-                            .result
-                            .map(|output| match output {
-                                Output::List(page) => page,
-                                _ => unreachable!("list service reply"),
-                            })
-                            .map_err(shell::Error::Service)
-                    }
-                    Err(code) => {
-                        self.list_operation = None;
-                        Err(shell::Error::ServiceIdentity(code))
-                    }
-                };
-                self.list_generation = files.generation();
-                self.file_row = 0;
-                self.file_scroll = 0;
+                let (operation, page) = navigation::list(files, &self.directory, ".", cursor);
+                self.install_page(operation, page, files.generation());
             }
+            Intent::Navigate(path) => self.navigate(files, &path),
+            Intent::OpenTerminal => self.open_terminal(files),
             Intent::Command => {
                 let line = self.submitted.take().expect("submitted command intent");
                 match self.shell.execute(&line, files) {
@@ -250,23 +251,14 @@ impl View {
                 }
             }
             Intent::Details(id) => {
-                self.details = Some(
-                    match self.shell.execute(
-                        &format!(
-                            "explain {:032x}:{}",
-                            u128::from_be_bytes(id.boot.0),
-                            id.sequence
-                        ),
-                        files,
-                    ) {
-                        Ok(reply) => reply,
-                        Err(code) => shell::Reply {
-                            command_id: 0,
-                            operation_id: None,
-                            result: Err(shell::Error::ServiceIdentity(code)),
-                        },
+                self.details = Some(match self.shell.explain(id, files) {
+                    Ok(reply) => reply,
+                    Err(code) => shell::Reply {
+                        command_id: 0,
+                        operation_id: None,
+                        result: Err(shell::Error::ServiceIdentity(code)),
                     },
-                );
+                });
                 self.detail_scroll = 0;
                 self.focus = Focus::CloseDetails;
             }
@@ -287,7 +279,7 @@ impl View {
                 (start + step) % FOCUS.len()
             };
             if self.visible(FOCUS[at]) {
-                self.focus = FOCUS[at];
+                self.focus_control(FOCUS[at]);
                 break;
             }
         }
@@ -298,6 +290,25 @@ impl View {
         }
         match focus {
             Focus::Refresh => self.schedule(Intent::List(false)),
+            Focus::FilePath => {
+                if self.path_rejected {
+                    self.reset_path_input();
+                    self.notice = Notice::Ready;
+                } else {
+                    self.schedule(Intent::Navigate(String::from(self.path_editor.text())));
+                }
+            }
+            Focus::ParentDirectory if !self.directory.is_root() => {
+                self.schedule(Intent::Navigate(String::from("..")));
+            }
+            Focus::ParentDirectory => (),
+            Focus::OpenDirectory => {
+                if let Some(path) = self.selected_directory() {
+                    self.schedule(Intent::Navigate(String::from(path.as_str())));
+                }
+            }
+            Focus::OpenTerminal => self.schedule(Intent::OpenTerminal),
+            Focus::FileDetails => self.open_file_details(),
             Focus::NextPage => {
                 if self.refresh.is_none() && self.page.as_ref().is_ok_and(|p| p.next.is_some()) {
                     self.schedule(Intent::List(true));
@@ -316,17 +327,21 @@ impl View {
                     self.schedule(Intent::Command);
                 }
             }
-            Focus::Files | Focus::Details => {
-                let id = if focus == Focus::Files {
-                    self.change_operation.or(self.list_operation)
+            Focus::Files => {
+                if self.selected_directory().is_some() {
+                    self.activate(Focus::OpenDirectory);
                 } else {
-                    self.results
-                        .get(self.selected)
-                        .and_then(|r| match &r.reply.result {
-                            Ok(shell::Output::Explanation { record, .. }) => Some(record.id),
-                            _ => r.reply.operation_id,
-                        })
-                };
+                    self.open_file_details();
+                }
+            }
+            Focus::Details => {
+                let id = self
+                    .results
+                    .get(self.selected)
+                    .and_then(|r| match &r.reply.result {
+                        Ok(shell::Output::Explanation { record, .. }) => Some(record.id),
+                        _ => r.reply.operation_id,
+                    });
                 if let Some(id) = id {
                     self.schedule(Intent::Details(id));
                 }
@@ -353,7 +368,11 @@ impl View {
             }
             Focus::CloseDetails => {
                 self.details = None;
-                self.focus = Focus::Input;
+                self.focus = if self.single && !self.terminal {
+                    Focus::Files
+                } else {
+                    Focus::Input
+                };
             }
             Focus::Panels => {
                 if self.geometry.width() >= 800 && self.geometry.height() >= 600 {
@@ -398,7 +417,13 @@ impl View {
             Event::InputReset => {
                 self.input_rejected = false;
                 let _ = self.editor.apply(Edit::Cancel);
-                if self.pending == Some(Intent::Command) {
+                if self.focus == Focus::FilePath {
+                    self.reset_path_input();
+                }
+                if matches!(
+                    self.pending,
+                    Some(Intent::Command | Intent::Navigate(_) | Intent::OpenTerminal)
+                ) {
                     self.pending = None;
                     self.submitted = None;
                 }
@@ -415,30 +440,52 @@ impl View {
                     (self.pointer.y + i32::from(dy)).clamp(0, self.geometry.height() as i32 - 1);
             }
             Event::PointerButton { down } => {
-                let hit = Layout::new(self).hit(self.pointer);
+                let layout = Layout::new(self);
+                let hit = layout.hit(self.pointer).map(|focus| {
+                    let row = match focus {
+                        Focus::Files => layout.file_row_at(self, self.pointer),
+                        Focus::OpenDirectory => Some(self.file_row),
+                        _ => None,
+                    };
+                    (focus, row)
+                });
                 if down && !self.left {
                     self.pressed = hit;
-                    if let Some(f) = hit {
-                        self.focus = f;
+                    if let Some((focus, _)) = hit {
+                        self.focus_control(focus);
                     }
                 }
                 if !down && self.left {
                     self.button_releases = self.button_releases.saturating_add(1);
                     if hit == self.pressed
-                        && let Some(f) = hit
+                        && let Some((focus, row)) = hit
                     {
-                        self.activate(f);
+                        match focus {
+                            Focus::Files => {
+                                if let Some(row) = row {
+                                    self.file_row = row;
+                                }
+                                if row.is_none() || self.selected_directory().is_none() {
+                                    self.open_file_details();
+                                }
+                            }
+                            Focus::FilePath => (),
+                            _ => self.activate(focus),
+                        }
                     }
                     self.pressed = None;
                 }
                 self.left = down;
             }
-            Event::Text(c)
-                if self.focus == Focus::Input && self.pending.is_none() && !self.input_rejected =>
-            {
-                if self.editor.apply(Edit::Insert(c)).is_err() {
+            Event::Text(c) if self.pending.is_none() => {
+                let (editor, rejected) = match self.focus {
+                    Focus::Input => (&mut self.editor, &mut self.input_rejected),
+                    Focus::FilePath => (&mut self.path_editor, &mut self.path_rejected),
+                    _ => return,
+                };
+                if !*rejected && editor.apply(Edit::Insert(c)).is_err() {
                     self.notice = Notice::InputFull;
-                    self.input_rejected = true;
+                    *rejected = true;
                 }
             }
             Event::Key {
@@ -453,16 +500,27 @@ impl View {
                 }
                 match code {
                     KeyCode::Tab => self.tab(modifiers.shift),
+                    KeyCode::Escape if self.focus == Focus::FilePath => {
+                        self.focus_control(Focus::Files);
+                    }
                     KeyCode::Escape => {
                         self.input_rejected = false;
                         let _ = self.editor.apply(Edit::Cancel);
                         self.details = None;
-                        self.focus = Focus::Input;
+                        self.focus = if self.single && !self.terminal {
+                            Focus::Files
+                        } else {
+                            Focus::Input
+                        };
                     }
-                    KeyCode::Return | KeyCode::NumpadEnter => self.activate(self.focus),
+                    KeyCode::Return | KeyCode::NumpadEnter if phase == Phase::Press => {
+                        self.activate(self.focus);
+                    }
                     KeyCode::ArrowUp if self.focus == Focus::Files => self.move_file(false),
                     KeyCode::ArrowDown if self.focus == Focus::Files => self.move_file(true),
-                    _ if self.focus == Focus::Input && self.pending.is_none() => {
+                    _ if matches!(self.focus, Focus::Input | Focus::FilePath)
+                        && self.pending.is_none() =>
+                    {
                         let edit = match code {
                             KeyCode::Backspace => Some(Edit::Backspace),
                             KeyCode::Delete => Some(Edit::Delete),
@@ -470,16 +528,25 @@ impl View {
                             KeyCode::ArrowRight => Some(Edit::Right),
                             KeyCode::Home => Some(Edit::Home),
                             KeyCode::End => Some(Edit::End),
-                            KeyCode::ArrowUp => Some(Edit::Previous),
-                            KeyCode::ArrowDown => Some(Edit::Next),
+                            KeyCode::ArrowUp if self.focus == Focus::Input => Some(Edit::Previous),
+                            KeyCode::ArrowDown if self.focus == Focus::Input => Some(Edit::Next),
                             KeyCode::C if modifiers.control => Some(Edit::Cancel),
                             _ => None,
                         };
                         if let Some(edit) = edit {
-                            if edit == Edit::Cancel {
-                                self.input_rejected = false;
+                            if self.focus == Focus::FilePath {
+                                if edit == Edit::Cancel {
+                                    self.reset_path_input();
+                                    self.notice = Notice::Ready;
+                                } else {
+                                    let _ = self.path_editor.apply(edit);
+                                }
+                            } else {
+                                if edit == Edit::Cancel {
+                                    self.input_rejected = false;
+                                }
+                                let _ = self.editor.apply(edit);
                             }
-                            let _ = self.editor.apply(edit);
                         }
                     }
                     _ => (),
@@ -548,6 +615,9 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
             for c in shell::parser::COMMANDS {
                 let _ = writeln!(text, "{}", c.usage);
             }
+        }
+        Ok(shell::Output::Directory(path)) => {
+            let _ = writeln!(text, "{}", path.as_str());
         }
         Ok(shell::Output::Files(page)) => {
             let _ = writeln!(
@@ -629,8 +699,10 @@ fn record_bytes(r: &OperationRecord) -> usize {
 fn reply_bytes(r: &shell::Reply) -> usize {
     core::mem::size_of::<shell::Reply>()
         + match &r.result {
+            Ok(shell::Output::Directory(path)) => path.as_str().len(),
             Ok(shell::Output::Files(p)) => {
-                p.entries.capacity() * core::mem::size_of::<FileEntry>()
+                p.directory.as_str().len()
+                    + p.entries.capacity() * core::mem::size_of::<FileEntry>()
                     + p.entries
                         .iter()
                         .map(|e| e.name.capacity() + e.reference.path.as_str().len() * 2)

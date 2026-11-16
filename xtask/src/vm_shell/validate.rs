@@ -184,7 +184,21 @@ pub fn validate(s: &str, mode: &str, id: [u8; 16]) -> Result<()> {
             replies[0]["output"]["kind"] == "help"
                 && replies[0]["output"]["commands"]
                     .as_array()
-                    .is_some_and(|a| a.len() == 9)
+                    .is_some_and(|a| {
+                        a.iter().map(|entry| entry["name"].as_str()).eq([
+                            Some("sync"),
+                            Some("reboot"),
+                            Some("shutdown"),
+                            Some("help"),
+                            Some("cd"),
+                            Some("pwd"),
+                            Some("ls"),
+                            Some("write"),
+                            Some("cat"),
+                            Some("operations"),
+                            Some("explain"),
+                        ])
+                    })
                 && replies[16]["output"] == replies[0]["output"],
             "editing/history help",
         )?;

@@ -199,6 +199,7 @@ pub struct ListCursor {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ListPage {
+    pub directory: Path,
     pub entries: Vec<FileEntry>,
     pub next: Option<ListCursor>,
 }
