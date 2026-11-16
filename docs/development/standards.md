@@ -293,6 +293,10 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 该入口使用未开启 `boot-test` 的 release 内核，运行两次限时 60 秒的无窗口 QEMU。首启在专用可写 DATA 盘上经 QMP 驱动 guest 键鼠，核对路径栏、上级导航、两侧独立目录和显式同步、创建、删除、失败详情，以及确认框打开时背景草稿、焦点和列表代次。两次启动都要求 QMP `guest-shutdown` 与进程自然退出。首启退出后独立核对目录、保留文件字节、取消与拒绝结果、FAT 结构和 DATA 外字节。次启只读打开同盘，核对保留内容、只读拒绝和整盘摘要。此入口覆盖 T14 对应的 AT08 子项。
 
+### T15 重命名入口
+
+`mv <source> <destination>` 和文件区 `Rename` 通过 `Request::Rename` 复用同一校验与真实 FAT 写回。终端的 `renamed` 回复带源路径和目标引用，操作详情及能解析到的错误保留这两端。`xtask test --host` 用合成 FAT 核对同目录与跨目录重命名、大小写及短名冲突、目标字节、只读、取消、过期源引用、失败阶段及两侧刷新。复制、覆盖与真实 QEMU 证据按[T15 实施契约](../mvp-plan.md#t15-实施契约与验证方案)继续取得。
+
 ## 5. 视觉与数据材料
 
 采用 RadishX family-ui v26.7.3 的 Workbench 方向，项目映射以 MVP 规划为准。参考规则而非搬运外部截图、品牌或整包 UI。新界面和新交互可选用本机自部署 Penpot（界面或 MCP），也可用可编辑原型。已有设计稿、预览和评审记录原样留在原位置。

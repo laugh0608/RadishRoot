@@ -84,6 +84,7 @@ impl<B: Backend> FileService<B> {
                 code: cause.code(),
                 stage,
                 object: Some(Path::root()),
+                source: None,
                 cause,
                 partial_effect: PartialEffect {
                     persistence_confirmed: true,

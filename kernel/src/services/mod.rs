@@ -75,6 +75,7 @@ pub enum Data {
     },
     Created,
     Removed,
+    Renamed,
 }
 pub enum BackendRequest<'a> {
     Sync,
@@ -83,6 +84,7 @@ pub enum BackendRequest<'a> {
     CreateText(&'a str),
     CreateDirectory,
     Remove,
+    Rename { source: &'a Path },
 }
 pub trait Backend {
     fn volume(&self) -> VolumeInfo;
@@ -159,6 +161,7 @@ impl<B: Backend> FileService<B> {
     fn validate<'a>(
         &self,
         path: &Path,
+        source: Option<&'a Path>,
         request: &'a Request<'a>,
     ) -> Result<BackendRequest<'a>, Cause> {
         let fail = |code| Cause::Contract(code);
@@ -235,6 +238,20 @@ impl<B: Backend> FileService<B> {
                 self.validate_mutation()?;
                 Ok(BackendRequest::Remove)
             }
+            Request::Rename { reference, .. } => {
+                let source = source.expect("rename has source");
+                if path.is_root() {
+                    return Err(fail(Code::AlreadyExists));
+                }
+                if source.is_root() {
+                    return Err(fail(Code::WrongKind));
+                }
+                if reference.is_some_and(|r| !self.current(r, source)) {
+                    return Err(fail(Code::StaleReference));
+                }
+                self.validate_mutation()?;
+                Ok(BackendRequest::Rename { source })
+            }
         }
     }
     pub fn execute(&mut self, cwd: &Path, request: Request<'_>) -> Result<Reply, Code> {
@@ -252,6 +269,7 @@ impl<B: Backend> FileService<B> {
                 id,
                 request_kind: request.kind(),
                 target: None,
+                source: None,
                 stage: Stage::Validate,
                 last_completed: None,
                 status: Status::Created,
@@ -267,7 +285,13 @@ impl<B: Backend> FileService<B> {
         let result = (|| {
             let path = cwd.resolve(request.path()).map_err(Cause::Path)?;
             progress.record.target = Some(path.clone());
-            let action = self.validate(&path, &request)?;
+            let source = request
+                .source_path()
+                .map(|source| cwd.resolve(source))
+                .transpose()
+                .map_err(Cause::Path)?;
+            progress.record.source = source.clone();
+            let action = self.validate(&path, source.as_ref(), &request)?;
             progress.completed();
             if let Request::Power(action) = request {
                 self.power = power::State::Preparing(action, id);
@@ -297,7 +321,9 @@ impl<B: Backend> FileService<B> {
                 .expect("effect requires a validated path");
             self.changes.push(ChangeEvent {
                 volume: self.volume.id,
-                paths: [path.clone(), path.parent()],
+                target: path.clone(),
+                parent: path.parent(),
+                rename_source: progress.record.source.clone(),
                 request_kind: request.kind(),
                 generation: self.generation,
                 operation_id: id,
@@ -322,6 +348,10 @@ impl<B: Backend> FileService<B> {
                 }
                 Data::Created => Output::Created(self.reference(path.clone())),
                 Data::Removed => Output::Removed(path.clone()),
+                Data::Renamed => Output::Renamed {
+                    source: progress.record.source.clone().expect("rename has source"),
+                    target: self.reference(path.clone()),
+                },
                 Data::Read { bytes, eof } => Output::Read { bytes, eof },
                 Data::List { entries, next } => {
                     let mut files = Vec::new();
@@ -376,6 +406,7 @@ impl<B: Backend> FileService<B> {
                     code: cause.code(),
                     stage: progress.record.stage,
                     object: progress.record.target.clone(),
+                    source: progress.record.source.clone(),
                     cause,
                     partial_effect: effect,
                 };

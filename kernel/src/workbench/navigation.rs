@@ -38,13 +38,18 @@ impl View {
         if self.pressed.is_some_and(|(focus, _)| {
             matches!(
                 focus,
-                Focus::Files | Focus::OpenDirectory | Focus::DeleteEntry | Focus::FileDetails
+                Focus::Files
+                    | Focus::OpenDirectory
+                    | Focus::DeleteEntry
+                    | Focus::RenameEntry
+                    | Focus::FileDetails
             )
         }) {
             self.pressed = None;
         }
         if (self.focus == Focus::OpenDirectory && self.selected_directory().is_none())
             || (self.focus == Focus::DeleteEntry && self.selected_entry().is_none())
+            || (self.focus == Focus::RenameEntry && self.selected_file().is_none())
             || (self.focus == Focus::FileDetails && self.file_detail_operation().is_none())
         {
             self.focus = Focus::Files;
@@ -89,6 +94,11 @@ impl View {
 
     pub(super) fn selected_entry(&self) -> Option<&FileEntry> {
         self.page.as_ref().ok()?.entries.get(self.file_row)
+    }
+
+    pub(super) fn selected_file(&self) -> Option<&FileEntry> {
+        self.selected_entry()
+            .filter(|entry| entry.kind == FileKind::File)
     }
 
     pub(super) fn open_file_details(&mut self) {

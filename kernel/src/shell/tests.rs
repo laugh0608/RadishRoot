@@ -37,6 +37,7 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
         ("pwd extra", ParseError::Arguments),
         ("mkdir", ParseError::Arguments),
         ("rm -r folder", ParseError::Arguments),
+        ("mv a", ParseError::Arguments),
         ("external", ParseError::UnknownCommand),
         ("cat a -1", ParseError::Number),
         ("cat a 18446744073709551616", ParseError::Number),
@@ -47,6 +48,134 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
     }
     assert_eq!(parse(&"x".repeat(1025)), Err(ParseError::Length));
     assert_eq!(parse("help a b c d e f g h"), Err(ParseError::Arguments));
+}
+
+#[test]
+fn mv_renames_files_across_directories_without_overwriting_fat_aliases() {
+    use crate::services::{fat::FatBackend, tests::with_directories};
+
+    let (mut disk, mut layout) = with_directories(&["left", "right"]);
+    {
+        let mut files =
+            FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+        let mut shell = Shell::new();
+        shell
+            .execute("cd left", &mut files)
+            .unwrap()
+            .result
+            .unwrap();
+        shell
+            .execute("write 'Long File Name.txt' original", &mut files)
+            .unwrap()
+            .result
+            .unwrap();
+        shell
+            .execute("write ../right/occupied.txt existing", &mut files)
+            .unwrap()
+            .result
+            .unwrap();
+        for (line, code, stage) in [
+            (
+                "mv 'Long File Name.txt' 'LONG FILE NAME.TXT'",
+                Code::AlreadyExists,
+                Stage::Rename,
+            ),
+            (
+                "mv 'Long File Name.txt' LONGFI~1.TXT",
+                Code::AlreadyExists,
+                Stage::Rename,
+            ),
+            (
+                "mv 'Long File Name.txt' ../right/occupied.txt",
+                Code::AlreadyExists,
+                Stage::Rename,
+            ),
+            ("mv . ../right/new.txt", Code::WrongKind, Stage::Rename),
+            ("mv missing missing", Code::NotFound, Stage::Rename),
+            (
+                "mv 'Long File Name.txt' ../absent/new.txt",
+                Code::NotFound,
+                Stage::Rename,
+            ),
+            (
+                "mv 'Long File Name.txt' ../../escape",
+                Code::InvalidPath,
+                Stage::Validate,
+            ),
+            (
+                "mv /other/entry new.txt",
+                Code::InvalidPath,
+                Stage::Validate,
+            ),
+        ] {
+            let reply = shell.execute(line, &mut files).unwrap();
+            assert!(
+                matches!(reply.result, Err(Error::Service(error))
+                if (error.code, error.stage, error.partial_effect) == (code, stage, PartialEffect::default())),
+                "{line}"
+            );
+            assert_eq!(files.generation(), 2);
+        }
+        assert!(
+            matches!(shell.execute("cat 'Long File Name.txt'", &mut files).unwrap().result,
+            Ok(Output::Bytes {bytes,..}) if bytes == b"original")
+        );
+        for (line, from, to) in [
+            (
+                "mv 'Long File Name.txt' 'Renamed file.txt'",
+                "/data/left/Long File Name.txt",
+                "/data/left/Renamed file.txt",
+            ),
+            (
+                "mv 'Renamed file.txt' '../right/Moved file.txt'",
+                "/data/left/Renamed file.txt",
+                "/data/right/Moved file.txt",
+            ),
+        ] {
+            let reply = shell.execute(line, &mut files).unwrap();
+            let mut json = String::new();
+            render::reply(&mut json, &reply).unwrap();
+            assert!(json.contains(&format!(r#""kind":"renamed","source":"{from}""#)));
+            assert!(
+                matches!(reply.result, Ok(Output::Renamed { source, target })
+                if source.as_str() == from && target.path.as_str() == to && target.generation == files.generation())
+            );
+            let change = files.changes.iter().last().unwrap();
+            assert_eq!(change.request_kind, RequestKind::Rename);
+            assert_eq!(change.operation_id, reply.operation_id.unwrap());
+            assert_eq!(change.rename_source.as_ref().unwrap().as_str(), from);
+            assert_eq!(change.target.as_str(), to);
+            let record = files.operations.iter().last().unwrap();
+            assert!(record.partial_effect.persistence_confirmed);
+            assert_eq!(record.source.as_ref(), change.rename_source.as_ref());
+        }
+    }
+    layout.data_readonly = true;
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([2; 16])).unwrap();
+    let mut shell = Shell::new();
+    assert!(
+        matches!(shell.execute("ls left", &mut files).unwrap().result, Ok(Output::Files(p)) if p.entries.is_empty())
+    );
+    for (line, expected) in [
+        ("cat 'right/Moved file.txt'", b"original".as_slice()),
+        ("cat right/occupied.txt", b"existing"),
+    ] {
+        assert!(
+            matches!(shell.execute(line, &mut files).unwrap().result, Ok(Output::Bytes {bytes,..}) if bytes == expected)
+        );
+    }
+    assert!(matches!(
+        shell
+            .execute("mv 'right/Moved file.txt' other.txt", &mut files)
+            .unwrap()
+            .result,
+        Err(Error::Service(SystemError {
+            code: Code::ReadOnly,
+            stage: Stage::Validate,
+            ..
+        }))
+    ));
+    assert_eq!(files.generation(), 0);
 }
 
 #[test]
@@ -307,9 +436,10 @@ impl Backend for Memory {
         p.mounted = true;
         p.completed();
         match request {
-            BackendRequest::Sync | BackendRequest::CreateDirectory | BackendRequest::Remove => {
-                Err(Cause::Contract(Code::InvalidArgument))
-            }
+            BackendRequest::Sync
+            | BackendRequest::CreateDirectory
+            | BackendRequest::Remove
+            | BackendRequest::Rename { .. } => Err(Cause::Contract(Code::InvalidArgument)),
             BackendRequest::List { offset } => {
                 p.enter(Stage::List, Status::Running);
                 let entries = self

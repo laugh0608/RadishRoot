@@ -55,6 +55,17 @@ pub fn create_new_directory<'a, IO: ReadWriteSeek>(
     directory.create_dir(path)
 }
 
+pub fn rename_file<IO: ReadWriteSeek>(
+    directory: &Directory<'_, IO>,
+    source: &str,
+    destination: &str,
+) -> Result<(), fatfs::Error<IO::Error>> {
+    // 先核对源是普通文件并关闭句柄，避免上游对别名原地返回成功。
+    drop(directory.open_file(source)?);
+    require_absent(directory, destination)?;
+    directory.rename(source, directory, destination)
+}
+
 fn require_absent<IO: ReadWriteSeek>(
     directory: &Directory<'_, IO>,
     path: &str,

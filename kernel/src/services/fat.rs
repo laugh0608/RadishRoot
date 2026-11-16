@@ -85,6 +85,7 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
             BackendRequest::CreateText(_)
                 | BackendRequest::CreateDirectory
                 | BackendRequest::Remove
+                | BackendRequest::Rename { .. }
         ) || (syncing && !self.volume().read_only);
         let state = State::default();
         #[cfg(any(test, feature = "boot-test"))]
@@ -235,6 +236,12 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
                     root.remove(path.relative())
                         .map_err(|e| state.first_error().map_or_else(|| error(e), Cause::Stream))?;
                     Data::Removed
+                }
+                BackendRequest::Rename { source } => {
+                    enter(progress, &state, Stage::Rename, Phase::Rename, false);
+                    fat::rename_file(&root, source.relative(), path.relative())
+                        .map_err(|e| state.first_error().map_or_else(|| error(e), Cause::Stream))?;
+                    Data::Renamed
                 }
             };
             progress.completed();

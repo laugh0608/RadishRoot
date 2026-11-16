@@ -196,6 +196,7 @@ pub fn validate(s: &str, mode: &str, id: [u8; 16]) -> Result<()> {
                             Some("write"),
                             Some("mkdir"),
                             Some("rm"),
+                            Some("mv"),
                             Some("cat"),
                             Some("operations"),
                             Some("explain"),

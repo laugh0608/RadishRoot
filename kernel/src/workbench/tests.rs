@@ -59,6 +59,88 @@ fn click(view: &mut View, control: Focus, row: usize) {
 }
 
 #[test]
+fn rename_dialog_checks_the_original_source_and_refreshes_both_directories() {
+    let (mut disk, layout) = with_directories(&["left", "right"]);
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    files
+        .execute(
+            &Path::root(),
+            Request::CreateText {
+                path: "left/input.txt",
+                text: "payload",
+            },
+        )
+        .unwrap()
+        .result
+        .unwrap();
+    let (mut source, mut destination) = (view(), view());
+    for (view, path) in [(&mut source, "/left"), (&mut destination, "/right")] {
+        view.execute_pending(&mut files);
+        click(view, Focus::FilePath, 0);
+        for c in path.chars() {
+            view.event(Event::Text(c));
+        }
+        key(view, KeyCode::Return);
+        view.execute_pending(&mut files);
+    }
+    assert!(source.visible(Focus::RenameEntry));
+    assert!(!destination.visible(Focus::RenameEntry));
+
+    let open = |view: &mut View| {
+        click(view, Focus::RenameEntry, 0);
+        assert_eq!(view.focus, Focus::DialogInput);
+        for c in "../right/new name.txt".chars() {
+            view.event(Event::Text(c));
+        }
+    };
+    let before = files.operations.iter().count();
+    open(&mut source);
+    key(&mut source, KeyCode::Escape);
+    source.execute_pending(&mut files);
+    assert_eq!(files.operations.iter().count(), before);
+
+    open(&mut source);
+    files
+        .execute(
+            &Path::root(),
+            Request::CreateText {
+                path: "right/peer.txt",
+                text: "peer",
+            },
+        )
+        .unwrap()
+        .result
+        .unwrap();
+    source.observe_changes(&files);
+    settle(&mut source, &mut files);
+    key(&mut source, KeyCode::Return);
+    source.execute_pending(&mut files);
+    assert!(
+        matches!(&source.file_message, Some((Some(_), FileMessage::Failed(shell::Error::Service(error))))
+        if error.code == Code::StaleReference && error.source.as_ref().unwrap().as_str() == "/data/left/input.txt")
+    );
+    assert_eq!(files.generation(), 2);
+
+    open(&mut source);
+    click(&mut source, Focus::DialogConfirm, 0);
+    source.execute_pending(&mut files);
+    settle(&mut source, &mut files);
+    destination.observe_changes(&files);
+    settle(&mut destination, &mut files);
+    let Some((Some(id), FileMessage::Renamed(path))) = &source.file_message else {
+        panic!("missing tracked rename")
+    };
+    assert_eq!(path.as_str(), "/data/right/new name.txt");
+    for view in [&source, &destination] {
+        assert_eq!(view.change_operation, Some(*id));
+        assert_eq!(view.list_generation, 3);
+    }
+    assert!(source.page.as_ref().unwrap().entries.is_empty());
+    assert_eq!(destination.selected_file().unwrap().name, "new name.txt");
+    assert_eq!(destination.page.as_ref().unwrap().entries.len(), 2);
+}
+
+#[test]
 fn file_mutation_dialogs_share_service_and_delete_requires_current_confirmed_reference() {
     let (mut disk, layout) = formatted();
     let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();

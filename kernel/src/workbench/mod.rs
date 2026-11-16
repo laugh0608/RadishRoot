@@ -49,6 +49,7 @@ pub enum Focus {
     DetailsDown,
     NewDirectory,
     DeleteEntry,
+    RenameEntry,
     DialogInput,
     DialogCancel,
     DialogConfirm,
@@ -61,7 +62,7 @@ impl Focus {
         )
     }
 }
-const FOCUS: [Focus; 25] = [
+const FOCUS: [Focus; 26] = [
     Focus::Files,
     Focus::Refresh,
     Focus::NextPage,
@@ -84,6 +85,7 @@ const FOCUS: [Focus; 25] = [
     Focus::DetailsDown,
     Focus::NewDirectory,
     Focus::DeleteEntry,
+    Focus::RenameEntry,
     Focus::DialogInput,
     Focus::DialogCancel,
     Focus::DialogConfirm,
@@ -104,6 +106,10 @@ enum Intent {
     OpenTerminal,
     CreateDirectory(String),
     Remove(FileRef),
+    Rename {
+        source: FileRef,
+        destination: String,
+    },
     Command,
     Details(OperationId),
 }
@@ -260,6 +266,17 @@ impl View {
                     reference: Some(&reference),
                 },
             ),
+            Intent::Rename {
+                source,
+                destination,
+            } => self.mutate(
+                files,
+                Request::Rename {
+                    source: source.path.as_str(),
+                    destination: &destination,
+                    reference: Some(&source),
+                },
+            ),
             Intent::Command => {
                 let line = self.submitted.take().expect("submitted command intent");
                 match self.shell.execute(&line, files) {
@@ -348,6 +365,11 @@ impl View {
             Focus::DeleteEntry => {
                 if let Some(entry) = self.selected_entry() {
                     self.show_dialog(FileDialog::Delete(entry.reference.clone()));
+                }
+            }
+            Focus::RenameEntry => {
+                if let Some(entry) = self.selected_file() {
+                    self.show_dialog(FileDialog::Rename(entry.reference.clone()));
                 }
             }
             Focus::DialogInput | Focus::DialogConfirm => self.confirm_dialog(),
@@ -475,6 +497,7 @@ impl View {
                             | Intent::OpenTerminal
                             | Intent::CreateDirectory(_)
                             | Intent::Remove(_)
+                            | Intent::Rename { .. }
                     )
                 ) {
                     self.pending = None;
@@ -497,7 +520,9 @@ impl View {
                 let hit = layout.hit(self.pointer).map(|focus| {
                     let row = match focus {
                         Focus::Files => layout.file_row_at(self, self.pointer),
-                        Focus::OpenDirectory | Focus::DeleteEntry => Some(self.file_row),
+                        Focus::OpenDirectory | Focus::DeleteEntry | Focus::RenameEntry => {
+                            Some(self.file_row)
+                        }
                         _ => None,
                     };
                     (focus, row)
@@ -651,11 +676,13 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
     }
     match &reply.result {
         Err(shell::Error::Service(e)) => {
+            let _ = writeln!(text, "FAILED {:?} at {:?}", e.code, e.stage);
+            if let Some(source) = &e.source {
+                let _ = writeln!(text, "Source: {}", source.as_str());
+            }
             let _ = writeln!(
                 text,
-                "FAILED {:?} at {:?}\nTarget: {:?}\nCause: {:?}\nEffects: {:?}",
-                e.code,
-                e.stage,
+                "Target: {:?}\nCause: {:?}\nEffects: {:?}",
                 e.object.as_ref().map(Path::as_str),
                 e.cause,
                 e.partial_effect
@@ -715,6 +742,14 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
         Ok(shell::Output::Removed(path)) => {
             let _ = writeln!(text, "Removed {}", path.as_str());
         }
+        Ok(shell::Output::Renamed { source, target }) => {
+            let _ = writeln!(
+                text,
+                "Renamed {}\nTo {}",
+                source.as_str(),
+                target.path.as_str()
+            );
+        }
         Ok(shell::Output::Operations { records, evicted }) => {
             let _ = writeln!(text, "Operations (evicted={evicted}):");
             for r in records {
@@ -736,12 +771,19 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
         }) => {
             let _ = writeln!(
                 text,
-                "Operation {:032x}:{}\n{:?} at {:?}; last={:?}\nTarget: {:?}\nEffects: {:?}\nError: {:?}\nEvents evicted: {events_evicted}",
+                "Operation {:032x}:{}\n{:?} at {:?}; last={:?}",
                 u128::from_be_bytes(record.id.boot.0),
                 record.id.sequence,
                 record.status,
                 record.stage,
                 record.last_completed,
+            );
+            if let Some(source) = &record.source {
+                let _ = writeln!(text, "Source: {}", source.as_str());
+            }
+            let _ = writeln!(
+                text,
+                "Target: {:?}\nEffects: {:?}\nError: {:?}\nEvents evicted: {events_evicted}",
                 record.target.as_ref().map(Path::as_str),
                 record.partial_effect,
                 record.error
@@ -754,12 +796,16 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
 }
 
 // 将字符串按最多双倍分配保守计入；Vec 元素容量和内联结构另计，避免只按条数限额。
+fn path_bytes(path: Option<&Path>) -> usize {
+    path.map_or(0, |p| p.as_str().len() * 2)
+}
+fn error_bytes(error: &SystemError) -> usize {
+    path_bytes(error.object.as_ref()) + path_bytes(error.source.as_ref())
+}
 fn record_bytes(r: &OperationRecord) -> usize {
-    r.target.as_ref().map_or(0, |p| p.as_str().len() * 2)
-        + r.error
-            .as_ref()
-            .and_then(|e| e.object.as_ref())
-            .map_or(0, |p| p.as_str().len() * 2)
+    path_bytes(r.target.as_ref())
+        + path_bytes(r.source.as_ref())
+        + r.error.as_ref().map_or(0, error_bytes)
 }
 fn reply_bytes(r: &shell::Reply) -> usize {
     core::mem::size_of::<shell::Reply>()
@@ -780,6 +826,9 @@ fn reply_bytes(r: &shell::Reply) -> usize {
             }
             Ok(shell::Output::Bytes { bytes, .. }) => bytes.capacity(),
             Ok(shell::Output::Created(r)) => r.path.as_str().len() * 2,
+            Ok(shell::Output::Renamed { source, target }) => {
+                path_bytes(Some(source)) + path_bytes(Some(&target.path))
+            }
             Ok(shell::Output::Operations { records, .. }) => {
                 records.capacity() * core::mem::size_of::<OperationRecord>()
                     + records.iter().map(record_bytes).sum::<usize>()
@@ -787,7 +836,7 @@ fn reply_bytes(r: &shell::Reply) -> usize {
             Ok(shell::Output::Explanation { record, events, .. }) => {
                 record_bytes(record) + events.capacity() * core::mem::size_of::<OperationEvent>()
             }
-            Err(shell::Error::Service(e)) => e.object.as_ref().map_or(0, |p| p.as_str().len() * 2),
+            Err(shell::Error::Service(e)) => error_bytes(e),
             _ => 0,
         }
 }

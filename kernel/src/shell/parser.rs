@@ -25,6 +25,7 @@ pub enum Command {
     Write { path: String, text: String },
     MakeDirectory(String),
     Remove(String),
+    Rename { source: String, destination: String },
     Cat { path: String, offset: u64 },
     Operations,
     Explain(OperationId),
@@ -35,7 +36,7 @@ pub struct CommandSpec {
     pub modifies: bool,
     pub result: &'static str,
 }
-pub const COMMANDS: [CommandSpec; 13] = [
+pub const COMMANDS: [CommandSpec; 14] = [
     CommandSpec {
         name: "sync",
         usage: "sync",
@@ -95,6 +96,12 @@ pub const COMMANDS: [CommandSpec; 13] = [
         usage: "rm <path> (file or empty directory, no trash)",
         modifies: true,
         result: "removed",
+    },
+    CommandSpec {
+        name: "mv",
+        usage: "mv <source> <destination> (file on same volume, no overwrite)",
+        modifies: true,
+        result: "renamed",
     },
     CommandSpec {
         name: "cat",
@@ -225,6 +232,10 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
         },
         ["mkdir", path] => Command::MakeDirectory(String::from(*path)),
         ["rm", path] => Command::Remove(String::from(*path)),
+        ["mv", source, destination] => Command::Rename {
+            source: String::from(*source),
+            destination: String::from(*destination),
+        },
         ["cat", path] => Command::Cat {
             path: String::from(*path),
             offset: 0,

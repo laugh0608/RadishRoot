@@ -43,6 +43,10 @@ fn service_error(w: &mut impl Write, e: &SystemError) -> fmt::Result {
     } else {
         w.write_str("null")?
     }
+    if let Some(path) = &e.source {
+        w.write_str(",\"source\":")?;
+        string(w, path.as_str())?;
+    }
     w.write_str(",\"cause\":")?;
     string(w, &alloc::format!("{:?}", e.cause))?;
     w.write_str(",\"partial_effect\":")?;
@@ -67,6 +71,10 @@ fn record(w: &mut impl Write, r: &OperationRecord) -> fmt::Result {
         string(w, p.as_str())?
     } else {
         w.write_str("null")?
+    }
+    if let Some(path) = &r.source {
+        w.write_str(",\"source\":")?;
+        string(w, path.as_str())?;
     }
     w.write_str(",\"partial_effect\":")?;
     effect(w, r.partial_effect)?;
@@ -201,6 +209,13 @@ pub fn reply(w: &mut impl Write, r: &Reply) -> fmt::Result {
                 Output::Removed(path) => {
                     w.write_str("{\"kind\":\"removed\",\"path\":")?;
                     string(w, path.as_str())?;
+                    w.write_char('}')?;
+                }
+                Output::Renamed { source, target } => {
+                    w.write_str("{\"kind\":\"renamed\",\"source\":")?;
+                    string(w, source.as_str())?;
+                    w.write_str(",\"reference\":")?;
+                    reference(w, target)?;
                     w.write_char('}')?;
                 }
                 Output::Operations { records, evicted } => {

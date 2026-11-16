@@ -47,9 +47,10 @@ impl Backend for MemoryBackend {
         self.calls += 1;
         p.mounted = true;
         match request {
-            BackendRequest::Sync | BackendRequest::CreateDirectory | BackendRequest::Remove => {
-                Err(Cause::Contract(Code::InvalidArgument))
-            }
+            BackendRequest::Sync
+            | BackendRequest::CreateDirectory
+            | BackendRequest::Remove
+            | BackendRequest::Rename { .. } => Err(Cause::Contract(Code::InvalidArgument)),
             BackendRequest::List { .. } => Ok(Data::List {
                 entries: vec![RawEntry {
                     name: String::from("one.txt"),
@@ -192,7 +193,7 @@ fn references_and_pagination_bind_boot_volume_path_and_generation() {
     assert_eq!(s.generation(), 1);
     let e = s.changes.iter().last().unwrap();
     assert_eq!(e.operation_id, reply.operation_id);
-    assert_eq!(e.paths[1], root);
+    assert_eq!(e.parent, root);
     assert_eq!(
         s.execute(
             &root,
@@ -385,6 +386,52 @@ pub(crate) fn with_directories(paths: &[&str]) -> (Disk, gpt::Layout) {
 }
 
 #[test]
+fn rename_flush_failure_keeps_both_paths_and_original_operation() {
+    let (mut disk, layout) = with_directories(&["out"]);
+    let root = Path::root();
+    {
+        let mut files =
+            FileService::new(fat::FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+        files
+            .execute(&root, create("input.txt", "payload"))
+            .unwrap()
+            .result
+            .unwrap();
+    }
+    let mut backend = fat::FatBackend::new(&mut disk, layout);
+    backend.inject(Stage::DeviceFlush);
+    let mut files = FileService::new(backend, BootId([2; 16])).unwrap();
+    let reply = files
+        .execute(
+            &root,
+            Request::Rename {
+                source: "input.txt",
+                destination: "out/output.txt",
+                reference: None,
+            },
+        )
+        .unwrap();
+    let error = reply.result.unwrap_err();
+    assert_eq!((error.code, error.stage), (Code::Io, Stage::DeviceFlush));
+    assert_eq!(error.source.as_ref().unwrap().as_str(), "/data/input.txt");
+    assert_eq!(
+        error.object.as_ref().unwrap().as_str(),
+        "/data/out/output.txt"
+    );
+    assert!(error.partial_effect.may_have_changed);
+    assert!(!error.partial_effect.persistence_confirmed);
+    assert_eq!(files.volume().mount_state, MountState::Offline);
+    let event = files.changes.iter().next().unwrap();
+    assert_eq!(
+        (event.generation, event.operation_id),
+        (1, reply.operation_id)
+    );
+    assert_eq!(event.rename_source, error.source);
+    assert_eq!(Some(&event.target), error.object.as_ref());
+    assert_eq!(files.operations.iter().last().unwrap().error, Some(error));
+}
+
+#[test]
 fn directory_mutations_keep_original_flush_failure_and_publish_possible_effect() {
     for (request, kind, path) in [
         (
@@ -420,7 +467,7 @@ fn directory_mutations_keep_original_flush_failure_and_publish_possible_effect()
             (event.operation_id, event.request_kind, event.generation),
             (reply.operation_id, kind, 1)
         );
-        assert_eq!(event.paths[0].as_str(), path);
+        assert_eq!(event.target.as_str(), path);
         let record = files.operations.iter().last().unwrap();
         assert_eq!(
             (record.id, record.status, &record.error),

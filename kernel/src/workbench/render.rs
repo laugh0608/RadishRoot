@@ -79,6 +79,12 @@ impl Layout {
                     rect(x + cw * 12 + 8, mutation_y, cw * 7, mutation_height),
                 ));
             }
+            if view.selected_file().is_some() {
+                controls.push((
+                    Focus::RenameEntry,
+                    rect(x + cw * 20 + 8, mutation_y, cw * 8, mutation_height),
+                ));
+            }
             if !view.directory.is_root() {
                 controls.push((
                     Focus::ParentDirectory,
@@ -149,7 +155,7 @@ impl Layout {
             let height = row * 6 + 8;
             let x = (w - width) / 2;
             let y = (h - height) / 2;
-            if matches!(dialog, FileDialog::NewDirectory) {
+            if dialog.accepts_path() {
                 controls.push((
                     Focus::DialogInput,
                     rect(x + 8, y + row * 3, width - 16, row),
@@ -319,6 +325,7 @@ fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &Vi
     let title = match dialog {
         FileDialog::NewDirectory => "New folder",
         FileDialog::Delete(_) => "Delete permanently?",
+        FileDialog::Rename(_) => "Rename file",
     };
     label(
         s,
@@ -333,9 +340,9 @@ fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &Vi
         FileDialog::NewDirectory => {
             let _ = write!(text, "Enter an absolute or relative path.");
         }
-        FileDialog::Delete(reference) => {
+        FileDialog::Delete(reference) | FileDialog::Rename(reference) => {
             let path = reference.path.as_str();
-            let max = columns * 3;
+            let max = columns * if dialog.accepts_path() { 2 } else { 3 };
             let chars = path.chars().count();
             if chars > max {
                 let _ = text.write_char('~');
@@ -365,6 +372,7 @@ fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &Vi
                 match dialog {
                     FileDialog::NewDirectory => "Create",
                     FileDialog::Delete(_) => "Delete",
+                    FileDialog::Rename(_) => "Rename",
                 },
                 focused,
                 l,
@@ -450,6 +458,7 @@ impl View {
                         | Focus::FileDetails
                         | Focus::NewDirectory
                         | Focus::DeleteEntry
+                        | Focus::RenameEntry
                 ),
             );
             let (x, y, fw, fh) = parts(f);
@@ -565,6 +574,7 @@ impl View {
                 |(_, message)| match message {
                     FileMessage::Created(path) => format!("Created {}", path.as_str()),
                     FileMessage::Removed(path) => format!("Removed {}", path.as_str()),
+                    FileMessage::Renamed(path) => format!("Renamed to {}", path.as_str()),
                     FileMessage::Failed(shell::Error::Service(error)) => {
                         format!("{:?} ({:?})  Details", error.code, error.stage)
                     }
@@ -684,6 +694,7 @@ impl View {
                 Focus::CloseDetails => "Close",
                 Focus::NewDirectory => "New folder",
                 Focus::DeleteEntry => "Delete",
+                Focus::RenameEntry => "Rename",
                 _ => "",
             };
             button(s, *r, name, *focus == self.focus, &l);

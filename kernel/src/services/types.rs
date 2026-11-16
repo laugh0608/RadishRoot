@@ -51,6 +51,7 @@ pub enum RequestKind {
     CreateText,
     CreateDirectory,
     Remove,
+    Rename,
     Sync,
     Reboot,
     Shutdown,
@@ -64,6 +65,7 @@ pub enum Stage {
     Read,
     Create,
     Remove,
+    Rename,
     Write,
     FileSync,
     VolumeSync,
@@ -170,6 +172,7 @@ pub struct SystemError {
     pub code: Code,
     pub stage: Stage,
     pub object: Option<Path>,
+    pub source: Option<Path>,
     pub cause: Cause,
     pub partial_effect: PartialEffect,
 }
@@ -178,6 +181,7 @@ pub struct OperationRecord {
     pub id: OperationId,
     pub request_kind: RequestKind,
     pub target: Option<Path>,
+    pub source: Option<Path>,
     pub stage: Stage,
     pub last_completed: Option<Stage>,
     pub status: Status,
@@ -194,7 +198,9 @@ pub struct OperationEvent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChangeEvent {
     pub volume: VolumeId,
-    pub paths: [Path; 2],
+    pub target: Path,
+    pub parent: Path,
+    pub rename_source: Option<Path>,
     pub request_kind: RequestKind,
     pub generation: u64,
     pub operation_id: OperationId,
@@ -216,6 +222,7 @@ pub enum Output {
     Read { bytes: Vec<u8>, eof: bool },
     Created(FileRef),
     Removed(Path),
+    Renamed { source: Path, target: FileRef },
     Synced,
     PowerPrepared(super::power::Action),
 }
@@ -246,6 +253,11 @@ pub enum Request<'a> {
         path: &'a str,
         reference: Option<&'a FileRef>,
     },
+    Rename {
+        source: &'a str,
+        destination: &'a str,
+        reference: Option<&'a FileRef>,
+    },
 }
 impl Request<'_> {
     pub fn path(&self) -> &str {
@@ -256,12 +268,22 @@ impl Request<'_> {
             | Self::CreateText { path, .. }
             | Self::CreateDirectory { path }
             | Self::Remove { path, .. } => path,
+            Self::Rename { destination, .. } => destination,
+        }
+    }
+    pub(super) fn source_path(&self) -> Option<&str> {
+        match self {
+            Self::Rename { source, .. } => Some(source),
+            _ => None,
         }
     }
     pub(super) fn mutates(&self) -> bool {
         matches!(
             self,
-            Self::CreateText { .. } | Self::CreateDirectory { .. } | Self::Remove { .. }
+            Self::CreateText { .. }
+                | Self::CreateDirectory { .. }
+                | Self::Remove { .. }
+                | Self::Rename { .. }
         )
     }
     pub fn kind(&self) -> RequestKind {
@@ -276,6 +298,7 @@ impl Request<'_> {
             Self::CreateText { .. } => RequestKind::CreateText,
             Self::CreateDirectory { .. } => RequestKind::CreateDirectory,
             Self::Remove { .. } => RequestKind::Remove,
+            Self::Rename { .. } => RequestKind::Rename,
         }
     }
 }

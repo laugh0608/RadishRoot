@@ -30,6 +30,10 @@ pub enum Output {
     },
     Created(FileRef),
     Removed(Path),
+    Renamed {
+        source: Path,
+        target: FileRef,
+    },
     Operations {
         records: Vec<OperationRecord>,
         evicted: u64,
@@ -148,6 +152,14 @@ impl Shell {
                     path,
                     reference: None,
                 },
+                Command::Rename {
+                    ref source,
+                    ref destination,
+                } => Request::Rename {
+                    source,
+                    destination,
+                    reference: None,
+                },
                 Command::Cat { ref path, offset } => Request::Read {
                     path,
                     offset,
@@ -184,6 +196,7 @@ impl Shell {
                 },
                 services::Output::Created(reference) => Output::Created(reference),
                 services::Output::Removed(path) => Output::Removed(path),
+                services::Output::Renamed { source, target } => Output::Renamed { source, target },
             })
         })();
         Ok(Reply {

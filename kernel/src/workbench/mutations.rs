@@ -1,21 +1,29 @@
-//! 文件区的新增与删除通过同一个服务请求入口执行。
+//! 文件区的修改通过同一个服务请求入口执行。
 use super::*;
 
 pub(super) enum FileDialog {
     NewDirectory,
     Delete(FileRef),
+    Rename(FileRef),
+}
+
+impl FileDialog {
+    pub(super) fn accepts_path(&self) -> bool {
+        matches!(self, Self::NewDirectory | Self::Rename(_))
+    }
 }
 
 pub(super) enum FileMessage {
     Created(Path),
     Removed(Path),
+    Renamed(Path),
     Failed(shell::Error),
 }
 
 impl View {
     pub(super) fn show_dialog(&mut self, dialog: FileDialog) {
         self.focus = match dialog {
-            FileDialog::NewDirectory => Focus::DialogInput,
+            FileDialog::NewDirectory | FileDialog::Rename(_) => Focus::DialogInput,
             FileDialog::Delete(_) => Focus::DialogCancel,
         };
         self.dialog = Some(dialog);
@@ -33,7 +41,7 @@ impl View {
         self.path_rejected = false;
         if matches!(
             self.pending,
-            Some(Intent::CreateDirectory(_) | Intent::Remove(_))
+            Some(Intent::CreateDirectory(_) | Intent::Remove(_) | Intent::Rename { .. })
         ) {
             self.pending = None;
         }
@@ -42,7 +50,7 @@ impl View {
 
     pub(super) fn confirm_dialog(&mut self) {
         match self.dialog.as_ref() {
-            Some(FileDialog::NewDirectory) if self.path_rejected => {
+            Some(dialog) if dialog.accepts_path() && self.path_rejected => {
                 let _ = self.path_editor.apply(Edit::Cancel);
                 self.path_rejected = false;
                 self.notice = Notice::Ready;
@@ -54,6 +62,10 @@ impl View {
                 )));
             }
             Some(FileDialog::Delete(reference)) => self.schedule(Intent::Remove(reference.clone())),
+            Some(FileDialog::Rename(reference)) => self.schedule(Intent::Rename {
+                source: reference.clone(),
+                destination: String::from(self.path_editor.text()),
+            }),
             None => (),
         }
     }
@@ -65,6 +77,7 @@ impl View {
                 let message = match reply.result {
                     Ok(Output::Created(reference)) => FileMessage::Created(reference.path),
                     Ok(Output::Removed(path)) => FileMessage::Removed(path),
+                    Ok(Output::Renamed { target, .. }) => FileMessage::Renamed(target.path),
                     Err(error) => FileMessage::Failed(shell::Error::Service(error)),
                     Ok(_) => unreachable!("mutation reply"),
                 };

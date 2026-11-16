@@ -3,6 +3,12 @@ use super::*;
 const RESTARTS: u8 = 4;
 const PAGES: u32 = services::MAX_ENTRIES / services::PAGE_SIZE as u32;
 
+fn might_alias(path: &Path, directory: &Path) -> bool {
+    !path.is_root()
+        && !directory.is_root()
+        && path.relative().split('/').count() == directory.relative().split('/').count()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UpdateReason {
     Operation(OperationId),
@@ -95,18 +101,19 @@ impl View {
                     gap = true;
                 }
                 expected = event.generation.saturating_add(1);
-                let [target, parent] = &event.paths;
                 let removing = event.request_kind == RequestKind::Remove;
-                if parent == &self.directory || (removing && target == &self.directory) {
+                let source_parent = event.rename_source.as_ref().map(Path::parent);
+                if event.parent == self.directory
+                    || source_parent.as_ref() == Some(&self.directory)
+                    || (removing && event.target == self.directory)
+                {
                     latest = Some(event);
                     check_alias = false;
-                } else if !self.directory.is_root()
-                    && ((!parent.is_root()
-                        && parent.relative().split('/').count()
-                            == self.directory.relative().split('/').count())
-                        || (removing
-                            && target.relative().split('/').count()
-                                == self.directory.relative().split('/').count()))
+                } else if might_alias(&event.parent, &self.directory)
+                    || source_parent
+                        .as_ref()
+                        .is_some_and(|parent| might_alias(parent, &self.directory))
+                    || (removing && might_alias(&event.target, &self.directory))
                 {
                     // FAT 长短名和大小写别名可能指向同一目录。未核实归属时只刷新当前快照。
                     check_alias = true;
@@ -141,7 +148,12 @@ impl View {
                 .as_ref()
                 .is_some_and(|(previous, message)| {
                     *previous != Some(id)
-                        && matches!(message, FileMessage::Created(_) | FileMessage::Removed(_))
+                        && matches!(
+                            message,
+                            FileMessage::Created(_)
+                                | FileMessage::Removed(_)
+                                | FileMessage::Renamed(_)
+                        )
                 })
         {
             self.file_message = None;
@@ -171,7 +183,9 @@ impl View {
         }
         let target = match reason {
             UpdateReason::Operation(_) => match latest {
-                Some(e) if e.request_kind != RequestKind::Remove => Some(e.paths[0].clone()),
+                Some(e) if e.request_kind != RequestKind::Remove && e.parent == self.directory => {
+                    Some(e.target.clone())
+                }
                 Some(_) => None,
                 None => previous.as_ref().and_then(|r| r.target.clone()),
             },
