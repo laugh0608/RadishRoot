@@ -191,6 +191,21 @@ pub fn reply(w: &mut impl Write, r: &Reply) -> fmt::Result {
                     }
                     w.write_str("]}")?;
                 }
+                Output::Preview(preview) => {
+                    write!(
+                        w,
+                        "{{\"kind\":\"preview\",\"encoding\":\"{:?}\",\"length\":{},\"truncated\":{},\"text\":",
+                        preview.kind(),
+                        preview.bytes().len(),
+                        preview.truncated
+                    )?;
+                    if let Some(text) = preview.text() {
+                        string(w, text)?;
+                    } else {
+                        w.write_str("null")?;
+                    }
+                    w.write_char('}')?;
+                }
                 Output::Bytes { bytes, eof, offset } => {
                     write!(
                         w,

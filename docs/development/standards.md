@@ -178,11 +178,11 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-10-13 xtask ui --host --disk <专用镜像副本> --gui
 ```
 
-`--workbench-only` 复用完整套件同一三例：图形创建 / 冲突 / 原始字节读取、FileSync 单次失败 / 部分修改 / 离线、201 项真实目录跨七页。生成 4 张引导 / 源盘和 3 张 DATA 副本，单 VM 60 秒；可写盘仅为本批专用 DATA 副本。默认盘仍只读，写入被真实拒绝。`check-fat.sh prepare` 按同一合成材料清单逐项预置，重复材料标签由工具分配唯一输出名；guest 退出后按路径、字节、只读摘要及 DATA 外不变独立复核。不代表完整 77 次套件或 M1 通过。
+`--workbench-only` 复用完整套件同一三例：图形创建 / 冲突 / 原始字节读取、FileSync 单次失败 / 部分修改 / 离线、201 项真实目录跨页。生成 4 张引导 / 源盘和 3 张 DATA 副本，单 VM 60 秒；可写盘仅为本批专用 DATA 副本。默认盘仍只读，写入被真实拒绝。`check-fat.sh prepare` 按同一合成材料清单逐项预置，重复材料标签由工具分配唯一输出名；guest 退出后按路径、字节、只读摘要及 DATA 外不变独立复核。不代表完整 77 次套件或 M1 通过。
 
 T10 的共享 `kernel::workbench::View` 从固定 `/data` 列表起步，提供显式刷新 / 下一页、本页行选择 / 滚动、图形行编辑、最近结果与操作详情。T14 将固定列表扩展为当前目录导航。Panels 在终端铺满、文件区铺满和双面板间切换，小屏保持单面板。终端复用 Shell / Editor，文件区直接发 FileService 请求。T11 增加自动联动，当前列表按变更重新查询，终端历史仍保留原快照。详情 Drawer 可关闭、独立滚动。解析错误没有伪造操作 ID，过期游标和记录淘汰保留真实错误。
 
-行输入最多 1024 字节，溢出整行拒绝，Enter / Esc 清除；失焦 / InputReset 取消未提交草稿并重置按键和按钮。结果保留最多 16 条且保守计量不超过 256 KiB，展示最多 512 行 / 64 KiB；显示截断不改原始类型与字节。非 ASCII 使用 `?` 并说明字形限制，Bytes 同时保留 hex，不能推断文件损坏。
+行输入最多 1024 字节，溢出整行拒绝，Enter / Esc 清除；失焦 / InputReset 取消未提交草稿并重置按键和按钮。结果保留最多 16 条且保守计量不超过 512 KiB，展示最多 512 行 / 64 KiB；显示截断不改原始类型与字节。非 ASCII 使用 `?` 并说明字形限制，Bytes 同时保留 hex，不能推断文件损坏。
 
 `ui --host --disk` 仅读取明确给出的普通 GPT / FAT 镜像，调用同一 FatBackend；不列宿主真实目录、不写源镜像。无 `--disk` 仍为 T07 校验页。实际 guest 输入与服务执行步骤以 `RR:T10:STEP` 记录，宿主在相同只读镜像及 boot_id 上回放并逐像素比较；可写案例只声明独立像素 / 类型结果 / 磁盘验证，不宣称做过可写宿主像素回放。`RR:T10:REPLY` / `DETAIL` 使用已有类型投影，独立期望校验成功、错误阶段和同操作 ID。
 
@@ -306,6 +306,12 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 三次无窗口启动各限 60 秒。普通 release 内核先运行可写路径，再只读重开同一专用 DATA 盘。QMP 驱动 guest 键鼠，核对终端和文件区的复制、跨目录重命名、显式覆盖、取消和输入隔离。两次均要求 `guest-shutdown` 与 QEMU 自然退出。可写盘退出后用 mtools 和 dosfstools 核对完整路径、原始字节、FAT 结构及 DATA 外区域，只读重开前后比对整盘摘要。
 
 独立 `boot-test` 启动在另一张 DATA 盘注入覆盖中途写入失败，核对截断、已写字节、首错、原操作 ID 及关机拒绝。宿主回收故障进程后只读观察 FAT，保留目标读取和 `fsck.fat -n` 的实际结果。这一路径覆盖 T15 对应的 AT12 故障子项，正常关机证据由前两次启动提供。
+
+### T16 预览与目录分页入口
+
+`preview <path>`、文件区 `Preview`（窄窗为 `View`）及在选中普通文件时按 Enter，复用同一只读服务。终端结构化结果给出 `Text`、`Binary` 或 `InvalidUtf8`、已读取字节数、截断状态及文本，文本保留原 UTF-8。`cat` 保留原始字节读取。文件区点击行负责选择，操作详情由 `Details` 打开。文件预览用 Up / Down 滚动，聚焦预览控件时 Home / End 跳至首尾，Esc 关闭并保留终端草稿。
+
+`ls --next` 和文件区 `Next` 使用服务返回的 200 项分页游标。`xtask test --host` 在合成 FAT 上核对 200 / 201 项、过期拒绝、两个显示占位相同的 UTF-8 文件、64 KiB 边界、非法编码、二进制、缺字显示与草稿保留。真实 QEMU 与关机后独立 FAT 按[T16 实施契约](../mvp-plan.md#t16-实施契约与验证方案)验收。
 
 ## 5. 视觉与数据材料
 

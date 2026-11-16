@@ -92,8 +92,8 @@ impl Session {
         visible(&text, name, generation)
     }
     pub(super) fn source_details(&mut self, name: &str) -> Result<()> {
-        self.click(40, 170)?;
-        self.wait(|s| Ok(number(&fields(s)?, "details")? == 1))?;
+        self.click(27, 687)?;
+        self.wait_for_focus("CloseDetails")?;
         self.snapshot(name)
     }
     fn external_write(&self) -> Result<()> {
@@ -260,7 +260,7 @@ pub fn validate(output: &str, mode: &str) -> Result<()> {
         }
         "t11-pages" => {
             if graph.len() != 2
-                || graph[0]["output"]["entries"].as_array().map(Vec::len) != Some(32)
+                || graph[0]["output"]["entries"].as_array().map(Vec::len) != Some(200)
             {
                 return Err(bad("paged original history facts"));
             }

@@ -372,7 +372,7 @@ fn directory_commands_validate_fat_and_keep_pagination_after_failed_cd() {
         matches!(reply.result, Ok(Output::Directory(path)) if path.as_str() == "/data/Project Files")
     );
 
-    for i in 0..32 {
+    for i in 0..200 {
         assert!(matches!(
             shell.execute(&format!("write f{i:02}.txt x"), &mut files).unwrap().result,
             Ok(Output::Created(reference)) if reference.path.as_str() == format!("/data/Project Files/f{i:02}.txt")
@@ -397,7 +397,7 @@ fn directory_commands_validate_fat_and_keep_pagination_after_failed_cd() {
     }
     assert!(matches!(
         shell.execute("ls --next", &mut files).unwrap().result,
-        Ok(Output::Files(page)) if page.entries.len() == 1 && page.entries[0].name == "f31.txt"
+        Ok(Output::Files(page)) if page.entries.len() == 1 && page.entries[0].name == "f199.txt"
     ));
     shell.execute("ls", &mut files).unwrap().result.unwrap();
     shell
@@ -692,14 +692,14 @@ fn partial_failure_explanation_keeps_original_effect_and_stale_pages_are_rejecte
     assert_eq!(record.error.unwrap().code, Code::Io);
     let mut files = service(false, false);
     let mut shell = Shell::new();
-    for i in 0..34 {
+    for i in 0..202 {
         shell
             .execute(&format!("write f{i:02} data"), &mut files)
             .unwrap();
     }
     let r = shell.execute("ls", &mut files).unwrap();
     assert!(
-        matches!(r.result,Ok(Output::Files(ListPage{entries,next:Some(_),..}))if entries.len()==32)
+        matches!(r.result,Ok(Output::Files(ListPage{entries,next:Some(_),..}))if entries.len()==200)
     );
     shell.execute("write new data", &mut files).unwrap();
     assert!(matches!(
@@ -744,6 +744,118 @@ fn rendered_results_escape_untrusted_text_and_keep_byte_types() {
     let mut s = String::new();
     render::reply(&mut s, &r).unwrap();
     assert_eq!(s,"{\"schema\":\"radishroot.command.v1\",\"command_id\":7,\"operation_id\":null,\"ok\":true,\"output\":{\"kind\":\"bytes\",\"offset\":4,\"length\":20,\"eof\":false,\"hex\":\"220a52523a434f4e534f4c453a5245504c59205c\",\"text\":\"\\\"\\nRR:CONSOLE:REPLY \\\\\"}}".to_string());
+}
+
+#[test]
+fn preview_classifies_real_fat_prefixes_without_changing_cat_or_the_volume() {
+    use crate::services::{
+        fat::FatBackend,
+        tests::{formatted, seed_files},
+    };
+
+    let (mut disk, mut layout) = formatted();
+    let mut exact = vec![b'a'; 65_533];
+    exact.extend_from_slice("中".as_bytes());
+    let mut split = vec![b'a'; 65_534];
+    split.extend_from_slice("中文".as_bytes());
+    seed_files(
+        &mut disk,
+        &layout,
+        &[
+            ("短 文.txt", "第一行\r\nvalue\tend".as_bytes()),
+            ("empty.txt", b""),
+            ("exact.txt", &exact),
+            ("split.txt", &split),
+            ("binary.txt", b"ascii\x00tail"),
+            ("invalid.txt", b"text\xff"),
+            ("incomplete.txt", b"text\xe4\xb8"),
+        ],
+    );
+    layout.data_readonly = true;
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut shell = Shell::new();
+    for (path, expected) in [
+        ("'短 文.txt'", Some("第一行\r\nvalue\tend")),
+        ("empty.txt", Some("")),
+    ] {
+        let reply = shell
+            .execute(&format!("preview {path}"), &mut files)
+            .unwrap();
+        let Ok(Output::Preview(preview)) = &reply.result else {
+            panic!()
+        };
+        assert_eq!(preview.kind(), PreviewKind::Text);
+        assert_eq!(preview.text(), expected);
+        assert!(!preview.truncated);
+        let mut json = String::new();
+        render::reply(&mut json, &reply).unwrap();
+        if path == "'短 文.txt'" {
+            assert!(json.contains(r#""text":"第一行\r\nvalue\tend""#));
+            assert_eq!(
+                files
+                    .operations
+                    .iter()
+                    .last()
+                    .unwrap()
+                    .target
+                    .as_ref()
+                    .unwrap()
+                    .as_str(),
+                "/data/短 文.txt"
+            );
+        }
+    }
+    for (path, kind) in [
+        ("binary.txt", PreviewKind::Binary),
+        ("invalid.txt", PreviewKind::InvalidUtf8),
+        ("incomplete.txt", PreviewKind::InvalidUtf8),
+    ] {
+        let reply = shell
+            .execute(&format!("preview {path}"), &mut files)
+            .unwrap();
+        let Ok(Output::Preview(preview)) = reply.result else {
+            panic!()
+        };
+        assert_eq!(preview.kind(), kind);
+        assert_eq!(preview.text(), None);
+        assert!(!preview.truncated);
+    }
+    let Ok(Output::Preview(preview)) = shell
+        .execute("preview exact.txt", &mut files)
+        .unwrap()
+        .result
+    else {
+        panic!()
+    };
+    assert_eq!(preview.bytes(), exact);
+    assert!(preview.text().unwrap().ends_with('中'));
+    assert!(!preview.truncated);
+    let Ok(Output::Preview(preview)) = shell
+        .execute("preview split.txt", &mut files)
+        .unwrap()
+        .result
+    else {
+        panic!()
+    };
+    assert_eq!(preview.bytes(), &split[..65_536]);
+    assert_eq!(
+        preview.text(),
+        Some(core::str::from_utf8(&split[..65_534]).unwrap())
+    );
+    assert!(preview.truncated);
+    assert!(
+        matches!(shell.execute("cat split.txt", &mut files).unwrap().result,
+            Ok(Output::Bytes { bytes, offset: 0, eof: false }) if bytes == split[..4096]
+        )
+    );
+    assert!(matches!(
+        shell.execute("preview absent", &mut files).unwrap().result,
+        Err(Error::Service(SystemError {
+            code: Code::NotFound,
+            ..
+        }))
+    ));
+    assert_eq!(files.generation(), 0);
 }
 
 #[test]

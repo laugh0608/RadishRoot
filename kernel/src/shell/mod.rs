@@ -2,10 +2,12 @@
 pub mod editor;
 pub mod input;
 pub mod parser;
+mod preview;
 pub mod render;
 use crate::services::{self, path::Path, *};
 use alloc::{string::String, vec::Vec};
 use parser::{Command, ParseError};
+pub use preview::{Preview, PreviewKind};
 pub const LINE_BYTES: usize = 1024;
 pub const READ_BYTES: usize = 4096;
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,6 +25,7 @@ pub enum Output {
     Help,
     Directory(Path),
     Files(ListPage),
+    Preview(Preview),
     Bytes {
         bytes: Vec<u8>,
         eof: bool,
@@ -94,6 +97,19 @@ impl Shell {
         files: &mut FileService<B>,
     ) -> Result<Reply, Code> {
         self.execute_parsed(Ok(Command::Explain(id)), files)
+    }
+    pub(crate) fn preview_file<B: Backend>(
+        &mut self,
+        reference: FileRef,
+        files: &mut FileService<B>,
+    ) -> Result<Reply, Code> {
+        self.execute_parsed(
+            Ok(Command::Preview {
+                path: String::from(reference.path.as_str()),
+                reference: Some(reference),
+            }),
+            files,
+        )
     }
     fn execute_parsed<B: Backend>(
         &mut self,
@@ -190,6 +206,15 @@ impl Shell {
                     limit: READ_BYTES,
                     reference: None,
                 },
+                Command::Preview {
+                    ref path,
+                    ref reference,
+                } => Request::Read {
+                    path,
+                    offset: 0,
+                    limit: services::MAX_BYTES,
+                    reference: reference.as_ref(),
+                },
             };
             let r = files
                 .execute(&self.cwd, request)
@@ -210,13 +235,10 @@ impl Shell {
                         .map(|c| (String::from(c.directory.path.as_str()), c.clone()));
                     Output::Files(page)
                 }
-                services::Output::Read { bytes, eof } => Output::Bytes {
-                    bytes,
-                    eof,
-                    offset: match command {
-                        Command::Cat { offset, .. } => offset,
-                        _ => unreachable!(),
-                    },
+                services::Output::Read { bytes, eof } => match command {
+                    Command::Cat { offset, .. } => Output::Bytes { bytes, eof, offset },
+                    Command::Preview { .. } => Output::Preview(Preview::new(bytes, eof)),
+                    _ => unreachable!("read reply requires a read command"),
                 },
                 services::Output::Created(reference) => Output::Created(reference),
                 services::Output::Removed(path) => Output::Removed(path),

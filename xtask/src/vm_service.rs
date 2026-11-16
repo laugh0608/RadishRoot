@@ -181,7 +181,7 @@ fn one<'a>(output: &'a str, prefix: &str) -> Result<&'a str> {
 pub fn validate_default(output: &str, id: [u8; 16]) -> Result<()> {
     let f = fields(one(output, "RR:T08:DEFAULT ")?)?;
     if f.get("boot_id") != Some(&format!("{:032x}", u128::from_be_bytes(id)).as_str())
-        || number(&f, "entries")? > 32
+        || number(&f, "entries")? > 200
         || number(&f, "more")? > 1
         || number(&f, "readonly")? != 1
         || number(&f, "generation")? != 0

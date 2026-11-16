@@ -223,18 +223,43 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
                 BackendRequest::Read { offset, limit } => {
                     enter(progress, &state, Stage::Read, Phase::Read, false);
                     let mut file = root.open_file(path.relative()).map_err(error)?;
-                    // fatfs 将越过 EOF 的 seek 截至 EOF，因此必须先独立取得大小并校验 offset。
-                    let length = file.seek(SeekFrom::End(0)).map_err(error)?;
-                    if offset > length {
-                        return Err(Cause::Contract(Code::InvalidArgument));
-                    }
-                    file.seek(SeekFrom::Start(offset)).map_err(error)?;
-                    let count = (length - offset).min(limit as u64) as usize;
-                    let mut bytes = vec![0; count];
-                    file.read_exact(&mut bytes).map_err(error)?;
-                    Data::Read {
-                        bytes,
-                        eof: offset + count as u64 == length,
+                    if offset == 0 {
+                        let mut bytes = vec![0; limit];
+                        let mut count = 0;
+                        while count < limit {
+                            let read = file.read(&mut bytes[count..]).map_err(error)?;
+                            if read == 0 {
+                                break;
+                            }
+                            count += read;
+                        }
+                        bytes.truncate(count);
+                        // SeekFrom::End 会遍历整个簇链。定位到样本后一字节以判定 EOF，
+                        // 只检查样本边界的簇链，不从文件中额外读取数据字节。
+                        let boundary = count as u64;
+                        let next = file.seek(SeekFrom::Start(boundary + 1)).map_err(error)?;
+                        if next < boundary || (count < limit && next > boundary) {
+                            return Err(Cause::Fat(FatCause::UnexpectedEof));
+                        }
+                        bytes.shrink_to_fit();
+                        Data::Read {
+                            bytes,
+                            eof: next == boundary,
+                        }
+                    } else {
+                        // fatfs 将越过 EOF 的 seek 截至 EOF，先校验非零偏移。
+                        let length = file.seek(SeekFrom::End(0)).map_err(error)?;
+                        if offset > length {
+                            return Err(Cause::Contract(Code::InvalidArgument));
+                        }
+                        file.seek(SeekFrom::Start(offset)).map_err(error)?;
+                        let count = (length - offset).min(limit as u64) as usize;
+                        let mut bytes = vec![0; count];
+                        file.read_exact(&mut bytes).map_err(error)?;
+                        Data::Read {
+                            bytes,
+                            eof: offset + count as u64 == length,
+                        }
                     }
                 }
                 BackendRequest::LookupFile => {

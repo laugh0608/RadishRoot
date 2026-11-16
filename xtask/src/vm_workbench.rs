@@ -532,7 +532,7 @@ fn validate(output: &str, full: bool, input: InputEvidence) -> Result<()> {
             || number(f, "events")? < events
             || number(f, "releases")? < releases
             || number(f, "heap")? > 1024 * 1024
-            || number(f, "entries")? > 32
+            || number(f, "entries")? > 200
             || number(f, "results")? > 16
         {
             return Err(bad("workbench frame sequence / budget"));

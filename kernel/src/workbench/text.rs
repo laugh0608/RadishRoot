@@ -9,15 +9,46 @@ pub struct Text {
     pub missing_glyphs: bool,
     width: usize,
     bytes: usize,
+    skip: usize,
+    rows: usize,
+    row: usize,
+    column: usize,
 }
 impl Text {
     pub fn new(width: usize) -> Self {
+        Self::window(width, 0, ROWS)
+    }
+    pub(super) fn window(width: usize, skip: usize, rows: usize) -> Self {
         Self {
-            lines: alloc::vec![String::new()],
+            lines: if skip == 0 {
+                alloc::vec![String::new()]
+            } else {
+                Vec::new()
+            },
             truncated: false,
             missing_glyphs: false,
             width: width.max(1),
             bytes: 0,
+            skip,
+            rows: rows.max(1),
+            row: 0,
+            column: 0,
+        }
+    }
+    pub(super) fn last_row(&self) -> usize {
+        self.row
+    }
+    pub(super) fn preview_content(&mut self, content: &str) {
+        let mut parts = content.split('\r');
+        if let Some(first) = parts.next() {
+            let _ = self.write_str(first);
+        }
+        for part in parts {
+            if self.truncated {
+                break;
+            }
+            let _ = self.write_char('\n');
+            let _ = self.write_str(part.strip_prefix('\n').unwrap_or(part));
         }
     }
 }
@@ -36,21 +67,28 @@ impl Write for Text {
                     '?'
                 }
             };
-            if c == '\n' || self.lines.last().unwrap().len() == self.width {
-                if self.lines.len() == ROWS || self.bytes >= BYTES {
+            if c == '\n' || self.column == self.width {
+                if self.lines.len() == self.rows || self.bytes >= BYTES {
                     self.truncated = true;
                     break;
                 }
-                self.lines.push(String::new());
-                self.bytes += 1;
+                self.row += 1;
+                self.column = 0;
+                if self.row >= self.skip {
+                    self.bytes += usize::from(!self.lines.is_empty());
+                    self.lines.push(String::new());
+                }
             }
             if c != '\n' {
-                if self.bytes == BYTES {
-                    self.truncated = true;
-                    break;
+                self.column += 1;
+                if let Some(line) = self.lines.last_mut() {
+                    if self.bytes == BYTES {
+                        self.truncated = true;
+                        break;
+                    }
+                    line.push(c);
+                    self.bytes += 1;
                 }
-                self.lines.last_mut().unwrap().push(c);
-                self.bytes += 1;
             }
         }
         Ok(())

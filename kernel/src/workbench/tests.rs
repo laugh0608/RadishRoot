@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     services::{
         fat::FatBackend,
-        tests::{formatted, with_directories},
+        tests::{formatted, seed_files, with_directories},
     },
     surface::Surface,
 };
@@ -497,7 +497,7 @@ fn subdirectory_refresh_uses_current_path_and_checks_case_aliases_without_attrib
     );
     assert_eq!(v.page.as_ref().unwrap().entries.len(), 2);
 
-    for i in 0..31 {
+    for i in 0..199 {
         files
             .execute(
                 &Path::root(),
@@ -518,7 +518,7 @@ fn subdirectory_refresh_uses_current_path_and_checks_case_aliases_without_attrib
     let page = v.page.as_ref().unwrap();
     assert_eq!(page.directory.as_str(), "/data/Projects");
     assert_eq!(page.entries.len(), 1);
-    assert_eq!(page.entries[0].name, "page30.txt");
+    assert_eq!(page.entries[0].name, "page198.txt");
 }
 #[test]
 fn real_fat_list_and_graphical_commands_share_operation_and_conflict() {
@@ -565,7 +565,7 @@ fn real_fat_list_and_graphical_commands_share_operation_and_conflict() {
 fn pages_remain_accessible_and_stale_cursor_is_visible() {
     let (mut disk, layout) = formatted();
     let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
-    for i in 0..35 {
+    for i in 0..201 {
         files
             .execute(
                 &Path::root(),
@@ -580,15 +580,16 @@ fn pages_remain_accessible_and_stale_cursor_is_visible() {
     }
     let mut v = view();
     v.execute_pending(&mut files);
-    assert_eq!(v.page.as_ref().unwrap().entries.len(), 32);
-    for _ in 0..40 {
+    assert_eq!(v.page.as_ref().unwrap().entries.len(), 200);
+    for _ in 0..201 {
         v.activate(Focus::FilesDown);
     }
-    assert_eq!(v.file_row, 31);
+    assert_eq!(v.file_row, 199);
     assert!(v.file_scroll > 0);
     v.activate(Focus::NextPage);
     v.execute_pending(&mut files);
-    assert_eq!(v.page.as_ref().unwrap().entries.len(), 3);
+    assert_eq!(v.page.as_ref().unwrap().entries.len(), 1);
+    assert_eq!(v.selected_entry().unwrap().name, "f200");
     assert!(v.page.as_ref().unwrap().next.is_none());
     v.activate(Focus::Refresh);
     v.execute_pending(&mut files);
@@ -623,6 +624,89 @@ fn pages_remain_accessible_and_stale_cursor_is_visible() {
     v.activate(Focus::Refresh);
     v.execute_pending(&mut files);
     assert!(v.page.is_ok());
+}
+
+#[test]
+fn file_preview_uses_the_selected_utf8_reference_and_preserves_terminal_draft() {
+    let (mut disk, layout) = formatted();
+    let mut long = vec![b'\n'; 65_525];
+    long.extend_from_slice(b"last-line!\nmore");
+    seed_files(
+        &mut disk,
+        &layout,
+        &[
+            ("萝卜.txt", b"first file"),
+            ("山河.txt", "第二个\r\nline".as_bytes()),
+            ("binary.txt", b"\0payload"),
+            ("long.txt", &long),
+        ],
+    );
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut v = view();
+    v.execute_pending(&mut files);
+    v.event(Event::Text('x'));
+    click(&mut v, Focus::Files, 1);
+    key(&mut v, KeyCode::Return);
+    v.execute_pending(&mut files);
+    let reply = v.details.as_ref().unwrap();
+    assert!(matches!(&reply.result,
+        Ok(shell::Output::Preview(preview)) if preview.text() == Some("第二个\r\nline")
+    ));
+    let record = files.operations.iter().last().unwrap();
+    assert_eq!(Some(record.id), reply.operation_id);
+    assert_eq!(record.target.as_ref().unwrap().as_str(), "/data/山河.txt");
+    let display = v.detail_text();
+    assert!(display.missing_glyphs);
+    assert!(display.lines.iter().any(|s| s == "/data/??.txt"));
+    assert!(display.lines.iter().any(|s| s == "line"));
+    key(&mut v, KeyCode::Escape);
+    assert!(v.details.is_none());
+    assert_eq!(v.focus, Focus::Files);
+    assert_eq!(v.editor.text(), "x");
+    assert_eq!(v.file_row, 1);
+    assert_eq!(files.generation(), 0);
+
+    click(&mut v, Focus::Files, 2);
+    click(&mut v, Focus::PreviewFile, 0);
+    v.execute_pending(&mut files);
+    assert!(v.detail_text().lines.join("\n").contains("binary data"));
+    key(&mut v, KeyCode::Escape);
+
+    click(&mut v, Focus::Files, 3);
+    key(&mut v, KeyCode::Return);
+    v.execute_pending(&mut files);
+    assert!(v.detail_text().lines.join("\n").contains("first 64 KiB"));
+    key(&mut v, KeyCode::End);
+    let end = v.detail_text();
+    assert!(v.detail_scroll > 65_000);
+    assert!(end.lines.iter().any(|line| line == "last-line!"));
+    assert!(end.lines.len() <= Layout::new(&v).detail_rows());
+    key(&mut v, KeyCode::Home);
+    assert_eq!(v.detail_scroll, 0);
+    key(&mut v, KeyCode::Escape);
+
+    click(&mut v, Focus::Files, 0);
+    click(&mut v, Focus::PreviewFile, 0);
+    files
+        .execute(
+            &Path::root(),
+            Request::Rename {
+                source: "萝卜.txt",
+                destination: "moved.txt",
+                reference: None,
+            },
+        )
+        .unwrap()
+        .result
+        .unwrap();
+    v.execute_pending(&mut files);
+    assert!(matches!(
+        v.details.as_ref().unwrap().result,
+        Err(shell::Error::Service(SystemError {
+            code: Code::StaleReference,
+            ..
+        }))
+    ));
 }
 #[test]
 fn input_reset_cancels_pending_command_and_clicks_require_matching_release() {
@@ -812,9 +896,9 @@ fn automatic_refresh_locates_new_file_across_pages_without_rewriting_history_or_
     while v.pending() {
         v.execute_pending(&mut files);
         pages += 1;
-        assert!(pages <= 7);
+        assert!(pages <= 2);
     }
-    assert_eq!(pages, 7);
+    assert_eq!(pages, 2);
     assert_eq!(
         v.page.as_ref().unwrap().entries[v.file_row].name,
         "newest.txt"
@@ -824,7 +908,7 @@ fn automatic_refresh_locates_new_file_across_pages_without_rewriting_history_or_
     let mut after = String::new();
     shell::render::reply(&mut after, &v.results[0].reply).unwrap();
     assert_eq!(snapshot, after);
-    v.activate(Focus::Files);
+    v.activate(Focus::FileDetails);
     v.execute_pending(&mut files);
     let Ok(shell::Output::Explanation { record, .. }) = &v.details.as_ref().unwrap().result else {
         panic!()

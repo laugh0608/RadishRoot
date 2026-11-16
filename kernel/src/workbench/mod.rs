@@ -24,7 +24,7 @@ use services::path::Path;
 pub use text::Text;
 
 pub const COMMANDS: usize = 16;
-pub const RESULT_BYTES: usize = 256 * 1024;
+pub const RESULT_BYTES: usize = 512 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
     Files,
@@ -35,6 +35,7 @@ pub enum Focus {
     FilePath,
     ParentDirectory,
     OpenDirectory,
+    PreviewFile,
     OpenTerminal,
     FileDetails,
     Input,
@@ -63,12 +64,13 @@ impl Focus {
         )
     }
 }
-const FOCUS: [Focus; 27] = [
+const FOCUS: [Focus; 28] = [
     Focus::Files,
     Focus::Refresh,
     Focus::NextPage,
     Focus::ParentDirectory,
     Focus::OpenDirectory,
+    Focus::PreviewFile,
     Focus::FilesUp,
     Focus::FilesDown,
     Focus::FilePath,
@@ -126,6 +128,7 @@ enum Intent {
     },
     Command,
     Details(OperationId),
+    Preview(FileRef),
 }
 pub struct CommandResult {
     pub line: String,
@@ -152,6 +155,7 @@ pub struct View {
     pub output_scroll: usize,
     pub detail_scroll: usize,
     pub details: Option<shell::Reply>,
+    preview_path: Option<Path>,
     pub focus: Focus,
     pub notice: Notice,
     pub pointer: Point,
@@ -202,6 +206,7 @@ impl View {
             output_scroll: 0,
             detail_scroll: 0,
             details: None,
+            preview_path: None,
             focus: Focus::Input,
             notice: Notice::Executing,
             pointer: Point::new(geometry.width() as i32 / 2, geometry.height() as i32 / 2),
@@ -333,6 +338,7 @@ impl View {
                 }
             }
             Intent::Details(id) => {
+                self.preview_path = None;
                 self.details = Some(match self.shell.explain(id, files) {
                     Ok(reply) => reply,
                     Err(code) => shell::Reply {
@@ -343,6 +349,20 @@ impl View {
                 });
                 self.detail_scroll = 0;
                 self.focus = Focus::CloseDetails;
+            }
+            Intent::Preview(reference) => {
+                self.preview_path = Some(reference.path.clone());
+                self.details = Some(match self.shell.preview_file(reference, files) {
+                    Ok(reply) => reply,
+                    Err(code) => shell::Reply {
+                        command_id: 0,
+                        operation_id: None,
+                        result: Err(shell::Error::ServiceIdentity(code)),
+                    },
+                });
+                self.detail_scroll = 0;
+                self.focus = Focus::CloseDetails;
+                self.scroll_file_into_view();
             }
         }
         self.volume = Some(files.volume());
@@ -390,6 +410,11 @@ impl View {
                     self.schedule(Intent::Navigate(String::from(path.as_str())));
                 }
             }
+            Focus::PreviewFile => {
+                if let Some(entry) = self.selected_file() {
+                    self.schedule(Intent::Preview(entry.reference.clone()));
+                }
+            }
             Focus::OpenTerminal => self.schedule(Intent::OpenTerminal),
             Focus::FileDetails => self.open_file_details(),
             Focus::NewDirectory => self.show_dialog(FileDialog::NewDirectory),
@@ -431,6 +456,8 @@ impl View {
             Focus::Files => {
                 if self.selected_directory().is_some() {
                     self.activate(Focus::OpenDirectory);
+                } else if self.selected_file().is_some() {
+                    self.activate(Focus::PreviewFile);
                 } else {
                     self.open_file_details();
                 }
@@ -462,17 +489,24 @@ impl View {
                 self.output_scroll =
                     (self.output_scroll + 5).min(self.output_text().lines.len().saturating_sub(1))
             }
-            Focus::DetailsUp => self.detail_scroll = self.detail_scroll.saturating_sub(5),
+            Focus::DetailsUp => {
+                self.detail_scroll = self.detail_scroll.saturating_sub(self.detail_step());
+            }
             Focus::DetailsDown => {
-                self.detail_scroll =
-                    (self.detail_scroll + 5).min(self.detail_text().lines.len().saturating_sub(1))
+                let next = self.detail_scroll + self.detail_step();
+                let last = if self.preview_path.is_some() {
+                    self.detail_window(next, 1).last_row()
+                } else {
+                    self.detail_text().last_row()
+                };
+                self.detail_scroll = next.min(last);
             }
             Focus::CloseDetails => {
                 self.details = None;
-                self.focus = if self.single && !self.terminal {
-                    Focus::Files
-                } else {
-                    Focus::Input
+                let was_preview = self.preview_path.take().is_some();
+                self.focus = match (self.single, self.terminal, was_preview) {
+                    (true, false, _) | (false, _, true) => Focus::Files,
+                    _ => Focus::Input,
                 };
             }
             Focus::Panels => {
@@ -503,6 +537,16 @@ impl View {
         } else {
             self.file_row.saturating_sub(1)
         };
+        self.scroll_file_into_view();
+    }
+    fn detail_step(&self) -> usize {
+        if self.preview_path.is_some() {
+            Layout::new(self).detail_rows().min(5)
+        } else {
+            5
+        }
+    }
+    fn scroll_file_into_view(&mut self) {
         let rows = Layout::new(self).file_rows();
         if self.file_row < self.file_scroll {
             self.file_scroll = self.file_row;
@@ -550,6 +594,7 @@ impl View {
                     let row = match focus {
                         Focus::Files => layout.file_row_at(self, self.pointer),
                         Focus::OpenDirectory
+                        | Focus::PreviewFile
                         | Focus::DeleteEntry
                         | Focus::RenameEntry
                         | Focus::CopyEntry => Some(self.file_row),
@@ -572,8 +617,7 @@ impl View {
                             Focus::Files => {
                                 if let Some(row) = row {
                                     self.file_row = row;
-                                }
-                                if row.is_none() || self.selected_directory().is_none() {
+                                } else {
                                     self.open_file_details();
                                 }
                             }
@@ -611,6 +655,9 @@ impl View {
                 match code {
                     KeyCode::Tab => self.tab(modifiers.shift),
                     KeyCode::Escape if self.dialog.is_some() => self.close_dialog(),
+                    KeyCode::Escape if self.preview_path.is_some() => {
+                        self.activate(Focus::CloseDetails);
+                    }
                     KeyCode::Escape if self.focus == Focus::FilePath => {
                         self.focus_control(Focus::Files);
                     }
@@ -629,6 +676,21 @@ impl View {
                     }
                     KeyCode::ArrowUp if self.focus == Focus::Files => self.move_file(false),
                     KeyCode::ArrowDown if self.focus == Focus::Files => self.move_file(true),
+                    KeyCode::Home | KeyCode::End
+                        if self.preview_path.is_some()
+                            && matches!(
+                                self.focus,
+                                Focus::CloseDetails | Focus::DetailsUp | Focus::DetailsDown
+                            ) =>
+                    {
+                        self.detail_scroll = if code == KeyCode::Home {
+                            0
+                        } else {
+                            self.detail_window(usize::MAX, 1)
+                                .last_row()
+                                .saturating_sub(Layout::new(self).detail_rows() - 1)
+                        };
+                    }
                     _ if matches!(
                         self.focus,
                         Focus::Input | Focus::FilePath | Focus::DialogInput
@@ -688,7 +750,24 @@ impl View {
     }
     pub fn detail_text(&self) -> Text {
         let layout = Layout::new(self);
-        let mut text = Text::new(layout.detail_columns());
+        if self.preview_path.is_some() {
+            self.detail_window(self.detail_scroll, layout.detail_rows())
+        } else {
+            let mut text = Text::new(layout.detail_columns());
+            if let Some(reply) = &self.details {
+                describe(&mut text, reply);
+            }
+            text
+        }
+    }
+    fn detail_window(&self, scroll: usize, rows: usize) -> Text {
+        let mut text = Text::window(Layout::new(self).detail_columns(), scroll, rows);
+        if let Some(path) = &self.preview_path {
+            let _ = writeln!(text, "{}", path.as_str());
+            if !path.as_str().is_ascii() {
+                let _ = writeln!(text, "Name uses display placeholders for missing glyphs.");
+            }
+        }
         if let Some(reply) = &self.details {
             describe(&mut text, reply);
         }
@@ -760,6 +839,31 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
                     let _ = write!(text, "{b:02x} ");
                 }
                 let _ = writeln!(text);
+            }
+        }
+        Ok(shell::Output::Preview(preview)) => {
+            let _ = writeln!(text, "Previewed {} bytes", preview.bytes().len());
+            if preview.truncated {
+                let _ = writeln!(text, "Truncated: only the first 64 KiB were read.");
+            }
+            match preview.kind() {
+                shell::PreviewKind::Text => {
+                    let content = preview.text().expect("text preview");
+                    if content.is_empty() {
+                        let _ = writeln!(text, "Empty file.");
+                    } else {
+                        if !content.is_ascii() {
+                            let _ = writeln!(text, "Text uses '?' for missing glyphs.");
+                        }
+                        text.preview_content(content);
+                    }
+                }
+                shell::PreviewKind::Binary => {
+                    let _ = writeln!(text, "Text preview unavailable: binary data.");
+                }
+                shell::PreviewKind::InvalidUtf8 => {
+                    let _ = writeln!(text, "Text preview unavailable: invalid UTF-8.");
+                }
             }
         }
         Ok(shell::Output::Created(r)) => {
@@ -872,16 +976,15 @@ fn reply_bytes(r: &shell::Reply) -> usize {
                 path.as_str().len()
             }
             Ok(shell::Output::Files(p)) => {
-                p.directory.as_str().len()
+                p.directory.capacity()
                     + p.entries.capacity() * core::mem::size_of::<FileEntry>()
                     + p.entries
                         .iter()
-                        .map(|e| e.name.capacity() + e.reference.path.as_str().len() * 2)
+                        .map(|e| e.name.capacity() + e.reference.path.capacity())
                         .sum::<usize>()
-                    + p.next
-                        .as_ref()
-                        .map_or(0, |c| c.directory.path.as_str().len() * 2)
+                    + p.next.as_ref().map_or(0, |c| c.directory.path.capacity())
             }
+            Ok(shell::Output::Preview(preview)) => preview.bytes().len(),
             Ok(shell::Output::Bytes { bytes, .. }) => bytes.capacity(),
             Ok(shell::Output::Created(r) | shell::Output::Overwritten(r)) => {
                 r.path.as_str().len() * 2

@@ -8,7 +8,7 @@ use path::Path;
 use power::request_power;
 pub use types::*;
 
-pub const PAGE_SIZE: usize = 32;
+pub const PAGE_SIZE: usize = 200;
 pub const MAX_BYTES: usize = 64 * 1024;
 pub const MAX_ENTRIES: u32 = 4096;
 const RECORDS: usize = 32;

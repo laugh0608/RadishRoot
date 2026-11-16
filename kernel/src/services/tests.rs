@@ -313,6 +313,7 @@ fn histories_report_eviction_and_ids_never_wrap() {
 
 pub(crate) struct Disk {
     sectors: BTreeMap<u64, [u8; 512]>,
+    reads: usize,
     writes: usize,
     flushes: usize,
 }
@@ -326,6 +327,7 @@ impl block::BlockDevice for Disk {
     }
     fn read_blocks(&mut self, lba: u64, b: &mut [u8]) -> Result<(), block::Error> {
         block::validate(self.info(), lba, b.len(), false)?;
+        self.reads += b.len() / 512;
         for (i, c) in b.chunks_mut(512).enumerate() {
             c.copy_from_slice(self.sectors.get(&(lba + i as u64)).unwrap_or(&[0; 512]));
         }
@@ -360,6 +362,7 @@ pub(crate) fn formatted() -> (Disk, gpt::Layout) {
     };
     let mut d = Disk {
         sectors: BTreeMap::new(),
+        reads: 0,
         writes: 0,
         flushes: 0,
     };
@@ -388,7 +391,7 @@ pub(crate) fn with_directories(paths: &[&str]) -> (Disk, gpt::Layout) {
     (disk, layout)
 }
 
-fn seed_files(disk: &mut Disk, layout: &gpt::Layout, files: &[(&str, &[u8])]) {
+pub(crate) fn seed_files(disk: &mut Disk, layout: &gpt::Layout, files: &[(&str, &[u8])]) {
     use fatfs::Write;
 
     let state = State::default();
@@ -839,7 +842,7 @@ fn real_directory_pages_preserve_entries_and_read_limits_are_explicit() {
     let (mut disk, layout) = formatted();
     let root = Path::root();
     let mut s = FileService::new(fat::FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
-    for i in 0..35 {
+    for i in 0..201 {
         assert!(
             s.execute(&root, create(&alloc::format!("entry-{i:02}.txt"), "x"))
                 .unwrap()
@@ -861,7 +864,7 @@ fn real_directory_pages_preserve_entries_and_read_limits_are_explicit() {
     else {
         panic!()
     };
-    assert_eq!(first.entries.len(), 32);
+    assert_eq!(first.entries.len(), 200);
     let cursor = first.next.as_ref().unwrap();
     let Output::List(last) = s
         .execute(
@@ -877,7 +880,7 @@ fn real_directory_pages_preserve_entries_and_read_limits_are_explicit() {
     else {
         panic!()
     };
-    assert_eq!(last.entries.len(), 3);
+    assert_eq!(last.entries.len(), 1);
     assert!(last.next.is_none());
     for (i, e) in first.entries.iter().chain(last.entries.iter()).enumerate() {
         assert_eq!(e.name, alloc::format!("entry-{i:02}.txt"));
@@ -928,6 +931,39 @@ fn real_directory_pages_preserve_entries_and_read_limits_are_explicit() {
         Code::ResourceLimit
     );
     assert_eq!(s.backend.device.writes, before);
+}
+
+#[test]
+fn real_prefix_read_checks_the_boundary_without_traversing_the_tail() {
+    let (mut disk, layout) = formatted();
+    let data = vec![b'z'; 2 * 1024 * 1024];
+    seed_files(&mut disk, &layout, &[("large.txt", &data)]);
+    let reads = disk.reads;
+    let writes = disk.writes;
+    let mut files =
+        FileService::new(fat::FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let result = files
+        .execute(
+            &Path::root(),
+            Request::Read {
+                path: "large.txt",
+                offset: 0,
+                limit: 65_536,
+                reference: None,
+            },
+        )
+        .unwrap()
+        .result
+        .unwrap();
+    assert_eq!(
+        result,
+        Output::Read {
+            bytes: data[..65_536].to_vec(),
+            eof: false
+        }
+    );
+    assert!(files.backend.device.reads - reads < 1024);
+    assert_eq!(files.backend.device.writes, writes);
 }
 #[test]
 fn full_volume_scan_is_bounded_without_inventing_a_no_space_cause() {

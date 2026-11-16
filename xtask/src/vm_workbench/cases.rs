@@ -124,15 +124,10 @@ impl Session {
                 self.snapshot("workbench-offline")?;
             }
             "t10-pages" => {
-                for page in 1..=6 {
-                    self.click(140, 116)?;
-                    self.wait(|s| Ok(number(&fields(s)?, "pending")? == 0))?;
-                    self.snapshot(&format!("workbench-page-{page}"))?;
-                }
-                let state = self.state()?;
-                if number(&fields(&state)?, "entries")? != 9 {
-                    return Err(bad("201 directory entries not reachable"));
-                }
+                self.wait_for_file_count(200)?;
+                self.click(140, 116)?;
+                self.wait_for_file_count(1)?;
+                self.snapshot("workbench-page-1")?;
             }
             _ => return Err(bad("unknown workbench case")),
         }

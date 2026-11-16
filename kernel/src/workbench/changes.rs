@@ -1,7 +1,7 @@
 //! 当前目录的有界变更订阅与分页刷新；历史结果保持原快照。
 use super::*;
 const RESTARTS: u8 = 4;
-const PAGES: u32 = services::MAX_ENTRIES / services::PAGE_SIZE as u32;
+const PAGES: u32 = services::MAX_ENTRIES.div_ceil(services::PAGE_SIZE as u32);
 
 fn might_alias(path: &Path, directory: &Path) -> bool {
     !path.is_root()

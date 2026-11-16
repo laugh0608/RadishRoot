@@ -1,5 +1,5 @@
 use super::LINE_BYTES;
-use crate::services::{BootId, OperationId};
+use crate::services::{BootId, FileRef, OperationId};
 use alloc::{string::String, vec::Vec};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParseError {
@@ -45,6 +45,10 @@ pub enum Command {
         path: String,
         offset: u64,
     },
+    Preview {
+        path: String,
+        reference: Option<FileRef>,
+    },
     Operations,
     Explain(OperationId),
 }
@@ -54,7 +58,7 @@ pub struct CommandSpec {
     pub modifies: bool,
     pub result: &'static str,
 }
-pub const COMMANDS: [CommandSpec; 15] = [
+pub const COMMANDS: [CommandSpec; 16] = [
     CommandSpec {
         name: "sync",
         usage: "sync",
@@ -132,6 +136,12 @@ pub const COMMANDS: [CommandSpec; 15] = [
         usage: "cat <path> [offset] (up to 4096 bytes)",
         modifies: false,
         result: "bytes",
+    },
+    CommandSpec {
+        name: "preview",
+        usage: "preview <path> (first 64 KiB)",
+        modifies: false,
+        result: "preview",
     },
     CommandSpec {
         name: "operations",
@@ -281,6 +291,10 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
         ["cat", path, offset] => Command::Cat {
             path: String::from(*path),
             offset: number(offset)?,
+        },
+        ["preview", path] => Command::Preview {
+            path: String::from(*path),
+            reference: None,
         },
         ["operations"] => Command::Operations,
         ["explain", id] => Command::Explain(identity(id)?),

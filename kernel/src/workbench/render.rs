@@ -81,6 +81,15 @@ impl Layout {
             }
             if view.selected_file().is_some() {
                 controls.push((
+                    Focus::PreviewFile,
+                    rect(
+                        x + cw * 25 + 8,
+                        y + row + 4,
+                        (fw - cw * 25 - 14).min(cw * 8),
+                        row,
+                    ),
+                ));
+                controls.push((
                     Focus::RenameEntry,
                     rect(x + cw * 19 + 6, mutation_y, cw * 6, mutation_height),
                 ));
@@ -218,6 +227,10 @@ impl Layout {
     pub fn detail_columns(&self) -> usize {
         self.detail
             .map_or(1, |r| ((r.size.width - 16) / self.cw).max(1)) as usize
+    }
+    pub(super) fn detail_rows(&self) -> usize {
+        self.detail
+            .map_or(1, |r| ((r.size.height - self.row - 12) / self.row).max(1)) as usize
     }
 }
 fn rect(x: u32, y: u32, w: u32, h: u32) -> Rectangle {
@@ -474,6 +487,7 @@ impl View {
                         | Focus::FilePath
                         | Focus::ParentDirectory
                         | Focus::OpenDirectory
+                        | Focus::PreviewFile
                         | Focus::OpenTerminal
                         | Focus::FileDetails
                         | Focus::NewDirectory
@@ -672,19 +686,31 @@ impl View {
         if let Some(d) = l.detail {
             frame(s, d, true);
             let (x, y, dw, dh) = parts(d);
+            let text = self.detail_text();
+            let title = if self.preview_path.is_none() {
+                "Operation details"
+            } else if matches!(self.details.as_ref().map(|reply| &reply.result), Some(Ok(shell::Output::Preview(preview))) if preview.truncated)
+            {
+                "Preview (64 KiB)"
+            } else {
+                "File preview"
+            };
             label(
                 s,
                 rect(x + 8, y + 4, dw.saturating_sub(l.cw * 27), l.row),
-                "Operation details",
+                title,
                 style::TEXT,
                 l.cw,
             );
-            let text = self.detail_text();
             lines(
                 s,
                 rect(x + 8, y + l.row + 8, dw - 16, dh - l.row - 12),
                 &text,
-                self.detail_scroll,
+                if self.preview_path.is_some() {
+                    0
+                } else {
+                    self.detail_scroll
+                },
                 &l,
             );
         }
@@ -702,6 +728,8 @@ impl View {
                 Focus::NextPage => "Next",
                 Focus::ParentDirectory => "Parent",
                 Focus::OpenDirectory => "Open",
+                Focus::PreviewFile if r.size.width >= l.cw * 8 => "Preview",
+                Focus::PreviewFile => "View",
                 Focus::OpenTerminal => "To terminal",
                 Focus::FilesUp | Focus::OutputUp | Focus::DetailsUp => "Up",
                 Focus::FilesDown | Focus::OutputDown | Focus::DetailsDown => "Down",

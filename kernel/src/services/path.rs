@@ -72,6 +72,9 @@ impl Path {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    pub(crate) fn capacity(&self) -> usize {
+        self.0.capacity()
+    }
     pub fn relative(&self) -> &str {
         self.0.strip_prefix("/data/").unwrap_or("")
     }

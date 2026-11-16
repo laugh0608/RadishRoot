@@ -199,6 +199,7 @@ pub fn validate(s: &str, mode: &str, id: [u8; 16]) -> Result<()> {
                             Some("mv"),
                             Some("cp"),
                             Some("cat"),
+                            Some("preview"),
                             Some("operations"),
                             Some("explain"),
                         ])
