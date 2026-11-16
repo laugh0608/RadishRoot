@@ -8,6 +8,7 @@ pub enum Phase {
     Mount,
     Read,
     Create,
+    Remove,
     Write,
     FileSync,
     VolumeSync,

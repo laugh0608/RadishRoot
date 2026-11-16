@@ -49,6 +49,8 @@ pub enum RequestKind {
     List,
     Read,
     CreateText,
+    CreateDirectory,
+    Remove,
     Sync,
     Reboot,
     Shutdown,
@@ -61,6 +63,7 @@ pub enum Stage {
     List,
     Read,
     Create,
+    Remove,
     Write,
     FileSync,
     VolumeSync,
@@ -92,6 +95,8 @@ pub enum Code {
     NotFound,
     AlreadyExists,
     WrongKind,
+    RootDirectory,
+    DirectoryNotEmpty,
     NoSpace,
     Corrupt,
     Io,
@@ -140,6 +145,7 @@ impl Cause {
             Self::Contract(c) => c,
             Self::Fat(FatCause::NotFound) => Code::NotFound,
             Self::Fat(FatCause::AlreadyExists) => Code::AlreadyExists,
+            Self::Fat(FatCause::DirectoryNotEmpty) => Code::DirectoryNotEmpty,
             Self::Fat(FatCause::NoSpace) => Code::NoSpace,
             Self::Fat(FatCause::Corrupt) => Code::Corrupt,
             Self::Fat(FatCause::InvalidInput) => Code::WrongKind,
@@ -189,6 +195,7 @@ pub struct OperationEvent {
 pub struct ChangeEvent {
     pub volume: VolumeId,
     pub paths: [Path; 2],
+    pub request_kind: RequestKind,
     pub generation: u64,
     pub operation_id: OperationId,
 }
@@ -208,6 +215,7 @@ pub enum Output {
     List(ListPage),
     Read { bytes: Vec<u8>, eof: bool },
     Created(FileRef),
+    Removed(Path),
     Synced,
     PowerPrepared(super::power::Action),
 }
@@ -231,15 +239,30 @@ pub enum Request<'a> {
         path: &'a str,
         text: &'a str,
     },
+    CreateDirectory {
+        path: &'a str,
+    },
+    Remove {
+        path: &'a str,
+        reference: Option<&'a FileRef>,
+    },
 }
 impl Request<'_> {
     pub fn path(&self) -> &str {
         match self {
             Self::Power(_) => "/data",
-            Self::List { path, .. } | Self::Read { path, .. } | Self::CreateText { path, .. } => {
-                path
-            }
+            Self::List { path, .. }
+            | Self::Read { path, .. }
+            | Self::CreateText { path, .. }
+            | Self::CreateDirectory { path }
+            | Self::Remove { path, .. } => path,
         }
+    }
+    pub(super) fn mutates(&self) -> bool {
+        matches!(
+            self,
+            Self::CreateText { .. } | Self::CreateDirectory { .. } | Self::Remove { .. }
+        )
     }
     pub fn kind(&self) -> RequestKind {
         match self {
@@ -251,6 +274,8 @@ impl Request<'_> {
             Self::List { .. } => RequestKind::List,
             Self::Read { .. } => RequestKind::Read,
             Self::CreateText { .. } => RequestKind::CreateText,
+            Self::CreateDirectory { .. } => RequestKind::CreateDirectory,
+            Self::Remove { .. } => RequestKind::Remove,
         }
     }
 }

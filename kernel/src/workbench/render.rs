@@ -18,6 +18,7 @@ pub struct Layout {
     pub output: Rectangle,
     pub input: Rectangle,
     pub detail: Option<Rectangle>,
+    dialog: Option<Rectangle>,
     pub controls: Vec<(Focus, Rectangle)>,
     pub cw: u32,
     pub row: u32,
@@ -65,7 +66,17 @@ impl Layout {
                     Focus::OpenTerminal,
                     rect(x + fw - cw * 12 - 6, y + fh - row - 4, cw * 12, row),
                 ),
+                (
+                    Focus::NewDirectory,
+                    rect(x + 6, y + row * 2 + 1, cw * 11, row - 2),
+                ),
             ]);
+            if view.selected_entry().is_some() {
+                controls.push((
+                    Focus::DeleteEntry,
+                    rect(x + cw * 12 + 8, y + row * 2 + 1, cw * 7, row - 2),
+                ));
+            }
             if !view.directory.is_root() {
                 controls.push((
                     Focus::ParentDirectory,
@@ -131,12 +142,36 @@ impl Layout {
                 ),
             ]);
         }
+        let dialog = view.dialog.as_ref().map(|dialog| {
+            let width = (w - 24).min(cw * 48);
+            let height = row * 6 + 8;
+            let x = (w - width) / 2;
+            let y = (h - height) / 2;
+            if matches!(dialog, FileDialog::NewDirectory) {
+                controls.push((
+                    Focus::DialogInput,
+                    rect(x + 8, y + row * 3, width - 16, row),
+                ));
+            }
+            controls.extend([
+                (
+                    Focus::DialogCancel,
+                    rect(x + width - cw * 20 - 12, y + height - row - 8, cw * 8, row),
+                ),
+                (
+                    Focus::DialogConfirm,
+                    rect(x + width - cw * 11 - 8, y + height - row - 8, cw * 11, row),
+                ),
+            ]);
+            rect(x, y, width, height)
+        });
         Self {
             files,
             terminal,
             output,
             input,
             detail,
+            dialog,
             controls,
             cw,
             row,
@@ -146,7 +181,7 @@ impl Layout {
         self.controls
             .iter()
             .rev()
-            .find(|(_, r)| r.contains(point))
+            .find(|(focus, r)| focus.in_dialog() == self.dialog.is_some() && r.contains(point))
             .map(|(f, _)| *f)
     }
     pub fn file_rows(&self) -> usize {
@@ -256,6 +291,86 @@ fn editor_line(s: &mut Surface<'_>, r: Rectangle, editor: &Editor, focused: bool
         );
     }
 }
+
+fn button(s: &mut Surface<'_>, r: Rectangle, name: &str, focused: bool, l: &Layout) {
+    fill(
+        s,
+        r,
+        if focused {
+            style::FOCUS
+        } else {
+            style::BACKGROUND
+        },
+    );
+    label(
+        s,
+        r,
+        name,
+        if focused { style::SURFACE } else { style::TEXT },
+        l.cw,
+    );
+}
+
+fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &View, l: &Layout) {
+    frame(s, r, true);
+    let (x, y, w, _) = parts(r);
+    let title = match dialog {
+        FileDialog::NewDirectory => "New folder",
+        FileDialog::Delete(_) => "Delete permanently?",
+    };
+    label(
+        s,
+        rect(x + 8, y + 6, w - 16, l.row),
+        title,
+        style::TEXT,
+        l.cw,
+    );
+    let columns = ((w - 16) / l.cw) as usize;
+    let mut text = Text::new(columns);
+    match dialog {
+        FileDialog::NewDirectory => {
+            let _ = write!(text, "Enter an absolute or relative path.");
+        }
+        FileDialog::Delete(reference) => {
+            let path = reference.path.as_str();
+            let max = columns * 3;
+            let chars = path.chars().count();
+            if chars > max {
+                let _ = text.write_char('~');
+                for c in path.chars().skip(chars + 1 - max) {
+                    let _ = text.write_char(c);
+                }
+            } else {
+                let _ = text.write_str(path);
+            }
+        }
+    }
+    lines(
+        s,
+        rect(x + 8, y + l.row + 4, w - 16, l.row * 3),
+        &text,
+        0,
+        l,
+    );
+    for &(focus, area) in &l.controls {
+        let focused = view.focus == focus;
+        match focus {
+            Focus::DialogInput => editor_line(s, area, &view.path_editor, focused, l),
+            Focus::DialogCancel => button(s, area, "Cancel", focused, l),
+            Focus::DialogConfirm => button(
+                s,
+                area,
+                match dialog {
+                    FileDialog::NewDirectory => "Create",
+                    FileDialog::Delete(_) => "Delete",
+                },
+                focused,
+                l,
+            ),
+            _ => (),
+        }
+    }
+}
 impl View {
     pub fn render(&mut self, s: &mut Surface<'_>) {
         let l = Layout::new(self);
@@ -331,6 +446,8 @@ impl View {
                         | Focus::OpenDirectory
                         | Focus::OpenTerminal
                         | Focus::FileDetails
+                        | Focus::NewDirectory
+                        | Focus::DeleteEntry
                 ),
             );
             let (x, y, fw, fh) = parts(f);
@@ -375,6 +492,14 @@ impl View {
                 .unwrap()
                 .1;
             match &self.page {
+                Err(shell::Error::Service(error)) if error.code == Code::NotFound => {
+                    let mut t = Text::new((body.size.width / l.cw) as usize);
+                    let _ = write!(
+                        t,
+                        "Directory no longer exists.\nUse Parent or edit the path."
+                    );
+                    lines(s, body, &t, 0, &l);
+                }
                 Err(e) => {
                     let mut t = Text::new((body.size.width / l.cw) as usize);
                     let _ = write!(t, "FAILED {e:?}\nUse Refresh to retry.");
@@ -427,7 +552,7 @@ impl View {
                     }
                 }
             }
-            let snapshot = self.navigation_error.as_ref().map_or_else(
+            let snapshot = self.file_message.as_ref().map_or_else(
                 || {
                     format!(
                         "Details gen={}  more={}",
@@ -435,11 +560,13 @@ impl View {
                         self.page.as_ref().is_ok_and(|p| p.next.is_some())
                     )
                 },
-                |(_, error)| match error {
-                    shell::Error::Service(error) => {
+                |(_, message)| match message {
+                    FileMessage::Created(path) => format!("Created {}", path.as_str()),
+                    FileMessage::Removed(path) => format!("Removed {}", path.as_str()),
+                    FileMessage::Failed(shell::Error::Service(error)) => {
                         format!("{:?} ({:?})  Details", error.code, error.stage)
                     }
-                    _ => format!("Directory: {error:?}"),
+                    FileMessage::Failed(error) => format!("Directory: {error:?}"),
                 },
             );
             let file_status = rect(x + 8, y + fh - l.row * 2 - 4, fw - 16, l.row);
@@ -452,7 +579,7 @@ impl View {
                 &snapshot,
                 if self.focus == Focus::FileDetails {
                     style::SURFACE
-                } else if self.navigation_error.is_some() {
+                } else if matches!(self.file_message, Some((_, FileMessage::Failed(_)))) {
                     style::ERROR
                 } else {
                     style::MUTED
@@ -532,21 +659,14 @@ impl View {
             );
         }
         for (focus, r) in &l.controls {
-            if matches!(
-                focus,
-                Focus::Files | Focus::Input | Focus::FilePath | Focus::FileDetails
-            ) {
+            if focus.in_dialog()
+                || matches!(
+                    focus,
+                    Focus::Files | Focus::Input | Focus::FilePath | Focus::FileDetails
+                )
+            {
                 continue;
             }
-            fill(
-                s,
-                *r,
-                if *focus == self.focus {
-                    style::FOCUS
-                } else {
-                    style::BACKGROUND
-                },
-            );
             let name = match focus {
                 Focus::Refresh => "Refresh",
                 Focus::NextPage => "Next",
@@ -560,19 +680,11 @@ impl View {
                 Focus::Details => "Details",
                 Focus::Panels => "Panels",
                 Focus::CloseDetails => "Close",
+                Focus::NewDirectory => "New folder",
+                Focus::DeleteEntry => "Delete",
                 _ => "",
             };
-            label(
-                s,
-                *r,
-                name,
-                if *focus == self.focus {
-                    style::SURFACE
-                } else {
-                    style::TEXT
-                },
-                l.cw,
-            );
+            button(s, *r, name, *focus == self.focus, &l);
         }
         let update = match self.update {
             UpdateState::Idle => String::from(
@@ -590,7 +702,7 @@ impl View {
                 "Refreshing directory in bounded pages. You can continue editing the command.",
             ),
             UpdateState::Refreshed(UpdateReason::Operation(id)) => format!(
-                "List source {:032x}:{}; Enter in Files opens that operation.",
+                "List source {:032x}:{}",
                 u128::from_be_bytes(id.boot.0),
                 id.sequence
             ),
@@ -614,6 +726,9 @@ impl View {
             style::MUTED,
             l.cw,
         );
+        if let (Some(area), Some(dialog)) = (l.dialog, &self.dialog) {
+            file_dialog(s, area, dialog, self, &l);
+        }
         for y in 0..12 {
             for x in 0..=y / 2 {
                 s.pixel(self.pointer + Point::new(x, y), style::TEXT);

@@ -59,6 +59,130 @@ fn click(view: &mut View, control: Focus, row: usize) {
 }
 
 #[test]
+fn file_mutation_dialogs_share_service_and_delete_requires_current_confirmed_reference() {
+    let (mut disk, layout) = formatted();
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut v = view();
+    v.execute_pending(&mut files);
+    click(&mut v, Focus::NewDirectory, 0);
+    assert_eq!(v.focus, Focus::DialogInput);
+    for c in "Folder".chars() {
+        v.event(Event::Text(c));
+    }
+    click(&mut v, Focus::DialogConfirm, 0);
+    v.execute_pending(&mut files);
+    settle(&mut v, &mut files);
+    let Some((Some(creation), FileMessage::Created(path))) = v.file_message.as_ref() else {
+        panic!("missing successful directory creation");
+    };
+    assert_eq!(path.as_str(), "/data/Folder");
+    assert_eq!(Some(*creation), v.change_operation);
+    assert_eq!(v.selected_entry().unwrap().name, "Folder");
+
+    v.focus = Focus::Input;
+    for c in "write accidental.txt x".chars() {
+        v.event(Event::Text(c));
+    }
+    let operations = files.operations.iter().count();
+    click(&mut v, Focus::DeleteEntry, 0);
+    assert_eq!(v.focus, Focus::DialogCancel);
+    assert!(!v.visible(Focus::Input));
+    click(&mut v, Focus::Input, 0);
+    v.event(Event::Text('x'));
+    assert_eq!(v.focus, Focus::DialogCancel);
+    key(&mut v, KeyCode::Return);
+    assert!(v.dialog.is_none());
+    assert!(!v.pending());
+    assert_eq!(v.editor.text(), "write accidental.txt x");
+    assert_eq!(files.operations.iter().count(), operations);
+    assert_eq!(files.generation(), 1);
+
+    click(&mut v, Focus::DeleteEntry, 0);
+    key(&mut v, KeyCode::Tab);
+    assert_eq!(v.focus, Focus::DialogConfirm);
+    key(&mut v, KeyCode::Return);
+    assert!(v.pending());
+    v.event(Event::InputReset);
+    v.execute_pending(&mut files);
+    assert!(v.dialog.is_none());
+    assert_eq!(v.editor.text(), "write accidental.txt x");
+    assert_eq!(files.operations.iter().count(), operations);
+
+    click(&mut v, Focus::DeleteEntry, 0);
+    files
+        .execute(
+            &Path::root(),
+            Request::CreateText {
+                path: "other.txt",
+                text: "keep",
+            },
+        )
+        .unwrap()
+        .result
+        .unwrap();
+    v.observe_changes(&files);
+    settle(&mut v, &mut files);
+    assert_eq!(v.selected_entry().unwrap().name, "other.txt");
+    click(&mut v, Focus::DialogConfirm, 0);
+    v.execute_pending(&mut files);
+    assert!(
+        matches!(&v.file_message, Some((Some(_), FileMessage::Failed(shell::Error::Service(error))))
+        if error.code == Code::StaleReference && error.object.as_ref().unwrap().as_str() == "/data/Folder")
+    );
+    assert_eq!(files.generation(), 2);
+
+    click(&mut v, Focus::Files, 0);
+    assert_eq!(v.selected_entry().unwrap().name, "Folder");
+    click(&mut v, Focus::DeleteEntry, 0);
+    click(&mut v, Focus::DialogConfirm, 0);
+    v.execute_pending(&mut files);
+    settle(&mut v, &mut files);
+    assert!(
+        matches!(&v.file_message, Some((Some(id), FileMessage::Removed(path)))
+        if path.as_str() == "/data/Folder" && Some(*id) == v.change_operation)
+    );
+    let page = v.page.as_ref().unwrap();
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].name, "other.txt");
+    assert_eq!(v.editor.text(), "write accidental.txt x");
+
+    click(&mut v, Focus::DeleteEntry, 0);
+    click(&mut v, Focus::DialogConfirm, 0);
+    v.execute_pending(&mut files);
+    settle(&mut v, &mut files);
+    assert!(
+        matches!(&v.file_message, Some((_, FileMessage::Removed(path)))
+        if path.as_str() == "/data/other.txt")
+    );
+    assert!(v.page.as_ref().unwrap().entries.is_empty());
+    assert_eq!(files.generation(), 4);
+}
+
+#[test]
+fn deleting_the_displayed_directory_through_an_alias_leaves_parent_navigation_available() {
+    let (mut disk, layout) = with_directories(&["Empty"]);
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut v = view();
+    v.execute_pending(&mut files);
+    click(&mut v, Focus::OpenDirectory, 0);
+    v.execute_pending(&mut files);
+    assert_eq!(v.directory.as_str(), "/data/Empty");
+    command(&mut v, &mut files, "rm EMPTY");
+    assert_eq!(
+        v.update,
+        UpdateState::Refreshing(UpdateReason::CheckPathAlias)
+    );
+    settle(&mut v, &mut files);
+    assert_eq!(v.directory.as_str(), "/data/Empty");
+    assert!(matches!(&v.page, Err(shell::Error::Service(error)) if error.code == Code::NotFound));
+    assert!(v.change_operation.is_none());
+    click(&mut v, Focus::ParentDirectory, 0);
+    v.execute_pending(&mut files);
+    assert!(v.directory.is_root());
+    assert!(v.page.as_ref().unwrap().entries.is_empty());
+}
+
+#[test]
 fn directory_navigation_is_independent_and_explicit_sync_preserves_draft() {
     let (mut disk, mut layout) = with_directories(&["Drop", "Projects", "Projects/Empty"]);
     layout.data_readonly = true;
@@ -91,11 +215,11 @@ fn directory_navigation_is_independent_and_explicit_sync_preserves_draft() {
     assert_eq!(v.page.as_ref().unwrap().entries[0].name, "Empty");
     let Some((
         Some(failed),
-        shell::Error::Service(SystemError {
+        FileMessage::Failed(shell::Error::Service(SystemError {
             code: Code::NotFound,
             ..
-        }),
-    )) = v.navigation_error.as_ref()
+        })),
+    )) = v.file_message.as_ref()
     else {
         panic!("missing original navigation failure");
     };

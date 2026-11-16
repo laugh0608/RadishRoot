@@ -95,14 +95,18 @@ impl View {
                     gap = true;
                 }
                 expected = event.generation.saturating_add(1);
-                let [_, parent] = &event.paths;
-                if parent == &self.directory {
+                let [target, parent] = &event.paths;
+                let removing = event.request_kind == RequestKind::Remove;
+                if parent == &self.directory || (removing && target == &self.directory) {
                     latest = Some(event);
                     check_alias = false;
-                } else if !parent.is_root()
-                    && !self.directory.is_root()
-                    && parent.relative().split('/').count()
-                        == self.directory.relative().split('/').count()
+                } else if !self.directory.is_root()
+                    && ((!parent.is_root()
+                        && parent.relative().split('/').count()
+                            == self.directory.relative().split('/').count())
+                        || (removing
+                            && target.relative().split('/').count()
+                                == self.directory.relative().split('/').count()))
                 {
                     // FAT 长短名和大小写别名可能指向同一目录。未核实归属时只刷新当前快照。
                     check_alias = true;
@@ -131,6 +135,17 @@ impl View {
         }
         let previous = self.refresh.take();
         let reason = reason.unwrap_or_else(|| previous.as_ref().expect("active refresh").reason);
+        if let UpdateReason::Operation(id) = reason
+            && self
+                .file_message
+                .as_ref()
+                .is_some_and(|(previous, message)| {
+                    *previous != Some(id)
+                        && matches!(message, FileMessage::Created(_) | FileMessage::Removed(_))
+                })
+        {
+            self.file_message = None;
+        }
         self.change_operation = match reason {
             UpdateReason::Operation(id) => Some(id),
             _ => None,
@@ -155,9 +170,11 @@ impl View {
             return true;
         }
         let target = match reason {
-            UpdateReason::Operation(_) => latest
-                .map(|e| e.paths[0].clone())
-                .or_else(|| previous.as_ref().and_then(|r| r.target.clone())),
+            UpdateReason::Operation(_) => match latest {
+                Some(e) if e.request_kind != RequestKind::Remove => Some(e.paths[0].clone()),
+                Some(_) => None,
+                None => previous.as_ref().and_then(|r| r.target.clone()),
+            },
             _ => None,
         };
         self.refresh = Some(Refresh {

@@ -29,6 +29,7 @@ pub enum Output {
         offset: u64,
     },
     Created(FileRef),
+    Removed(Path),
     Operations {
         records: Vec<OperationRecord>,
         evicted: u64,
@@ -142,6 +143,11 @@ impl Shell {
                     }
                 }
                 Command::Write { ref path, ref text } => Request::CreateText { path, text },
+                Command::MakeDirectory(ref path) => Request::CreateDirectory { path },
+                Command::Remove(ref path) => Request::Remove {
+                    path,
+                    reference: None,
+                },
                 Command::Cat { ref path, offset } => Request::Read {
                     path,
                     offset,
@@ -177,6 +183,7 @@ impl Shell {
                     },
                 },
                 services::Output::Created(reference) => Output::Created(reference),
+                services::Output::Removed(path) => Output::Removed(path),
             })
         })();
         Ok(Reply {

@@ -35,6 +35,8 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
         ("help extra", ParseError::Arguments),
         ("cd", ParseError::Arguments),
         ("pwd extra", ParseError::Arguments),
+        ("mkdir", ParseError::Arguments),
+        ("rm -r folder", ParseError::Arguments),
         ("external", ParseError::UnknownCommand),
         ("cat a -1", ParseError::Number),
         ("cat a 18446744073709551616", ParseError::Number),
@@ -45,6 +47,101 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
     }
     assert_eq!(parse(&"x".repeat(1025)), Err(ParseError::Length));
     assert_eq!(parse("help a b c d e f g h"), Err(ParseError::Arguments));
+}
+
+#[test]
+fn directory_mutations_use_fat_and_reject_without_modifying_existing_objects() {
+    use crate::services::{fat::FatBackend, tests::with_directories};
+
+    let (mut disk, mut layout) = with_directories(&["Work"]);
+    let mut shell = Shell::new();
+    {
+        let mut files =
+            FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+        shell
+            .execute("cd Work", &mut files)
+            .unwrap()
+            .result
+            .unwrap();
+        let created = shell.execute("mkdir 'New folder'", &mut files).unwrap();
+        assert!(
+            matches!(created.result, Ok(Output::Created(r)) if r.path.as_str() == "/data/Work/New folder")
+        );
+        let creation = files.operations.iter().last().unwrap();
+        assert_eq!(creation.id, created.operation_id.unwrap());
+        assert_eq!(creation.request_kind, RequestKind::CreateDirectory);
+        assert!(creation.partial_effect.persistence_confirmed);
+        shell
+            .execute("write 'New folder/kept.txt' keep", &mut files)
+            .unwrap()
+            .result
+            .unwrap();
+
+        for (line, code, stage) in [
+            ("mkdir 'new FOLDER'", Code::AlreadyExists, Stage::Create),
+            (
+                "mkdir 'New folder/kept.txt'",
+                Code::AlreadyExists,
+                Stage::Create,
+            ),
+            ("mkdir absent/child", Code::NotFound, Stage::Create),
+            ("mkdir ../../escape", Code::InvalidPath, Stage::Validate),
+            ("rm /data", Code::RootDirectory, Stage::Validate),
+            ("rm ../../escape", Code::InvalidPath, Stage::Validate),
+            ("rm 'New folder'", Code::DirectoryNotEmpty, Stage::Remove),
+            ("rm absent", Code::NotFound, Stage::Remove),
+        ] {
+            let reply = shell.execute(line, &mut files).unwrap();
+            assert!(
+                matches!(reply.result, Err(Error::Service(error))
+                if (error.code, error.stage, error.partial_effect) == (code, stage, PartialEffect::default())),
+                "{line}"
+            );
+            assert_eq!(files.generation(), 2);
+            assert_eq!(files.volume().mount_state, MountState::Ready);
+        }
+        assert!(
+            matches!(shell.execute("cat 'New folder/kept.txt'", &mut files).unwrap().result,
+            Ok(Output::Bytes {bytes,..}) if bytes == b"keep")
+        );
+        for (line, target) in [
+            ("rm 'New folder/kept.txt'", "/data/Work/New folder/kept.txt"),
+            ("rm 'New folder'", "/data/Work/New folder"),
+        ] {
+            let removed = shell.execute(line, &mut files).unwrap();
+            let mut json = String::new();
+            render::reply(&mut json, &removed).unwrap();
+            assert!(json.contains(&format!(
+                r#""output":{{"kind":"removed","path":"{target}"}}"#
+            )));
+            assert!(matches!(removed.result, Ok(Output::Removed(path)) if path.as_str() == target));
+            let event = files.changes.iter().last().unwrap();
+            assert_eq!(event.request_kind, RequestKind::Remove);
+            assert_eq!(event.operation_id, removed.operation_id.unwrap());
+        }
+    }
+    layout.data_readonly = true;
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([2; 16])).unwrap();
+    let mut shell = Shell::new();
+    shell
+        .execute("cd Work", &mut files)
+        .unwrap()
+        .result
+        .unwrap();
+    assert!(
+        matches!(shell.execute("ls", &mut files).unwrap().result, Ok(Output::Files(page)) if page.entries.is_empty())
+    );
+    for line in ["mkdir fresh", "rm ."] {
+        assert!(matches!(
+            shell.execute(line, &mut files).unwrap().result,
+            Err(Error::Service(SystemError {
+                code: Code::ReadOnly,
+                stage: Stage::Validate,
+                ..
+            }))
+        ));
+    }
+    assert_eq!(files.generation(), 0);
 }
 
 #[test]
@@ -210,7 +307,9 @@ impl Backend for Memory {
         p.mounted = true;
         p.completed();
         match request {
-            BackendRequest::Sync => Err(Cause::Contract(Code::InvalidArgument)),
+            BackendRequest::Sync | BackendRequest::CreateDirectory | BackendRequest::Remove => {
+                Err(Cause::Contract(Code::InvalidArgument))
+            }
             BackendRequest::List { offset } => {
                 p.enter(Stage::List, Status::Running);
                 let entries = self

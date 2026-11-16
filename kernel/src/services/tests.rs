@@ -47,7 +47,9 @@ impl Backend for MemoryBackend {
         self.calls += 1;
         p.mounted = true;
         match request {
-            BackendRequest::Sync => Err(Cause::Contract(Code::InvalidArgument)),
+            BackendRequest::Sync | BackendRequest::CreateDirectory | BackendRequest::Remove => {
+                Err(Cause::Contract(Code::InvalidArgument))
+            }
             BackendRequest::List { .. } => Ok(Data::List {
                 entries: vec![RawEntry {
                     name: String::from("one.txt"),
@@ -380,6 +382,51 @@ pub(crate) fn with_directories(paths: &[&str]) -> (Disk, gpt::Layout) {
     fs.unmount().unwrap();
     state.check().unwrap();
     (disk, layout)
+}
+
+#[test]
+fn directory_mutations_keep_original_flush_failure_and_publish_possible_effect() {
+    for (request, kind, path) in [
+        (
+            Request::CreateDirectory { path: "new" },
+            RequestKind::CreateDirectory,
+            "/data/new",
+        ),
+        (
+            Request::Remove {
+                path: "empty",
+                reference: None,
+            },
+            RequestKind::Remove,
+            "/data/empty",
+        ),
+    ] {
+        let (mut disk, layout) = with_directories(&["empty"]);
+        let mut backend = fat::FatBackend::new(&mut disk, layout);
+        backend.inject(Stage::DeviceFlush);
+        let mut files = FileService::new(backend, BootId([1; 16])).unwrap();
+        let reply = files.execute(&Path::root(), request).unwrap();
+        let error = reply.result.unwrap_err();
+        assert_eq!((error.code, error.stage), (Code::Io, Stage::DeviceFlush));
+        assert!(error.partial_effect.may_have_changed);
+        assert!(!error.partial_effect.persistence_confirmed);
+        assert_eq!(
+            error.partial_effect.created,
+            kind == RequestKind::CreateDirectory
+        );
+        assert_eq!(files.volume().mount_state, MountState::Offline);
+        let event = files.changes.iter().last().unwrap();
+        assert_eq!(
+            (event.operation_id, event.request_kind, event.generation),
+            (reply.operation_id, kind, 1)
+        );
+        assert_eq!(event.paths[0].as_str(), path);
+        let record = files.operations.iter().last().unwrap();
+        assert_eq!(
+            (record.id, record.status, &record.error),
+            (reply.operation_id, Status::Failed, &Some(error))
+        );
+    }
 }
 #[test]
 fn real_fat_backend_persists_reopens_and_rejects_alias_without_mutation() {

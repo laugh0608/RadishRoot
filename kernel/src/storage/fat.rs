@@ -43,6 +43,22 @@ pub fn create_new<'a, IO: ReadWriteSeek>(
     directory: &Directory<'a, IO>,
     path: &str,
 ) -> Result<OpenFile<'a, IO>, fatfs::Error<IO::Error>> {
+    require_absent(directory, path)?;
+    directory.create_file(path)
+}
+
+pub fn create_new_directory<'a, IO: ReadWriteSeek>(
+    directory: &Directory<'a, IO>,
+    path: &str,
+) -> Result<Directory<'a, IO>, fatfs::Error<IO::Error>> {
+    require_absent(directory, path)?;
+    directory.create_dir(path)
+}
+
+fn require_absent<IO: ReadWriteSeek>(
+    directory: &Directory<'_, IO>,
+    path: &str,
+) -> Result<(), fatfs::Error<IO::Error>> {
     validate_path(path).map_err(|e| match e {
         NameError::Length => fatfs::Error::InvalidFileNameLength,
         NameError::Character => fatfs::Error::UnsupportedFileNameCharacter,
@@ -50,17 +66,14 @@ pub fn create_new<'a, IO: ReadWriteSeek>(
     })?;
     // 使用库本身的 Unicode 大写比较与短名查找，避免另造一套等价性规则。
     match directory.open_file(path) {
-        Ok(_) => return Err(fatfs::Error::AlreadyExists),
-        Err(fatfs::Error::NotFound) => (),
-        Err(fatfs::Error::InvalidInput) => {
-            return Err(match directory.open_dir(path) {
-                Ok(_) => fatfs::Error::AlreadyExists,
-                Err(error) => error,
-            });
-        }
-        Err(error) => return Err(error),
+        Ok(_) => Err(fatfs::Error::AlreadyExists),
+        Err(fatfs::Error::NotFound) => Ok(()),
+        Err(fatfs::Error::InvalidInput) => Err(match directory.open_dir(path) {
+            Ok(_) => fatfs::Error::AlreadyExists,
+            Err(error) => error,
+        }),
+        Err(error) => Err(error),
     }
-    directory.create_file(path)
 }
 
 #[cfg(test)]

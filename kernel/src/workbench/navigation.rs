@@ -38,12 +38,13 @@ impl View {
         if self.pressed.is_some_and(|(focus, _)| {
             matches!(
                 focus,
-                Focus::Files | Focus::OpenDirectory | Focus::FileDetails
+                Focus::Files | Focus::OpenDirectory | Focus::DeleteEntry | Focus::FileDetails
             )
         }) {
             self.pressed = None;
         }
         if (self.focus == Focus::OpenDirectory && self.selected_directory().is_none())
+            || (self.focus == Focus::DeleteEntry && self.selected_entry().is_none())
             || (self.focus == Focus::FileDetails && self.file_detail_operation().is_none())
         {
             self.focus = Focus::Files;
@@ -52,7 +53,7 @@ impl View {
 
     pub(super) fn navigate<B: Backend>(&mut self, files: &mut FileService<B>, path: &str) {
         let (operation, page) = list(files, &self.directory, path, None);
-        self.navigation_error = match page {
+        self.file_message = match page {
             Ok(page) => {
                 self.directory = page.directory.clone();
                 self.refresh = None;
@@ -62,13 +63,13 @@ impl View {
                 self.focus = Focus::Files;
                 None
             }
-            Err(error) => Some((operation, error)),
+            Err(error) => Some((operation, FileMessage::Failed(error))),
         };
     }
 
     pub(super) fn open_terminal<B: Backend>(&mut self, files: &mut FileService<B>) {
         let (operation, page) = list(files, &self.directory, ".", None);
-        self.navigation_error = match page {
+        self.file_message = match page {
             Ok(page) => {
                 self.shell.open_directory(page);
                 if self.single {
@@ -77,13 +78,17 @@ impl View {
                 self.focus = Focus::Input;
                 None
             }
-            Err(error) => Some((operation, error)),
+            Err(error) => Some((operation, FileMessage::Failed(error))),
         };
     }
 
     pub(super) fn selected_directory(&self) -> Option<&Path> {
-        let entry = self.page.as_ref().ok()?.entries.get(self.file_row)?;
+        let entry = self.selected_entry()?;
         (entry.kind == FileKind::Directory).then_some(&entry.reference.path)
+    }
+
+    pub(super) fn selected_entry(&self) -> Option<&FileEntry> {
+        self.page.as_ref().ok()?.entries.get(self.file_row)
     }
 
     pub(super) fn open_file_details(&mut self) {
@@ -93,7 +98,7 @@ impl View {
     }
 
     pub(super) fn file_detail_operation(&self) -> Option<OperationId> {
-        self.navigation_error.as_ref().map_or_else(
+        self.file_message.as_ref().map_or_else(
             || self.change_operation.or(self.list_operation),
             |(id, _)| *id,
         )

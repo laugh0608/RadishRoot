@@ -74,12 +74,15 @@ pub enum Data {
         eof: bool,
     },
     Created,
+    Removed,
 }
 pub enum BackendRequest<'a> {
     Sync,
     List { offset: u32 },
     Read { offset: u64, limit: usize },
     CreateText(&'a str),
+    CreateDirectory,
+    Remove,
 }
 pub trait Backend {
     fn volume(&self) -> VolumeInfo;
@@ -141,6 +144,18 @@ impl<B: Backend> FileService<B> {
     fn current(&self, reference: &FileRef, path: &Path) -> bool {
         reference == &self.reference(path.clone())
     }
+    fn validate_mutation(&self) -> Result<(), Cause> {
+        if self.volume.read_only {
+            return Err(Cause::Contract(Code::ReadOnly));
+        }
+        if !self.volume.flush_support {
+            return Err(Cause::Contract(Code::FlushUnsupported));
+        }
+        if self.generation == u64::MAX {
+            return Err(Cause::Contract(Code::IdentityExhausted));
+        }
+        Ok(())
+    }
     fn validate<'a>(
         &self,
         path: &Path,
@@ -148,7 +163,7 @@ impl<B: Backend> FileService<B> {
     ) -> Result<BackendRequest<'a>, Cause> {
         let fail = |code| Cause::Contract(code);
         if !matches!(self.power, power::State::Running)
-            && matches!(request, Request::CreateText { .. } | Request::Power(_))
+            && (request.mutates() || matches!(request, Request::Power(_)))
         {
             return Err(fail(Code::ShuttingDown));
         }
@@ -200,16 +215,25 @@ impl<B: Backend> FileService<B> {
                 if text.len() > MAX_BYTES {
                     return Err(fail(Code::ResourceLimit));
                 }
-                if self.volume.read_only {
-                    return Err(fail(Code::ReadOnly));
-                }
-                if !self.volume.flush_support {
-                    return Err(fail(Code::FlushUnsupported));
-                }
-                if self.generation == u64::MAX {
-                    return Err(fail(Code::IdentityExhausted));
-                }
+                self.validate_mutation()?;
                 Ok(BackendRequest::CreateText(text))
+            }
+            Request::CreateDirectory { .. } => {
+                if path.is_root() {
+                    return Err(fail(Code::AlreadyExists));
+                }
+                self.validate_mutation()?;
+                Ok(BackendRequest::CreateDirectory)
+            }
+            Request::Remove { reference, .. } => {
+                if path.is_root() {
+                    return Err(fail(Code::RootDirectory));
+                }
+                if reference.is_some_and(|r| !self.current(r, path)) {
+                    return Err(fail(Code::StaleReference));
+                }
+                self.validate_mutation()?;
+                Ok(BackendRequest::Remove)
             }
         }
     }
@@ -253,7 +277,7 @@ impl<B: Backend> FileService<B> {
                 progress.completed();
             }
             let data = self.backend.run(&path, action, &mut progress)?;
-            if matches!(request, Request::CreateText { .. } | Request::Power(_))
+            if (request.mutates() || matches!(request, Request::Power(_)))
                 && !progress.record.partial_effect.persistence_confirmed
             {
                 return Err(Cause::Contract(Code::Io));
@@ -264,9 +288,8 @@ impl<B: Backend> FileService<B> {
             self.volume.mount_state = MountState::Ready;
         }
         let effect = progress.record.partial_effect;
-        if request.kind() == RequestKind::CreateText && (effect.may_have_changed || effect.created)
-        {
-            self.generation += 1; // 创建请求在 IO 前已拒绝耗尽的代次。
+        if request.mutates() && (effect.may_have_changed || effect.created) {
+            self.generation += 1; // 修改请求在 IO 前已拒绝耗尽的代次。
             let path = progress
                 .record
                 .target
@@ -275,6 +298,7 @@ impl<B: Backend> FileService<B> {
             self.changes.push(ChangeEvent {
                 volume: self.volume.id,
                 paths: [path.clone(), path.parent()],
+                request_kind: request.kind(),
                 generation: self.generation,
                 operation_id: id,
             });
@@ -297,6 +321,7 @@ impl<B: Backend> FileService<B> {
                     }
                 }
                 Data::Created => Output::Created(self.reference(path.clone())),
+                Data::Removed => Output::Removed(path.clone()),
                 Data::Read { bytes, eof } => Output::Read { bytes, eof },
                 Data::List { entries, next } => {
                     let mut files = Vec::new();

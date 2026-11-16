@@ -198,6 +198,11 @@ pub fn reply(w: &mut impl Write, r: &Reply) -> fmt::Result {
                     reference(w, r)?;
                     w.write_char('}')?;
                 }
+                Output::Removed(path) => {
+                    w.write_str("{\"kind\":\"removed\",\"path\":")?;
+                    string(w, path.as_str())?;
+                    w.write_char('}')?;
+                }
                 Output::Operations { records, evicted } => {
                     write!(
                         w,

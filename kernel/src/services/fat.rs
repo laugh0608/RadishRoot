@@ -80,8 +80,12 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
         progress: &mut Progress,
     ) -> Result<Data, Cause> {
         let syncing = matches!(request, BackendRequest::Sync);
-        let writing = matches!(request, BackendRequest::CreateText(_))
-            || (syncing && !self.volume().read_only);
+        let writing = matches!(
+            request,
+            BackendRequest::CreateText(_)
+                | BackendRequest::CreateDirectory
+                | BackendRequest::Remove
+        ) || (syncing && !self.volume().read_only);
         let state = State::default();
         #[cfg(any(test, feature = "boot-test"))]
         let failure = if syncing {
@@ -218,6 +222,19 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
                     write_result?;
                     state.check().map_err(Cause::Stream)?;
                     Data::Created
+                }
+                BackendRequest::CreateDirectory => {
+                    enter(progress, &state, Stage::Create, Phase::Create, false);
+                    fat::create_new_directory(&root, path.relative())
+                        .map_err(|e| state.first_error().map_or_else(|| error(e), Cause::Stream))?;
+                    progress.record.partial_effect.created = true;
+                    Data::Created
+                }
+                BackendRequest::Remove => {
+                    enter(progress, &state, Stage::Remove, Phase::Remove, false);
+                    root.remove(path.relative())
+                        .map_err(|e| state.first_error().map_or_else(|| error(e), Cause::Stream))?;
+                    Data::Removed
                 }
             };
             progress.completed();

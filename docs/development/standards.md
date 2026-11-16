@@ -161,7 +161,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--shell-only` 与其他分组互斥，复用全套七例：外部串口编辑 / 命令写入、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘、6 张专用 DATA 副本；单 VM 60 秒。宿主逐字发送并等待实际接收确认，以防 UART 输入队列溢出；未确认不能当成已输入。文件只由 guest 的共享服务创建，宿主按独立预期读回。成功分组不代表完整 77 次 suite 或 M1 通过。
 
-T09 建立六个基础内置命令，T12 在同一 `kernel::shell::parser::COMMANDS` 增加 sync / reboot / shutdown，T14 增加 cd / pwd。help 和所有入口共用该表。Command / Reply / Output、1024 字节行编辑器与 UART 输入解码保持共享；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)，电源扩展见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
+T09 建立六个基础内置命令，T12 在同一 `kernel::shell::parser::COMMANDS` 增加 sync / reboot / shutdown，T14 增加 cd / pwd / mkdir / rm。help 和所有入口共用该表。Command / Reply / Output、1024 字节行编辑器与 UART 输入解码保持共享；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)，电源扩展见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
 
 默认启动在 T08 服务 Ready 后建立控制台，每轮最多接收 32 字节；COM1 读写保持单 BSP 所有权，UART 库保留的 LSR 接收错误会使当前行拒绝。正常行可用左右 / Home / End / Delete、上下历史、退格、Enter；Esc 等待最多 100 ms 区分方向序列后取消，Ctrl-C 立即取消。UTF-8 / 控制序列 / 容量损坏后只接受换行或 Ctrl-C 恢复，不执行残余文本。当前不提供 ANSI 终端兼容性、PTY 或外部程序。
 
@@ -281,7 +281,11 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `xtask test --host` 通过共享终端和工作台输入事件运行目录导航回归。宿主夹具使用锁定 `fatfs` 在合成块设备上格式化并预置子目录。验证 `cd` / `pwd`、当前目录下 `ls` 与分页、路径拒绝后的状态、鼠标选中与 `Open`、键盘 Enter、路径栏、`Parent`、失败详情及 `To terminal` 草稿保留。服务和工作台仍用同一只读目录查询。子目录变更刷新按 [T14 实施契约](../mvp-plan.md#t14-实施契约与验证方案)处理当前目录与 FAT 路径别名。
 
-既有 `--shell-only` 帮助回归识别新增命令，`--workbench-layout` 焦点回归经过路径栏、`To terminal` 和文件区详情。T14 的新增、删除、确认框、真实 QEMU 目录导航与关机后独立 FAT 验证需取得对应证据后再登记。
+既有 `--shell-only` 帮助回归识别新增命令，`--workbench-layout` 焦点回归经过路径栏、`To terminal` 和文件区详情。
+
+### T14 目录创建与删除入口
+
+`xtask test --host` 还用预置 FAT 夹具核对 `mkdir`、`rm` 和文件区的 `New folder`、`Delete`。验证创建与删除、冲突、越卷、只读、根目录、非空目录、写回故障、取消、输入重置、过期引用和进入已删目录的上级。宿主确认测试向同一视图投递键鼠事件，并核对后台草稿、服务操作数和代次。T14 真实 QEMU 交互及正常关机后独立 FAT 读盘按 [T14 实施契约](../mvp-plan.md#t14-实施契约与验证方案)验收。
 
 ## 5. 视觉与数据材料
 

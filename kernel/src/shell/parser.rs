@@ -23,6 +23,8 @@ pub enum Command {
     List(String),
     Next,
     Write { path: String, text: String },
+    MakeDirectory(String),
+    Remove(String),
     Cat { path: String, offset: u64 },
     Operations,
     Explain(OperationId),
@@ -33,7 +35,7 @@ pub struct CommandSpec {
     pub modifies: bool,
     pub result: &'static str,
 }
-pub const COMMANDS: [CommandSpec; 11] = [
+pub const COMMANDS: [CommandSpec; 13] = [
     CommandSpec {
         name: "sync",
         usage: "sync",
@@ -81,6 +83,18 @@ pub const COMMANDS: [CommandSpec; 11] = [
         usage: "write <path> <text> (create only)",
         modifies: true,
         result: "created",
+    },
+    CommandSpec {
+        name: "mkdir",
+        usage: "mkdir <path> (parent must exist)",
+        modifies: true,
+        result: "created",
+    },
+    CommandSpec {
+        name: "rm",
+        usage: "rm <path> (file or empty directory, no trash)",
+        modifies: true,
+        result: "removed",
     },
     CommandSpec {
         name: "cat",
@@ -209,6 +223,8 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
             path: String::from(*path),
             text: String::from(*text),
         },
+        ["mkdir", path] => Command::MakeDirectory(String::from(*path)),
+        ["rm", path] => Command::Remove(String::from(*path)),
         ["cat", path] => Command::Cat {
             path: String::from(*path),
             offset: 0,
