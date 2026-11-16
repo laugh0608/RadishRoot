@@ -28,9 +28,13 @@ pub fn id(w: &mut impl Write, id: OperationId) -> fmt::Result {
 fn effect(w: &mut impl Write, e: PartialEffect) -> fmt::Result {
     write!(
         w,
-        "{{\"created\":{},\"written_bytes\":{},\"may_have_changed\":{},\"persistence_confirmed\":{}}}",
+        "{{\"created\":{},\"written_bytes\":{},\"may_have_changed\":{},\"persistence_confirmed\":{}",
         e.created, e.written_bytes, e.may_have_changed, e.persistence_confirmed
-    )
+    )?;
+    if e.target_truncated {
+        w.write_str(",\"target_truncated\":true")?;
+    }
+    w.write_char('}')
 }
 fn service_error(w: &mut impl Write, e: &SystemError) -> fmt::Result {
     write!(
@@ -75,6 +79,9 @@ fn record(w: &mut impl Write, r: &OperationRecord) -> fmt::Result {
     if let Some(path) = &r.source {
         w.write_str(",\"source\":")?;
         string(w, path.as_str())?;
+    }
+    if let Some(total) = r.total_bytes {
+        write!(w, ",\"total_bytes\":{total}")?;
     }
     w.write_str(",\"partial_effect\":")?;
     effect(w, r.partial_effect)?;
@@ -216,6 +223,26 @@ pub fn reply(w: &mut impl Write, r: &Reply) -> fmt::Result {
                     string(w, source.as_str())?;
                     w.write_str(",\"reference\":")?;
                     reference(w, target)?;
+                    w.write_char('}')?;
+                }
+                Output::Copied {
+                    source,
+                    target,
+                    bytes,
+                    overwritten,
+                } => {
+                    write!(
+                        w,
+                        "{{\"kind\":\"copied\",\"bytes\":{bytes},\"overwritten\":{overwritten},\"source\":"
+                    )?;
+                    string(w, source.as_str())?;
+                    w.write_str(",\"reference\":")?;
+                    reference(w, target)?;
+                    w.write_char('}')?;
+                }
+                Output::Overwritten(r) => {
+                    w.write_str("{\"kind\":\"overwritten\",\"reference\":")?;
+                    reference(w, r)?;
                     w.write_char('}')?;
                 }
                 Output::Operations { records, evicted } => {

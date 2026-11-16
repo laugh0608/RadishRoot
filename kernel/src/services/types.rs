@@ -52,6 +52,9 @@ pub enum RequestKind {
     CreateDirectory,
     Remove,
     Rename,
+    Copy,
+    OverwriteText,
+    LookupFile,
     Sync,
     Reboot,
     Shutdown,
@@ -66,6 +69,9 @@ pub enum Stage {
     Create,
     Remove,
     Rename,
+    Copy,
+    Truncate,
+    CheckTarget,
     Write,
     FileSync,
     VolumeSync,
@@ -96,6 +102,7 @@ pub enum Code {
     FlushUnsupported,
     NotFound,
     AlreadyExists,
+    SameFile,
     WrongKind,
     RootDirectory,
     DirectoryNotEmpty,
@@ -164,6 +171,7 @@ impl Cause {
 pub struct PartialEffect {
     pub created: bool,
     pub written_bytes: usize,
+    pub target_truncated: bool,
     pub may_have_changed: bool,
     pub persistence_confirmed: bool,
 }
@@ -182,6 +190,7 @@ pub struct OperationRecord {
     pub request_kind: RequestKind,
     pub target: Option<Path>,
     pub source: Option<Path>,
+    pub total_bytes: Option<u64>,
     pub stage: Stage,
     pub last_completed: Option<Stage>,
     pub status: Status,
@@ -219,16 +228,36 @@ pub struct ListPage {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Output {
     List(ListPage),
-    Read { bytes: Vec<u8>, eof: bool },
+    Read {
+        bytes: Vec<u8>,
+        eof: bool,
+    },
     Created(FileRef),
     Removed(Path),
-    Renamed { source: Path, target: FileRef },
+    Renamed {
+        source: Path,
+        target: FileRef,
+    },
+    Copied {
+        source: Path,
+        target: FileRef,
+        bytes: usize,
+        overwritten: bool,
+    },
+    Overwritten(FileRef),
+    File(FileRef),
     Synced,
     PowerPrepared(super::power::Action),
 }
 pub struct Reply {
     pub operation_id: OperationId,
     pub result: Result<Output, SystemError>,
+}
+#[derive(Clone, Copy)]
+pub enum Overwrite<'a> {
+    Deny,
+    Explicit,
+    Confirmed(&'a FileRef),
 }
 pub enum Request<'a> {
     Power(super::power::Action),
@@ -258,6 +287,19 @@ pub enum Request<'a> {
         destination: &'a str,
         reference: Option<&'a FileRef>,
     },
+    Copy {
+        source: &'a str,
+        destination: &'a str,
+        reference: Option<&'a FileRef>,
+        overwrite: Overwrite<'a>,
+    },
+    OverwriteText {
+        path: &'a str,
+        text: &'a str,
+    },
+    LookupFile {
+        path: &'a str,
+    },
 }
 impl Request<'_> {
     pub fn path(&self) -> &str {
@@ -267,13 +309,15 @@ impl Request<'_> {
             | Self::Read { path, .. }
             | Self::CreateText { path, .. }
             | Self::CreateDirectory { path }
+            | Self::OverwriteText { path, .. }
+            | Self::LookupFile { path }
             | Self::Remove { path, .. } => path,
-            Self::Rename { destination, .. } => destination,
+            Self::Rename { destination, .. } | Self::Copy { destination, .. } => destination,
         }
     }
     pub(super) fn source_path(&self) -> Option<&str> {
         match self {
-            Self::Rename { source, .. } => Some(source),
+            Self::Rename { source, .. } | Self::Copy { source, .. } => Some(source),
             _ => None,
         }
     }
@@ -284,6 +328,8 @@ impl Request<'_> {
                 | Self::CreateDirectory { .. }
                 | Self::Remove { .. }
                 | Self::Rename { .. }
+                | Self::Copy { .. }
+                | Self::OverwriteText { .. }
         )
     }
     pub fn kind(&self) -> RequestKind {
@@ -299,6 +345,9 @@ impl Request<'_> {
             Self::CreateDirectory { .. } => RequestKind::CreateDirectory,
             Self::Remove { .. } => RequestKind::Remove,
             Self::Rename { .. } => RequestKind::Rename,
+            Self::Copy { .. } => RequestKind::Copy,
+            Self::OverwriteText { .. } => RequestKind::OverwriteText,
+            Self::LookupFile { .. } => RequestKind::LookupFile,
         }
     }
 }

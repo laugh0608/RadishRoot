@@ -50,6 +50,7 @@ pub enum Focus {
     NewDirectory,
     DeleteEntry,
     RenameEntry,
+    CopyEntry,
     DialogInput,
     DialogCancel,
     DialogConfirm,
@@ -62,7 +63,7 @@ impl Focus {
         )
     }
 }
-const FOCUS: [Focus; 26] = [
+const FOCUS: [Focus; 27] = [
     Focus::Files,
     Focus::Refresh,
     Focus::NextPage,
@@ -86,6 +87,7 @@ const FOCUS: [Focus; 26] = [
     Focus::NewDirectory,
     Focus::DeleteEntry,
     Focus::RenameEntry,
+    Focus::CopyEntry,
     Focus::DialogInput,
     Focus::DialogCancel,
     Focus::DialogConfirm,
@@ -109,6 +111,18 @@ enum Intent {
     Rename {
         source: FileRef,
         destination: String,
+    },
+    Copy {
+        source: FileRef,
+        destination: String,
+    },
+    LookupCopyTarget {
+        source: FileRef,
+        destination: String,
+    },
+    OverwriteCopy {
+        source: FileRef,
+        target: FileRef,
     },
     Command,
     Details(OperationId),
@@ -277,6 +291,23 @@ impl View {
                     reference: Some(&source),
                 },
             ),
+            Intent::Copy {
+                source,
+                destination,
+            } => self.copy_file(files, source, destination),
+            Intent::LookupCopyTarget {
+                source,
+                destination,
+            } => self.lookup_copy_target(files, source, &destination),
+            Intent::OverwriteCopy { source, target } => self.mutate(
+                files,
+                Request::Copy {
+                    source: source.path.as_str(),
+                    destination: target.path.as_str(),
+                    reference: Some(&source),
+                    overwrite: Overwrite::Confirmed(&target),
+                },
+            ),
             Intent::Command => {
                 let line = self.submitted.take().expect("submitted command intent");
                 match self.shell.execute(&line, files) {
@@ -367,9 +398,14 @@ impl View {
                     self.show_dialog(FileDialog::Delete(entry.reference.clone()));
                 }
             }
-            Focus::RenameEntry => {
+            Focus::RenameEntry | Focus::CopyEntry => {
                 if let Some(entry) = self.selected_file() {
-                    self.show_dialog(FileDialog::Rename(entry.reference.clone()));
+                    let reference = entry.reference.clone();
+                    self.show_dialog(if focus == Focus::RenameEntry {
+                        FileDialog::Rename(reference)
+                    } else {
+                        FileDialog::Copy(reference)
+                    });
                 }
             }
             Focus::DialogInput | Focus::DialogConfirm => self.confirm_dialog(),
@@ -491,14 +527,7 @@ impl View {
                 }
                 if matches!(
                     self.pending,
-                    Some(
-                        Intent::Command
-                            | Intent::Navigate(_)
-                            | Intent::OpenTerminal
-                            | Intent::CreateDirectory(_)
-                            | Intent::Remove(_)
-                            | Intent::Rename { .. }
-                    )
+                    Some(Intent::Command | Intent::Navigate(_) | Intent::OpenTerminal)
                 ) {
                     self.pending = None;
                     self.submitted = None;
@@ -520,9 +549,10 @@ impl View {
                 let hit = layout.hit(self.pointer).map(|focus| {
                     let row = match focus {
                         Focus::Files => layout.file_row_at(self, self.pointer),
-                        Focus::OpenDirectory | Focus::DeleteEntry | Focus::RenameEntry => {
-                            Some(self.file_row)
-                        }
+                        Focus::OpenDirectory
+                        | Focus::DeleteEntry
+                        | Focus::RenameEntry
+                        | Focus::CopyEntry => Some(self.file_row),
                         _ => None,
                     };
                     (focus, row)
@@ -750,6 +780,27 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
                 target.path.as_str()
             );
         }
+        Ok(shell::Output::Copied {
+            source,
+            target,
+            bytes,
+            overwritten,
+        }) => {
+            let verb = if *overwritten { "Overwrote" } else { "Copied" };
+            let _ = writeln!(
+                text,
+                "{verb} {}\n{bytes} bytes from {}",
+                target.path.as_str(),
+                source.as_str()
+            );
+        }
+        Ok(shell::Output::Overwritten(target)) => {
+            let _ = writeln!(
+                text,
+                "Overwrote {}\nAll writeback stages confirmed.",
+                target.path.as_str()
+            );
+        }
         Ok(shell::Output::Operations { records, evicted }) => {
             let _ = writeln!(text, "Operations (evicted={evicted}):");
             for r in records {
@@ -788,6 +839,13 @@ fn describe(text: &mut Text, reply: &shell::Reply) {
                 record.partial_effect,
                 record.error
             );
+            if let Some(total) = record.total_bytes {
+                let _ = writeln!(
+                    text,
+                    "Copied {} / {total} bytes",
+                    record.partial_effect.written_bytes
+                );
+            }
             for e in events {
                 let _ = writeln!(text, "{} {:?} {:?}", e.seq, e.stage, e.status);
             }
@@ -825,10 +883,13 @@ fn reply_bytes(r: &shell::Reply) -> usize {
                         .map_or(0, |c| c.directory.path.as_str().len() * 2)
             }
             Ok(shell::Output::Bytes { bytes, .. }) => bytes.capacity(),
-            Ok(shell::Output::Created(r)) => r.path.as_str().len() * 2,
-            Ok(shell::Output::Renamed { source, target }) => {
-                path_bytes(Some(source)) + path_bytes(Some(&target.path))
+            Ok(shell::Output::Created(r) | shell::Output::Overwritten(r)) => {
+                r.path.as_str().len() * 2
             }
+            Ok(
+                shell::Output::Renamed { source, target }
+                | shell::Output::Copied { source, target, .. },
+            ) => path_bytes(Some(source)) + path_bytes(Some(&target.path)),
             Ok(shell::Output::Operations { records, .. }) => {
                 records.capacity() * core::mem::size_of::<OperationRecord>()
                     + records.iter().map(record_bytes).sum::<usize>()

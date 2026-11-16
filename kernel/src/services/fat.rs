@@ -7,6 +7,9 @@ use crate::storage::{
 use alloc::vec;
 use fatfs::{FileSystem, FsOptions, Read, Seek, SeekFrom, Write};
 
+mod writes;
+use writes::Payload;
+
 pub struct FatBackend<'a, D: BlockDevice> {
     pub(super) device: &'a mut D,
     layout: gpt::Layout,
@@ -63,6 +66,49 @@ fn enter(progress: &mut Progress, state: &State, stage: Stage, phase: Phase, flu
     );
     state.phase(phase);
 }
+impl<D: BlockDevice> FatBackend<'_, D> {
+    fn check_copy_identity(
+        &mut self,
+        source: &Path,
+        destination: &Path,
+        state: &State,
+        progress: &mut Progress,
+    ) -> Result<(), Cause> {
+        enter(progress, state, Stage::Mount, Phase::Mount, false);
+        let partition = Partition::open(self.device, &self.layout).map_err(Cause::Block)?;
+        let mut stream = Stream::new(partition.read_only(), state);
+        let fs = FileSystem::new(&mut stream, FsOptions::new()).map_err(error)?;
+        if fs.fat_type() != fatfs::FatType::Fat32 {
+            state.fail(stream::Cause::Aborted, 0);
+            return Err(Cause::Fat(FatCause::Corrupt));
+        }
+        progress.mounted = true;
+        progress.completed();
+        enter(progress, state, Stage::CheckTarget, Phase::Read, false);
+        let result = (|| {
+            let root = fs.root_dir();
+            drop(root.open_file(source.relative()).map_err(error)?);
+            drop(root.open_file(destination.relative()).map_err(error)?);
+            // 两个普通文件均已确认存在。锁定库按目录表项地址比较：同项返回 Ok，异项拒绝。
+            // 单 BSP 独占保证探测与写入之间没有其他修改者。探测挂载只能读盘。
+            match root.rename(source.relative(), &root, destination.relative()) {
+                Ok(()) => Err(Cause::Contract(Code::SameFile)),
+                Err(fatfs::Error::AlreadyExists) => Ok(()),
+                Err(cause) => Err(error(cause)),
+            }
+        })();
+        if let Err(cause) = result {
+            let cause = state.first_error().map_or(cause, Cause::Stream);
+            state.fail(stream::Cause::Aborted, 0);
+            return Err(cause);
+        }
+        fs.unmount().map_err(error)?;
+        state.check().map_err(Cause::Stream)?;
+        progress.completed();
+        Ok(())
+    }
+}
+
 impl<D: BlockDevice> Backend for FatBackend<'_, D> {
     fn volume(&self) -> VolumeInfo {
         VolumeInfo {
@@ -83,9 +129,11 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
         let writing = matches!(
             request,
             BackendRequest::CreateText(_)
+                | BackendRequest::OverwriteText(_)
                 | BackendRequest::CreateDirectory
                 | BackendRequest::Remove
                 | BackendRequest::Rename { .. }
+                | BackendRequest::Copy { .. }
         ) || (syncing && !self.volume().read_only);
         let state = State::default();
         #[cfg(any(test, feature = "boot-test"))]
@@ -96,6 +144,13 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
         } else {
             None
         };
+        if let BackendRequest::Copy {
+            source,
+            overwrite: true,
+        } = request
+        {
+            self.check_copy_identity(source, path, &state, progress)?;
+        }
         enter(progress, &state, Stage::Mount, Phase::Mount, false);
         let partition = Partition::open(self.device, &self.layout).map_err(Cause::Block)?;
         let mut stream = Stream::new(
@@ -182,48 +237,34 @@ impl<D: BlockDevice> Backend for FatBackend<'_, D> {
                         eof: offset + count as u64 == length,
                     }
                 }
-                BackendRequest::CreateText(text) => {
-                    enter(progress, &state, Stage::Create, Phase::Create, false);
-                    let mut file = match fat::create_new(&root, path.relative()) {
-                        Ok(f) => f,
-                        Err(e) => {
-                            let cause = state.first_error().map_or_else(|| error(e), Cause::Stream);
-                            state.fail(stream::Cause::Aborted, 0);
-                            return Err(cause);
-                        }
-                    };
-                    progress.record.partial_effect.created = true;
-                    progress.completed();
-                    // 所有文件错误在 file Drop 之前锁存；保留原始 FAT 错误。
-                    let write_result = (|| {
-                        enter(progress, &state, Stage::Write, Phase::Write, false);
-                        while progress.record.partial_effect.written_bytes < text.len() {
-                            let at = progress.record.partial_effect.written_bytes;
-                            let n = file.write(&text.as_bytes()[at..]).map_err(error)?;
-                            if n == 0 {
-                                return Err(Cause::Fat(FatCause::WriteZero));
-                            }
-                            progress.record.partial_effect.written_bytes += n;
-                        }
-                        progress.completed();
-                        enter(progress, &state, Stage::FileSync, Phase::FileSync, true);
-                        #[cfg(any(test, feature = "boot-test"))]
-                        if failure == Some(Stage::FileSync) {
-                            state.inject_write_failure();
-                        }
-                        file.flush().map_err(error)?;
-                        state.check().map_err(Cause::Stream)?;
-                        progress.completed();
-                        Ok(())
-                    })();
-                    if write_result.is_err() {
-                        state.fail(stream::Cause::Aborted, 0);
-                    }
-                    drop(file);
-                    write_result?;
+                BackendRequest::LookupFile => {
+                    enter(progress, &state, Stage::Read, Phase::Read, false);
+                    drop(root.open_file(path.relative()).map_err(error)?);
                     state.check().map_err(Cause::Stream)?;
-                    Data::Created
+                    Data::File
                 }
+                BackendRequest::CreateText(text) | BackendRequest::OverwriteText(text) => {
+                    writes::write_payload(
+                        &root,
+                        path,
+                        Payload::Text(text),
+                        matches!(request, BackendRequest::OverwriteText(_)),
+                        &state,
+                        progress,
+                        #[cfg(any(test, feature = "boot-test"))]
+                        failure,
+                    )?
+                }
+                BackendRequest::Copy { source, overwrite } => writes::write_payload(
+                    &root,
+                    path,
+                    Payload::File(source),
+                    overwrite,
+                    &state,
+                    progress,
+                    #[cfg(any(test, feature = "boot-test"))]
+                    failure,
+                )?,
                 BackendRequest::CreateDirectory => {
                     enter(progress, &state, Stage::Create, Phase::Create, false);
                     fat::create_new_directory(&root, path.relative())

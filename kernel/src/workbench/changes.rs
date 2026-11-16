@@ -153,6 +153,7 @@ impl View {
                             FileMessage::Created(_)
                                 | FileMessage::Removed(_)
                                 | FileMessage::Renamed(_)
+                                | FileMessage::Copied { .. }
                         )
                 })
         {

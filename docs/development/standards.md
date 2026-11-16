@@ -161,7 +161,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--shell-only` 与其他分组互斥，复用全套七例：外部串口编辑 / 命令写入、同盘只读重开、只读拒绝、FileSync / VolumeSync / DeviceFlush 失败及损坏 FAT。生成 8 张引导 / 源盘、6 张专用 DATA 副本；单 VM 60 秒。宿主逐字发送并等待实际接收确认，以防 UART 输入队列溢出；未确认不能当成已输入。文件只由 guest 的共享服务创建，宿主按独立预期读回。成功分组不代表完整 77 次 suite 或 M1 通过。
 
-T09 建立六个基础内置命令，T12 在同一 `kernel::shell::parser::COMMANDS` 增加 sync / reboot / shutdown，T14 增加 cd / pwd / mkdir / rm。help 和所有入口共用该表。Command / Reply / Output、1024 字节行编辑器与 UART 输入解码保持共享；具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)，电源扩展见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)。`write` 只创建，`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作；记录缺失和事件淘汰明确返回。
+T09 建立六个基础内置命令，T12 在同一 `kernel::shell::parser::COMMANDS` 增加 sync / reboot / shutdown，T14 增加 cd / pwd / mkdir / rm，T15 增加 mv / cp 并扩展 write。help 和所有入口共用该表。Command / Reply / Output、1024 字节行编辑器与 UART 输入解码保持共享。具体引号、转义、游标、历史、分页和 ID 规则见 [T09 实施契约](../mvp-plan.md#t09-实施契约与验证方案)，电源扩展见 [T12 实施契约](../mvp-plan.md#t12-实施契约与验证方案)。`write` 默认创建，显式覆盖按 [T15 实施契约](../mvp-plan.md#t15-实施契约与验证方案)。`cat` 每次 4096 字节并报告 offset / eof，`ls --next` 使用服务校验过的游标。`operations` 与完整 ID 的 `explain` 查询同一记录，解析失败不伪造文件操作。记录缺失和事件淘汰明确返回。
 
 默认启动在 T08 服务 Ready 后建立控制台，每轮最多接收 32 字节；COM1 读写保持单 BSP 所有权，UART 库保留的 LSR 接收错误会使当前行拒绝。正常行可用左右 / Home / End / Delete、上下历史、退格、Enter；Esc 等待最多 100 ms 区分方向序列后取消，Ctrl-C 立即取消。UTF-8 / 控制序列 / 容量损坏后只接受换行或 Ctrl-C 恢复，不执行残余文本。当前不提供 ANSI 终端兼容性、PTY 或外部程序。
 
@@ -293,9 +293,11 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 该入口使用未开启 `boot-test` 的 release 内核，运行两次限时 60 秒的无窗口 QEMU。首启在专用可写 DATA 盘上经 QMP 驱动 guest 键鼠，核对路径栏、上级导航、两侧独立目录和显式同步、创建、删除、失败详情，以及确认框打开时背景草稿、焦点和列表代次。两次启动都要求 QMP `guest-shutdown` 与进程自然退出。首启退出后独立核对目录、保留文件字节、取消与拒绝结果、FAT 结构和 DATA 外字节。次启只读打开同盘，核对保留内容、只读拒绝和整盘摘要。此入口覆盖 T14 对应的 AT08 子项。
 
-### T15 重命名入口
+### T15 重命名、复制与覆盖入口
 
-`mv <source> <destination>` 和文件区 `Rename` 通过 `Request::Rename` 复用同一校验与真实 FAT 写回。终端的 `renamed` 回复带源路径和目标引用，操作详情及能解析到的错误保留这两端。`xtask test --host` 用合成 FAT 核对同目录与跨目录重命名、大小写及短名冲突、目标字节、只读、取消、过期源引用、失败阶段及两侧刷新。复制、覆盖与真实 QEMU 证据按[T15 实施契约](../mvp-plan.md#t15-实施契约与验证方案)继续取得。
+`mv <source> <destination>` 和文件区 `Rename` 通过 `Request::Rename` 复用同一校验与真实 FAT 写回。`cp` 与文件区 `Copy` 使用同一普通文件复制请求。终端的 `renamed`、`copied` 回复带源路径和目标引用，复制另带字节数与是否覆盖。`explain` 保留已解析的两端路径、复制总字节和写回结果，完成截断时结构化副作用含 `target_truncated`。
+
+`xtask test --host` 用合成 FAT 核对同目录与跨目录重命名、二进制分块复制、空文件、大小写及短名别名、目标字节、只读、取消、过期引用、失败阶段及列表刷新。覆盖故障注入在首个 4 KiB 写入之后拒绝下一次写入，要求目标已截断、已写字节 4096、无持久化确认且保留首错。真实 QEMU 证据按[T15 实施契约](../mvp-plan.md#t15-实施契约与验证方案)取得。
 
 ## 5. 视觉与数据材料
 

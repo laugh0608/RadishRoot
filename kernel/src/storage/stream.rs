@@ -10,6 +10,7 @@ pub enum Phase {
     Create,
     Remove,
     Rename,
+    Truncate,
     Write,
     FileSync,
     VolumeSync,

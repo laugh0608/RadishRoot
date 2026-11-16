@@ -22,11 +22,29 @@ pub enum Command {
     PrintDirectory,
     List(String),
     Next,
-    Write { path: String, text: String },
+    Write {
+        path: String,
+        text: String,
+    },
+    OverwriteText {
+        path: String,
+        text: String,
+    },
     MakeDirectory(String),
     Remove(String),
-    Rename { source: String, destination: String },
-    Cat { path: String, offset: u64 },
+    Rename {
+        source: String,
+        destination: String,
+    },
+    Copy {
+        source: String,
+        destination: String,
+        overwrite: bool,
+    },
+    Cat {
+        path: String,
+        offset: u64,
+    },
     Operations,
     Explain(OperationId),
 }
@@ -36,7 +54,7 @@ pub struct CommandSpec {
     pub modifies: bool,
     pub result: &'static str,
 }
-pub const COMMANDS: [CommandSpec; 14] = [
+pub const COMMANDS: [CommandSpec; 15] = [
     CommandSpec {
         name: "sync",
         usage: "sync",
@@ -81,9 +99,9 @@ pub const COMMANDS: [CommandSpec; 14] = [
     },
     CommandSpec {
         name: "write",
-        usage: "write <path> <text> (create only)",
+        usage: "write [--overwrite] <path> <text> (overwrite requires an existing file)",
         modifies: true,
-        result: "created",
+        result: "created | overwritten",
     },
     CommandSpec {
         name: "mkdir",
@@ -102,6 +120,12 @@ pub const COMMANDS: [CommandSpec; 14] = [
         usage: "mv <source> <destination> (file on same volume, no overwrite)",
         modifies: true,
         result: "renamed",
+    },
+    CommandSpec {
+        name: "cp",
+        usage: "cp [--overwrite] <source> <destination> (single file, same volume)",
+        modifies: true,
+        result: "copied",
     },
     CommandSpec {
         name: "cat",
@@ -226,7 +250,11 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
         ["ls"] => Command::List(String::from(".")),
         ["ls", "--next"] => Command::Next,
         ["ls", path] => Command::List(String::from(*path)),
-        ["write", path, text] => Command::Write {
+        ["write", "--overwrite", path, text] => Command::OverwriteText {
+            path: String::from(*path),
+            text: String::from(*text),
+        },
+        ["write", path, text] if *path != "--overwrite" => Command::Write {
             path: String::from(*path),
             text: String::from(*text),
         },
@@ -235,6 +263,16 @@ pub fn parse(line: &str) -> Result<Command, ParseError> {
         ["mv", source, destination] => Command::Rename {
             source: String::from(*source),
             destination: String::from(*destination),
+        },
+        ["cp", "--overwrite", source, destination] => Command::Copy {
+            source: String::from(*source),
+            destination: String::from(*destination),
+            overwrite: true,
+        },
+        ["cp", source, destination] if *source != "--overwrite" => Command::Copy {
+            source: String::from(*source),
+            destination: String::from(*destination),
+            overwrite: false,
         },
         ["cat", path] => Command::Cat {
             path: String::from(*path),

@@ -38,6 +38,8 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
         ("mkdir", ParseError::Arguments),
         ("rm -r folder", ParseError::Arguments),
         ("mv a", ParseError::Arguments),
+        ("cp --overwrite a", ParseError::Arguments),
+        ("write --overwrite a", ParseError::Arguments),
         ("external", ParseError::UnknownCommand),
         ("cat a -1", ParseError::Number),
         ("cat a 18446744073709551616", ParseError::Number),
@@ -48,6 +50,87 @@ fn quoted_arguments_and_control_syntax_are_explicit() {
     }
     assert_eq!(parse(&"x".repeat(1025)), Err(ParseError::Length));
     assert_eq!(parse("help a b c d e f g h"), Err(ParseError::Arguments));
+}
+
+#[test]
+fn cp_and_write_require_explicit_overwrite_and_both_return_structured_results() {
+    use crate::services::{fat::FatBackend, tests::formatted};
+
+    let (mut disk, layout) = formatted();
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let mut shell = Shell::new();
+    shell
+        .execute("write 'source name.txt' payload", &mut files)
+        .unwrap()
+        .result
+        .unwrap();
+    let first = shell
+        .execute("cp 'source name.txt' 'copied name.txt'", &mut files)
+        .unwrap();
+    assert!(matches!(
+        first.result,
+        Ok(Output::Copied {
+            bytes: 7,
+            overwritten: false,
+            ..
+        })
+    ));
+    for line in [
+        "write 'copied name.txt' ignored",
+        "cp 'source name.txt' 'copied name.txt'",
+    ] {
+        assert!(matches!(
+            shell.execute(line, &mut files).unwrap().result,
+            Err(Error::Service(SystemError {
+                code: Code::AlreadyExists,
+                ..
+            }))
+        ));
+    }
+    let replaced = shell
+        .execute("write --overwrite 'copied name.txt' x", &mut files)
+        .unwrap();
+    assert!(
+        matches!(replaced.result, Ok(Output::Overwritten(reference)) if reference.path.as_str() == "/data/copied name.txt")
+    );
+    assert!(
+        matches!(shell.execute("cat 'copied name.txt'",&mut files).unwrap().result,
+        Ok(Output::Bytes {bytes,eof:true,..}) if bytes == b"x")
+    );
+    assert!(matches!(
+        shell
+            .execute("write --overwrite missing.txt x", &mut files)
+            .unwrap()
+            .result,
+        Err(Error::Service(SystemError {
+            code: Code::NotFound,
+            stage: Stage::Truncate,
+            ..
+        }))
+    ));
+    let copied = shell
+        .execute(
+            "cp --overwrite 'source name.txt' 'copied name.txt'",
+            &mut files,
+        )
+        .unwrap();
+    let mut json = String::new();
+    render::reply(&mut json, &copied).unwrap();
+    assert!(json.contains(
+        r#""kind":"copied","bytes":7,"overwritten":true,"source":"/data/source name.txt""#
+    ));
+    assert!(matches!(
+        copied.result,
+        Ok(Output::Copied {
+            bytes: 7,
+            overwritten: true,
+            ..
+        })
+    ));
+    assert!(
+        matches!(shell.execute("cat 'copied name.txt'",&mut files).unwrap().result,
+        Ok(Output::Bytes {bytes,eof:true,..}) if bytes == b"payload")
+    );
 }
 
 #[test]
@@ -439,7 +522,10 @@ impl Backend for Memory {
             BackendRequest::Sync
             | BackendRequest::CreateDirectory
             | BackendRequest::Remove
-            | BackendRequest::Rename { .. } => Err(Cause::Contract(Code::InvalidArgument)),
+            | BackendRequest::Rename { .. }
+            | BackendRequest::Copy { .. }
+            | BackendRequest::OverwriteText(_)
+            | BackendRequest::LookupFile => Err(Cause::Contract(Code::InvalidArgument)),
             BackendRequest::List { offset } => {
                 p.enter(Stage::List, Status::Running);
                 let entries = self
@@ -486,6 +572,7 @@ impl Backend for Memory {
                 self.data
                     .insert(path.relative().into(), text.as_bytes().to_vec());
                 p.record.partial_effect = PartialEffect {
+                    target_truncated: false,
                     created: true,
                     written_bytes: text.len(),
                     may_have_changed: true,

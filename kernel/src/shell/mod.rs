@@ -34,6 +34,13 @@ pub enum Output {
         source: Path,
         target: FileRef,
     },
+    Copied {
+        source: Path,
+        target: FileRef,
+        bytes: usize,
+        overwritten: bool,
+    },
+    Overwritten(FileRef),
     Operations {
         records: Vec<OperationRecord>,
         evicted: u64,
@@ -147,6 +154,9 @@ impl Shell {
                     }
                 }
                 Command::Write { ref path, ref text } => Request::CreateText { path, text },
+                Command::OverwriteText { ref path, ref text } => {
+                    Request::OverwriteText { path, text }
+                }
                 Command::MakeDirectory(ref path) => Request::CreateDirectory { path },
                 Command::Remove(ref path) => Request::Remove {
                     path,
@@ -159,6 +169,20 @@ impl Shell {
                     source,
                     destination,
                     reference: None,
+                },
+                Command::Copy {
+                    ref source,
+                    ref destination,
+                    overwrite,
+                } => Request::Copy {
+                    source,
+                    destination,
+                    reference: None,
+                    overwrite: if overwrite {
+                        Overwrite::Explicit
+                    } else {
+                        Overwrite::Deny
+                    },
                 },
                 Command::Cat { ref path, offset } => Request::Read {
                     path,
@@ -197,6 +221,19 @@ impl Shell {
                 services::Output::Created(reference) => Output::Created(reference),
                 services::Output::Removed(path) => Output::Removed(path),
                 services::Output::Renamed { source, target } => Output::Renamed { source, target },
+                services::Output::Copied {
+                    source,
+                    target,
+                    bytes,
+                    overwritten,
+                } => Output::Copied {
+                    source,
+                    target,
+                    bytes,
+                    overwritten,
+                },
+                services::Output::Overwritten(reference) => Output::Overwritten(reference),
+                services::Output::File(_) => unreachable!("lookup is a file pane request"),
             })
         })();
         Ok(Reply {

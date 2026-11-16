@@ -76,13 +76,17 @@ impl Layout {
             if view.selected_entry().is_some() {
                 controls.push((
                     Focus::DeleteEntry,
-                    rect(x + cw * 12 + 8, mutation_y, cw * 7, mutation_height),
+                    rect(x + cw * 12 + 8, mutation_y, cw * 6, mutation_height),
                 ));
             }
             if view.selected_file().is_some() {
                 controls.push((
                     Focus::RenameEntry,
-                    rect(x + cw * 20 + 8, mutation_y, cw * 8, mutation_height),
+                    rect(x + cw * 19 + 6, mutation_y, cw * 6, mutation_height),
+                ));
+                controls.push((
+                    Focus::CopyEntry,
+                    rect(x + cw * 26 + 4, mutation_y, cw * 4, mutation_height),
                 ));
             }
             if !view.directory.is_root() {
@@ -319,6 +323,20 @@ fn button(s: &mut Surface<'_>, r: Rectangle, name: &str, focused: bool, l: &Layo
     );
 }
 
+fn display_path(path: &str, columns: usize) -> String {
+    let chars = path.chars().count();
+    if chars > columns {
+        format!(
+            "~{}",
+            path.chars()
+                .skip(chars - columns.saturating_sub(1))
+                .collect::<String>()
+        )
+    } else {
+        String::from(path)
+    }
+}
+
 fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &View, l: &Layout) {
     frame(s, r, true);
     let (x, y, w, _) = parts(r);
@@ -326,6 +344,8 @@ fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &Vi
         FileDialog::NewDirectory => "New folder",
         FileDialog::Delete(_) => "Delete permanently?",
         FileDialog::Rename(_) => "Rename file",
+        FileDialog::Copy(_) => "Copy file",
+        FileDialog::OverwriteCopy { .. } => "Replace existing file?",
     };
     label(
         s,
@@ -340,18 +360,16 @@ fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &Vi
         FileDialog::NewDirectory => {
             let _ = write!(text, "Enter an absolute or relative path.");
         }
-        FileDialog::Delete(reference) | FileDialog::Rename(reference) => {
-            let path = reference.path.as_str();
+        FileDialog::Delete(reference)
+        | FileDialog::Rename(reference)
+        | FileDialog::Copy(reference) => {
             let max = columns * if dialog.accepts_path() { 2 } else { 3 };
-            let chars = path.chars().count();
-            if chars > max {
-                let _ = text.write_char('~');
-                for c in path.chars().skip(chars + 1 - max) {
-                    let _ = text.write_char(c);
-                }
-            } else {
-                let _ = text.write_str(path);
-            }
+            let _ = text.write_str(&display_path(reference.path.as_str(), max));
+        }
+        FileDialog::OverwriteCopy { source, target } => {
+            let source = display_path(source.path.as_str(), columns.saturating_sub(5));
+            let target = display_path(target.path.as_str(), (columns * 2).saturating_sub(3));
+            let _ = write!(text, "From {source}\nTo {target}");
         }
     }
     lines(
@@ -373,6 +391,8 @@ fn file_dialog(s: &mut Surface<'_>, r: Rectangle, dialog: &FileDialog, view: &Vi
                     FileDialog::NewDirectory => "Create",
                     FileDialog::Delete(_) => "Delete",
                     FileDialog::Rename(_) => "Rename",
+                    FileDialog::Copy(_) => "Copy",
+                    FileDialog::OverwriteCopy { .. } => "Replace",
                 },
                 focused,
                 l,
@@ -459,6 +479,7 @@ impl View {
                         | Focus::NewDirectory
                         | Focus::DeleteEntry
                         | Focus::RenameEntry
+                        | Focus::CopyEntry
                 ),
             );
             let (x, y, fw, fh) = parts(f);
@@ -467,20 +488,9 @@ impl View {
                 editor_line(s, path_bar, &self.path_editor, true, &l);
             } else {
                 let state = self.update.label();
-                let path = self.directory.as_str();
                 let width = ((fw - 16) / l.cw) as usize;
-                let chars = path.chars().count();
                 let visible = width.saturating_sub(state.len() + "Files  []".len());
-                let path = if chars > visible {
-                    format!(
-                        "~{}",
-                        path.chars()
-                            .skip(chars - visible.saturating_sub(1))
-                            .collect::<String>()
-                    )
-                } else {
-                    String::from(path)
-                };
+                let path = display_path(self.directory.as_str(), visible);
                 label(
                     s,
                     path_bar,
@@ -575,6 +585,14 @@ impl View {
                     FileMessage::Created(path) => format!("Created {}", path.as_str()),
                     FileMessage::Removed(path) => format!("Removed {}", path.as_str()),
                     FileMessage::Renamed(path) => format!("Renamed to {}", path.as_str()),
+                    FileMessage::Copied {
+                        target,
+                        bytes,
+                        overwritten,
+                    } => {
+                        let verb = if *overwritten { "Replaced" } else { "Copied" };
+                        format!("{verb} {bytes} B {}", target.as_str())
+                    }
                     FileMessage::Failed(shell::Error::Service(error)) => {
                         format!("{:?} ({:?})  Details", error.code, error.stage)
                     }
@@ -695,6 +713,7 @@ impl View {
                 Focus::NewDirectory => "New folder",
                 Focus::DeleteEntry => "Delete",
                 Focus::RenameEntry => "Rename",
+                Focus::CopyEntry => "Copy",
                 _ => "",
             };
             button(s, *r, name, *focus == self.focus, &l);

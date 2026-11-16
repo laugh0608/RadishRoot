@@ -76,15 +76,21 @@ pub enum Data {
     Created,
     Removed,
     Renamed,
+    Copied,
+    Overwritten,
+    File,
 }
 pub enum BackendRequest<'a> {
     Sync,
     List { offset: u32 },
     Read { offset: u64, limit: usize },
     CreateText(&'a str),
+    OverwriteText(&'a str),
     CreateDirectory,
     Remove,
     Rename { source: &'a Path },
+    Copy { source: &'a Path, overwrite: bool },
+    LookupFile,
 }
 pub trait Backend {
     fn volume(&self) -> VolumeInfo;
@@ -221,6 +227,22 @@ impl<B: Backend> FileService<B> {
                 self.validate_mutation()?;
                 Ok(BackendRequest::CreateText(text))
             }
+            Request::OverwriteText { text, .. } => {
+                if path.is_root() {
+                    return Err(fail(Code::WrongKind));
+                }
+                if text.len() > MAX_BYTES {
+                    return Err(fail(Code::ResourceLimit));
+                }
+                self.validate_mutation()?;
+                Ok(BackendRequest::OverwriteText(text))
+            }
+            Request::LookupFile { .. } => {
+                if path.is_root() {
+                    return Err(fail(Code::WrongKind));
+                }
+                Ok(BackendRequest::LookupFile)
+            }
             Request::CreateDirectory { .. } => {
                 if path.is_root() {
                     return Err(fail(Code::AlreadyExists));
@@ -252,6 +274,26 @@ impl<B: Backend> FileService<B> {
                 self.validate_mutation()?;
                 Ok(BackendRequest::Rename { source })
             }
+            Request::Copy {
+                reference,
+                overwrite,
+                ..
+            } => {
+                let source = source.expect("copy has source");
+                if source.is_root() || path.is_root() {
+                    return Err(fail(Code::WrongKind));
+                }
+                if reference.is_some_and(|r| !self.current(r, source))
+                    || matches!(overwrite, Overwrite::Confirmed(r) if !self.current(r, path))
+                {
+                    return Err(fail(Code::StaleReference));
+                }
+                self.validate_mutation()?;
+                Ok(BackendRequest::Copy {
+                    source,
+                    overwrite: !matches!(overwrite, Overwrite::Deny),
+                })
+            }
         }
     }
     pub fn execute(&mut self, cwd: &Path, request: Request<'_>) -> Result<Reply, Code> {
@@ -270,6 +312,7 @@ impl<B: Backend> FileService<B> {
                 request_kind: request.kind(),
                 target: None,
                 source: None,
+                total_bytes: None,
                 stage: Stage::Validate,
                 last_completed: None,
                 status: Status::Created,
@@ -323,7 +366,11 @@ impl<B: Backend> FileService<B> {
                 volume: self.volume.id,
                 target: path.clone(),
                 parent: path.parent(),
-                rename_source: progress.record.source.clone(),
+                rename_source: progress
+                    .record
+                    .source
+                    .clone()
+                    .filter(|_| request.kind() == RequestKind::Rename),
                 request_kind: request.kind(),
                 generation: self.generation,
                 operation_id: id,
@@ -352,6 +399,14 @@ impl<B: Backend> FileService<B> {
                     source: progress.record.source.clone().expect("rename has source"),
                     target: self.reference(path.clone()),
                 },
+                Data::Copied => Output::Copied {
+                    source: progress.record.source.clone().expect("copy has source"),
+                    target: self.reference(path.clone()),
+                    bytes: effect.written_bytes,
+                    overwritten: effect.target_truncated,
+                },
+                Data::Overwritten => Output::Overwritten(self.reference(path.clone())),
+                Data::File => Output::File(self.reference(path.clone())),
                 Data::Read { bytes, eof } => Output::Read { bytes, eof },
                 Data::List { entries, next } => {
                     let mut files = Vec::new();

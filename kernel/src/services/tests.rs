@@ -18,7 +18,7 @@ fn paths_are_component_bounded() {
 }
 use crate::storage::{
     block, gpt,
-    stream::{State, Stream},
+    stream::{self, State, Stream},
 };
 use alloc::{collections::BTreeMap, vec};
 use gpt_disk_io::gpt_disk_types::Guid;
@@ -50,7 +50,10 @@ impl Backend for MemoryBackend {
             BackendRequest::Sync
             | BackendRequest::CreateDirectory
             | BackendRequest::Remove
-            | BackendRequest::Rename { .. } => Err(Cause::Contract(Code::InvalidArgument)),
+            | BackendRequest::Rename { .. }
+            | BackendRequest::Copy { .. }
+            | BackendRequest::OverwriteText(_)
+            | BackendRequest::LookupFile => Err(Cause::Contract(Code::InvalidArgument)),
             BackendRequest::List { .. } => Ok(Data::List {
                 entries: vec![RawEntry {
                     name: String::from("one.txt"),
@@ -383,6 +386,254 @@ pub(crate) fn with_directories(paths: &[&str]) -> (Disk, gpt::Layout) {
     fs.unmount().unwrap();
     state.check().unwrap();
     (disk, layout)
+}
+
+fn seed_files(disk: &mut Disk, layout: &gpt::Layout, files: &[(&str, &[u8])]) {
+    use fatfs::Write;
+
+    let state = State::default();
+    let mut stream = Stream::new(block::Partition::open(disk, layout).unwrap(), &state);
+    let fs = fatfs::FileSystem::new(&mut stream, fatfs::FsOptions::new()).unwrap();
+    for (path, bytes) in files {
+        fs.root_dir()
+            .create_file(path)
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+    }
+    fs.unmount().unwrap();
+    state.check().unwrap();
+}
+
+#[test]
+fn copy_overwrite_checks_file_identity_before_writes_and_keeps_binary_bytes() {
+    let (mut disk, layout) = with_directories(&["from", "to"]);
+    let expected: Vec<u8> = (0..9001).map(|n| ((n * 17 + 91) % 256) as u8).collect();
+    let old = vec![0xdf; 12000];
+    seed_files(
+        &mut disk,
+        &layout,
+        &[
+            ("from/Long File Name.bin", &expected),
+            ("to/target.bin", &old),
+            ("empty.bin", b""),
+        ],
+    );
+    let writes_before = disk.writes;
+    let root = Path::root();
+    let copy = |source, destination, overwrite| Request::Copy {
+        source,
+        destination,
+        reference: None,
+        overwrite,
+    };
+    {
+        let mut files =
+            FileService::new(fat::FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+        for (dst, mode, code, stage) in [
+            (
+                "to/target.bin",
+                Overwrite::Deny,
+                Code::AlreadyExists,
+                Stage::Create,
+            ),
+            (
+                "from/Long File Name.bin",
+                Overwrite::Explicit,
+                Code::SameFile,
+                Stage::CheckTarget,
+            ),
+            (
+                "FROM/long file name.bin",
+                Overwrite::Explicit,
+                Code::SameFile,
+                Stage::CheckTarget,
+            ),
+            (
+                "FROM/LONGFI~1.BIN",
+                Overwrite::Explicit,
+                Code::SameFile,
+                Stage::CheckTarget,
+            ),
+            (
+                "to",
+                Overwrite::Explicit,
+                Code::WrongKind,
+                Stage::CheckTarget,
+            ),
+            (
+                "missing.bin",
+                Overwrite::Explicit,
+                Code::NotFound,
+                Stage::CheckTarget,
+            ),
+        ] {
+            let error = files
+                .execute(&root, copy("from/Long File Name.bin", dst, mode))
+                .unwrap()
+                .result
+                .unwrap_err();
+            assert_eq!(
+                (error.code, error.stage, error.partial_effect),
+                (code, stage, PartialEffect::default()),
+                "{dst}"
+            );
+        }
+        assert_eq!(files.generation(), 0);
+        assert_eq!(files.volume().mount_state, MountState::Ready);
+    }
+    assert_eq!(disk.writes, writes_before);
+
+    let mut files =
+        FileService::new(fat::FatBackend::new(&mut disk, layout), BootId([2; 16])).unwrap();
+    for (src, dst, mode, length, overwrote) in [
+        (
+            "from/Long File Name.bin",
+            "to/new.bin",
+            Overwrite::Deny,
+            expected.len(),
+            false,
+        ),
+        (
+            "from/Long File Name.bin",
+            "to/target.bin",
+            Overwrite::Explicit,
+            expected.len(),
+            true,
+        ),
+        ("empty.bin", "to/empty.bin", Overwrite::Deny, 0, false),
+    ] {
+        let reply = files.execute(&root, copy(src, dst, mode)).unwrap();
+        assert!(
+            matches!(reply.result, Ok(Output::Copied {bytes, overwritten, target, ..})
+            if bytes == length && overwritten == overwrote && target.path == root.resolve(dst).unwrap())
+        );
+        let record = files.operations.iter().last().unwrap();
+        assert_eq!(record.total_bytes, Some(length as u64));
+        assert!(record.partial_effect.persistence_confirmed);
+        let change = files.changes.iter().last().unwrap();
+        assert!(change.rename_source.is_none());
+        assert_eq!(change.target, root.resolve(dst).unwrap());
+    }
+    for (path, expected) in [
+        ("from/Long File Name.bin", expected.as_slice()),
+        ("to/new.bin", &expected),
+        ("to/target.bin", &expected),
+        ("to/empty.bin", b""),
+    ] {
+        let reply = files
+            .execute(
+                &root,
+                Request::Read {
+                    path,
+                    offset: 0,
+                    limit: 15000,
+                    reference: None,
+                },
+            )
+            .unwrap();
+        assert!(
+            matches!(reply.result, Ok(Output::Read{bytes,eof:true}) if bytes == expected),
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn overwrite_copy_failure_preserves_exact_acknowledged_progress_and_stage() {
+    let (mut disk, layout) = formatted();
+    let input = vec![0x81; 8193];
+    seed_files(
+        &mut disk,
+        &layout,
+        &[
+            ("source.bin", &input),
+            ("target.bin", b"pre-existing bytes"),
+        ],
+    );
+    let mut backend = fat::FatBackend::new(&mut disk, layout);
+    backend.inject(Stage::Copy);
+    let mut files = FileService::new(backend, BootId([1; 16])).unwrap();
+    let root = Path::root();
+    let reply = files
+        .execute(
+            &root,
+            Request::Copy {
+                source: "source.bin",
+                destination: "target.bin",
+                reference: None,
+                overwrite: Overwrite::Explicit,
+            },
+        )
+        .unwrap();
+    let error = reply.result.unwrap_err();
+    assert_eq!((error.code, error.stage), (Code::Io, Stage::Copy));
+    assert!(matches!(
+        error.cause,
+        Cause::Stream(stream::Error {
+            phase: stream::Phase::Write,
+            cause: stream::Cause::InjectedWrite,
+            ..
+        })
+    ));
+    assert_eq!(error.partial_effect.written_bytes, 4096);
+    assert!(error.partial_effect.target_truncated && error.partial_effect.may_have_changed);
+    assert!(!error.partial_effect.created && !error.partial_effect.persistence_confirmed);
+    assert_eq!(files.volume().mount_state, MountState::Offline);
+    let record = files.operations.iter().last().unwrap();
+    assert_eq!(record.id, reply.operation_id);
+    assert_eq!(record.status, Status::Failed);
+    assert_eq!(record.total_bytes, Some(8193));
+    assert_eq!(record.error, Some(error));
+    let event = files.changes.iter().next().unwrap();
+    assert_eq!(event.operation_id, reply.operation_id);
+    assert_eq!(event.target.as_str(), "/data/target.bin");
+    assert!(event.rename_source.is_none());
+}
+
+#[test]
+fn copy_megabyte_fixture_reads_back_every_page() {
+    let (mut disk, layout) = formatted();
+    let bytes: Vec<u8> = (0..1024 * 1024).map(|at| (at ^ (at >> 9)) as u8).collect();
+    seed_files(&mut disk, &layout, &[("source.bin", &bytes)]);
+    let mut files =
+        FileService::new(fat::FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let root = Path::root();
+    let copied = files
+        .execute(
+            &root,
+            Request::Copy {
+                source: "source.bin",
+                destination: "target.bin",
+                reference: None,
+                overwrite: Overwrite::Deny,
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(copied.result, Ok(Output::Copied{bytes: length, overwritten:false,..}) if length == bytes.len())
+    );
+    for (page, expected) in bytes.chunks(MAX_BYTES).enumerate() {
+        let offset = page * MAX_BYTES;
+        let output = files
+            .execute(
+                &root,
+                Request::Read {
+                    path: "target.bin",
+                    offset: offset as u64,
+                    limit: MAX_BYTES,
+                    reference: None,
+                },
+            )
+            .unwrap()
+            .result
+            .unwrap();
+        assert!(
+            matches!(output, Output::Read {bytes: page, eof}
+            if page == expected && eof == (offset + expected.len() == bytes.len())),
+            "offset={offset}"
+        );
+    }
 }
 
 #[test]

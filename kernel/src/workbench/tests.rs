@@ -59,6 +59,122 @@ fn click(view: &mut View, control: Focus, row: usize) {
 }
 
 #[test]
+fn copy_dialog_confirms_existing_target_and_isolates_cancel_and_stale_references() {
+    let (mut disk, layout) = formatted();
+    let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();
+    let root = Path::root();
+    for (path, text) in [
+        ("source.txt", "copy payload"),
+        ("target.txt", "old content"),
+    ] {
+        files
+            .execute(&root, Request::CreateText { path, text })
+            .unwrap()
+            .result
+            .unwrap();
+    }
+    let mut v = view();
+    v.execute_pending(&mut files);
+    let copy_to = |view: &mut View, files: &mut FileService<_>, path: &str| {
+        click(view, Focus::FilesUp, 0);
+        assert_eq!(view.selected_file().unwrap().name, "source.txt");
+        click(view, Focus::CopyEntry, 0);
+        for c in path.chars() {
+            view.event(Event::Text(c));
+        }
+        key(view, KeyCode::Return);
+        settle(view, files);
+    };
+    copy_to(&mut v, &mut files, "target.txt");
+    assert!(
+        matches!(&v.dialog, Some(FileDialog::OverwriteCopy {source,target})
+        if source.path.as_str() == "/data/source.txt" && target.path.as_str() == "/data/target.txt")
+    );
+    assert_eq!(v.focus, Focus::DialogCancel);
+    let before = files.operations.iter().count();
+    click(&mut v, Focus::Input, 0);
+    v.event(Event::Text('x'));
+    key(&mut v, KeyCode::Return);
+    assert!(v.dialog.is_none());
+    assert!(v.editor.text().is_empty());
+    assert_eq!(files.operations.iter().count(), before);
+    assert_eq!(files.generation(), 2);
+
+    copy_to(&mut v, &mut files, "target.txt");
+    files
+        .execute(
+            &root,
+            Request::OverwriteText {
+                path: "target.txt",
+                text: "replaced meanwhile",
+            },
+        )
+        .unwrap()
+        .result
+        .unwrap();
+    v.observe_changes(&files);
+    settle(&mut v, &mut files);
+    key(&mut v, KeyCode::Tab);
+    key(&mut v, KeyCode::Return);
+    settle(&mut v, &mut files);
+    assert!(
+        matches!(&v.file_message, Some((Some(_), FileMessage::Failed(shell::Error::Service(e)))) if e.code == Code::StaleReference)
+    );
+    assert_eq!(files.generation(), 3);
+    let read = files
+        .execute(
+            &root,
+            Request::Read {
+                path: "target.txt",
+                offset: 0,
+                limit: 100,
+                reference: None,
+            },
+        )
+        .unwrap();
+    assert!(
+        matches!(read.result, Ok(Output::Read {bytes,eof:true}) if bytes == b"replaced meanwhile")
+    );
+
+    copy_to(&mut v, &mut files, "target.txt");
+    key(&mut v, KeyCode::Tab);
+    key(&mut v, KeyCode::Return);
+    assert!(v.pending());
+    v.event(Event::InputReset);
+    settle(&mut v, &mut files);
+    assert_eq!(files.generation(), 3);
+
+    copy_to(&mut v, &mut files, "target.txt");
+    click(&mut v, Focus::DialogConfirm, 0);
+    settle(&mut v, &mut files);
+    assert!(
+        matches!(&v.file_message, Some((Some(id), FileMessage::Copied {target,bytes:12,overwritten:true}))
+        if Some(*id) == v.change_operation && target.as_str() == "/data/target.txt")
+    );
+    assert_eq!(files.generation(), 4);
+    let read = files
+        .execute(
+            &root,
+            Request::Read {
+                path: "target.txt",
+                offset: 0,
+                limit: 100,
+                reference: None,
+            },
+        )
+        .unwrap();
+    assert!(matches!(read.result, Ok(Output::Read {bytes,eof:true}) if bytes == b"copy payload"));
+
+    copy_to(&mut v, &mut files, "new.txt");
+    assert!(
+        matches!(&v.file_message, Some((Some(_), FileMessage::Copied {target,bytes:12,overwritten:false}))
+        if target.as_str() == "/data/new.txt")
+    );
+    assert!(v.dialog.is_none());
+    assert_eq!(files.generation(), 5);
+}
+
+#[test]
 fn rename_dialog_checks_the_original_source_and_refreshes_both_directories() {
     let (mut disk, layout) = with_directories(&["left", "right"]);
     let mut files = FileService::new(FatBackend::new(&mut disk, layout), BootId([1; 16])).unwrap();

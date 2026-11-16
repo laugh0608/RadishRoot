@@ -42,6 +42,7 @@ impl View {
                     | Focus::OpenDirectory
                     | Focus::DeleteEntry
                     | Focus::RenameEntry
+                    | Focus::CopyEntry
                     | Focus::FileDetails
             )
         }) {
@@ -49,7 +50,8 @@ impl View {
         }
         if (self.focus == Focus::OpenDirectory && self.selected_directory().is_none())
             || (self.focus == Focus::DeleteEntry && self.selected_entry().is_none())
-            || (self.focus == Focus::RenameEntry && self.selected_file().is_none())
+            || (matches!(self.focus, Focus::RenameEntry | Focus::CopyEntry)
+                && self.selected_file().is_none())
             || (self.focus == Focus::FileDetails && self.file_detail_operation().is_none())
         {
             self.focus = Focus::Files;
