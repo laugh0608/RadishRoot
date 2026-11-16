@@ -196,9 +196,9 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 `--link-only` 与其他分组互斥，复用完整套件同一四例：图形创建 / 冲突 / 原历史、201 项目录中新文件的自动跨页查找、FileSync 失败后的自动列表错误、串口创建到图形列表 / 原操作详情的联动。生成 5 张引导 / 源盘及 4 张 DATA 副本，均为任务普通文件；单 VM 60 秒，结束后独立 FAT / DATA 外检查。不发送 Refresh 动作冒充自动联动，不代表完整 77 次套件或 AT05 / M1 通过。
 
-`workbench::observe_changes` 只检查有界服务变更历史，按启动 / 卷 / 代次订阅。T11 初版从固定 `/data` 的子项事件触发，T14 扩展到当前目录。目标跨页时每轮只读一页，最多 128 页。命令和详情优先，草稿不被刷新清空。代次变化合并并最多重启 4 次，超过显式停止。事件缺口重查第一页并显示原因。原列表读取错误保留真实阶段和原因，避免再次 Offline 查询覆盖它。
+`workbench::observe_changes` 只检查有界服务变更历史，按启动 / 卷 / 代次订阅。T11 初版从固定 `/data` 的子项事件触发，T14 扩展到当前目录。目标跨页时每轮只读一页，页数上限按服务扫描上限除以每页容量向上取整，T16 的 4096 / 200 项配置最多查询 21 页。命令和详情优先，草稿不被刷新清空。代次变化合并并最多重启 4 次，超过显式停止。事件缺口重查第一页并显示原因。原列表读取错误保留真实阶段和原因，避免再次 Offline 查询覆盖它。
 
-文件区显示刷新状态与原变更操作来源，Enter / 点击文件区打开该原操作；列表查询自身仍有独立 ID。终端历史保持类型与字节快照，详情按所选原 ID 查询，淘汰 / 异启动显式报错。`RR:T11:PAGE` / `ITEM` 记录实际页、来源和 UTF-8 名称 hex，配合原 `FRAME` / `REPLY` / `DETAIL` 及独立磁盘预期核验；不能把新的列表操作当成原写入。
+文件区显示刷新状态与原变更操作来源。点击文件区底部的 `Details`，或将焦点移到该状态行后按 Enter，打开对应操作。列表查询有独立 ID。点击普通文件行选中条目，在该行按 Enter 打开预览。终端历史保持类型与字节快照，详情按所选原 ID 查询，淘汰 / 异启动显式报错。`RR:T11:PAGE` / `ITEM` 记录实际页、来源和 UTF-8 名称 hex，配合原 `FRAME` / `REPLY` / `DETAIL` 及独立磁盘预期核验。
 
 T11 外部命令与 T09 共用同一有界串口输送入口，逐字发送、等待实际接收、消费 socket 输出防止回压；输入完成和 T09 场景终态由明确类型区分。宿主与 guest 仍用相同 View；只读路径继续按实际步骤回放逐像素比较，可写联动案例仅声明真实帧、类型结果与独立磁盘事实。实际结果和未覆盖项见[环境清单第 2.23 节](environment.md#223-t11-自动刷新与操作联动验收)。
 
@@ -271,9 +271,11 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 | 阶段 | 操作与人工判据 |
 | --- | --- |
 | 首启与创建 | 确认 1024 × 768 双面板、文字可读且输入区有焦点。键入 `write /data/hello.txt "hello RadishRoot"` 并按 Enter。文件区自动出现并选中新文件。记下成功写入 ID 的冒号及其后序号，例如 `:3`。 |
-| 创建详情与焦点 | 点击左侧选中的文件行。核对详情 ID 与写入结果一致，等待取帧。按 Tab 一次，确认详情的 `Up` 获得可见焦点。取帧后按 Shift+Tab 回到 `Close`，释放 Shift，再按 Enter，确认详情关闭、焦点回到输入区。 |
+| 创建详情与焦点 | 点击文件区底部的 `Details` 状态行。核对详情 ID 与写入结果一致，等待取帧。按 Tab 一次，确认详情的 `Up` 获得可见焦点。取帧后按 Shift+Tab 回到 `Close`，释放 Shift，再按 Enter，确认详情关闭、焦点回到输入区。 |
 | 冲突与关机 | 输入 `write /data/hello.txt again`。核对 `AlreadyExists`，点击终端的 `Details`，确认失败阶段和原拒绝 ID。取帧后按 Esc，输入 `shutdown`。等待 guest 退出及宿主独立读盘，校验通过后编排会打开第二个窗口。 |
 | 同盘再启动 | 在第二个窗口确认输入区有焦点，必要时按 Esc 回到输入区。输入 `ls /data`，等待取帧。再输入 `cat /data/hello.txt`，核对 `hello RadishRoot`。等待 `Recorded demo-explain-prefilled`，此时输入栏已显示 `explain` 和首窗的 32 位启动 ID。只追加首窗成功写入的冒号和序号，例如 `:3`，再按 Enter。确认 `ForeignBoot` 并等待取帧，然后输入 `shutdown`。 |
+
+当前首窗检查点的运行提示仍写着点击 `hello.txt` 行。按上表点击文件区底部的 `Details`。
 
 每次执行记录候选、操作者是否使用实体键鼠、实际命令与观察、两个启动 ID、操作 ID、检查点帧和独立读盘报告。原始串口、QMP、`.steps` 输入记录和 `workbench-screen-report.json` 随盘保存在当次 `target/xtask-*`。机器断言在首窗复核鼠标释放、详情焦点与键盘关闭，在两窗复核键盘释放、对应的 Shift 组合、正常退出和真实盘字节。次窗按预填检查点分开核对宿主前缀与实体键盘后缀，重建提交内容并对照首窗完整 ID。人工检查记录原生窗口中的可读性、焦点表现和输入来源。AT06 等价、完整 AT07 及资源测量分别登记。
 
@@ -309,7 +311,7 @@ env CARGO_HOME="$PWD/work/cargo-home" RUSTUP_AUTO_INSTALL=0 cargo +nightly-2026-
 
 ### T16 预览与目录分页入口
 
-`preview <path>`、文件区 `Preview`（窄窗为 `View`）及在选中普通文件时按 Enter，复用同一只读服务。终端结构化结果给出 `Text`、`Binary` 或 `InvalidUtf8`、已读取字节数、截断状态及文本，文本保留原 UTF-8。`cat` 保留原始字节读取。文件区点击行负责选择，操作详情由 `Details` 打开。文件预览用 Up / Down 滚动，聚焦预览控件时 Home / End 跳至首尾，Esc 关闭并保留终端草稿。
+`preview <path>`、文件区 `Preview`（窄窗为 `View`）及在选中普通文件时按 Enter，复用同一只读服务。结构化结果的 `kind` 为 `preview`，`encoding` 给出 `Text`、`Binary` 或 `InvalidUtf8`，`length` 和 `truncated` 记录样本字节数和截断状态。`text` 保留可展示的原 UTF-8 前缀，无法文本预览时为 `null`。`cat` 保留原始字节读取。文件区点击行负责选择，操作详情由 `Details` 打开。文件预览用 Up / Down 滚动，聚焦预览控件时 Home / End 跳至首尾，Esc 关闭并保留终端草稿。
 
 `ls --next` 和文件区 `Next` 使用服务返回的 200 项分页游标。`xtask test --host` 在合成 FAT 上核对 200 / 201 项、过期拒绝、两个显示占位相同的 UTF-8 文件、64 KiB 边界、非法编码、二进制、缺字显示与草稿保留。真实 QEMU 与关机后独立 FAT 按[T16 实施契约](../mvp-plan.md#t16-实施契约与验证方案)验收。
 
